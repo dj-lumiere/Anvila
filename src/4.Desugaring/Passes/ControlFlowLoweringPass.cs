@@ -533,7 +533,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             ? LowerStatement(stmt: ifs.ElseStatement)
             : null;
         // No else on the original `if` → the fall-through does nothing, but an empty block needs
-        // an explicit `nothing` (RF-S211).
+        // an explicit `nothing` (RA-S211).
         Statement elseBody = elseS ?? new BlockStatement(Statements:
             [new NothingStatement(Location: loc)],
             Location: loc);

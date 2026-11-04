@@ -1,33 +1,33 @@
 using Builder.Targeting;
-using Builder.TesseraEmit;
+using Builder.LapilaEmit;
 
 namespace Builder;
 
 /// <summary>
-/// Ingrid's libraries written in Tessera (<c>Ingrid/tessera/*.te</c>): the math, hashing, and random-number code both
+/// Ingrid's libraries written in Lapila (<c>Ingrid/lapila/*.li</c>): the math, hashing, and random-number code both
 /// languages build on. The standard library calls them through <c>C::</c> declarations, and their bodies are not in the
-/// runtime DLL, so every RazorForge module is llvm-linked with this library before <c>opt</c>. That puts the bodies in
+/// runtime DLL, so every Revare module is llvm-linked with this library before <c>opt</c>. That puts the bodies in
 /// the module being optimized, where LLVM can inline them (<c>#inline</c> routines are <c>alwaysinline</c>).
 /// <para>
-/// The library is compiled in-process by the Tessera builder, for the CPU the RazorForge module targets (see
+/// The library is compiled in-process by the Lapila builder, for the CPU the Revare module targets (see
 /// <see cref="TargetConfig.Cpu"/>), and cached as LLVM IR next to the executable. It is rebuilt when a source, the
-/// Tessera builder, or this builder (which picks the CPU) is newer. An installed layout ships the cached IR and no
+/// Lapila builder, or this builder (which picks the CPU) is newer. An installed layout ships the cached IR and no
 /// sources.
 /// </para>
 /// </summary>
-internal static class IngridTessera
+internal static class IngridLapila
 {
     /// <summary>The cached LLVM IR of the library, next to the executable.</summary>
-    internal const string IrFileName = "ingrid_tessera.ll";
+    internal const string IrFileName = "ingrid_lapila.ll";
 
     /// <summary>Where a development checkout keeps the library's sources.</summary>
-    private static readonly string CheckoutSourceDir = Path.Combine(path1: "Ingrid", path2: "tessera");
+    private static readonly string CheckoutSourceDir = Path.Combine(path1: "Ingrid", path2: "lapila");
 
     private static readonly object CacheLock = new();
 
     /// <summary>
     /// Returns the path of the library's LLVM IR, compiling it when the cache is missing or stale. Throws when there are
-    /// neither sources nor a shipped IR file, or when the Tessera builder rejects the sources: the standard library
+    /// neither sources nor a shipped IR file, or when the Lapila builder rejects the sources: the standard library
     /// can't link without these definitions.
     /// </summary>
     internal static string IrPath(string exeDir)
@@ -40,11 +40,11 @@ internal static class IngridTessera
                 return File.Exists(path: cached)
                     ? cached
                     : throw new InvalidOperationException(
-                        message: $"Ingrid's Tessera library is missing: no '{CheckoutSourceDir}' sources near the " +
+                        message: $"Ingrid's Lapila library is missing: no '{CheckoutSourceDir}' sources near the " +
                                  $"executable and no '{IrFileName}' next to it.");
             }
 
-            string[] sources = Directory.GetFiles(path: sourceDir, searchPattern: "*.te",
+            string[] sources = Directory.GetFiles(path: sourceDir, searchPattern: "*.li",
                     searchOption: SearchOption.AllDirectories)
                 .Order(comparer: StringComparer.Ordinal)
                 .ToArray();
@@ -146,7 +146,7 @@ internal static class IngridTessera
 
             // A file of this process's own, so a build in another process can't see it half written.
             string tmp = $"{obj}.{Environment.ProcessId}.tmp";
-            if (NativeToolchain.CompileIrToObject(optFile: ir, objFile: tmp, buildMode: RfBuildMode.Release) != 0)
+            if (NativeToolchain.CompileIrToObject(optFile: ir, objFile: tmp, buildMode: RaBuildMode.Release) != 0)
             {
                 TryDelete(path: tmp);
                 return null;
@@ -178,7 +178,7 @@ internal static class IngridTessera
     }
 
     /// <summary>The extension of the compiled library next to the IR. It names the JIT's object, whose constant-pool
-    /// symbols are already local, apart from the plain object earlier builders wrote as <c>ingrid_tessera.o</c>.</summary>
+    /// symbols are already local, apart from the plain object earlier builders wrote as <c>ingrid_lapila.o</c>.</summary>
     private const string ObjectExtension = ".jit-sections.o";
 
     private static readonly object WatchLock = new();
@@ -188,7 +188,7 @@ internal static class IngridTessera
 
     /// <summary>
     /// <see cref="ObjectPath"/> for a long-lived process (the daemon), without its per-call check of every source:
-    /// the library's sources, Tessera's standard library and the cached IR, object and Tessera builder next to the
+    /// the library's sources, Lapila's standard library and the cached IR, object and Lapila builder next to the
     /// executable are watched, and the object is looked up again only after one of them changed. The daemon hands the
     /// result to the client in its reply, so a warm run never walks the sources itself. Throws like
     /// <see cref="ObjectPath"/> when the sources don't compile, and checks again on the next call.
@@ -233,11 +233,11 @@ internal static class IngridTessera
         var watchers = new List<FileSystemWatcher>();
         if (TryFindSourceDir(exeDir: exeDir, sourceDir: out string sourceDir))
         {
-            Watch(watchers: watchers, dir: sourceDir, recursive: true, filters: ["*.te"]);
+            Watch(watchers: watchers, dir: sourceDir, recursive: true, filters: ["*.li"]);
         }
 
-        Watch(watchers: watchers, dir: TesseraBackend.StdlibDirectory(), recursive: true, filters: ["*.te"]);
-        string[] builders = BuilderLocation.BuildFiles(typeof(Tessera.Compiler), typeof(IngridTessera))
+        Watch(watchers: watchers, dir: LapilaBackend.StdlibDirectory(), recursive: true, filters: ["*.li"]);
+        string[] builders = BuilderLocation.BuildFiles(typeof(Lapila.Compiler), typeof(IngridLapila))
                                            .Where(predicate: b => Path.TrimEndingDirectorySeparator(path: Path.GetDirectoryName(path: b) ?? "") ==
                                                          Path.TrimEndingDirectorySeparator(path: exeDir))
                                            .Select(selector: b => Path.GetFileName(path: b)).ToArray();
@@ -290,13 +290,13 @@ internal static class IngridTessera
         }
     }
 
-    /// <summary>The cache is stale when a source, the Tessera builder that compiled it, or Tessera's standard library is
+    /// <summary>The cache is stale when a source, the Lapila builder that compiled it, or Lapila's standard library is
     /// newer.</summary>
     private static bool IsStale(string cached, string[] sources)
     {
         DateTime cachedAt = File.GetLastWriteTimeUtc(path: cached);
-        string[] builders = [.. BuilderLocation.BuildFiles(typeof(Tessera.Compiler), typeof(IngridTessera))];
-        IEnumerable<string> stdlib = Directory.GetFiles(path: TesseraBackend.StdlibDirectory(), searchPattern: "*.te",
+        string[] builders = [.. BuilderLocation.BuildFiles(typeof(Lapila.Compiler), typeof(IngridLapila))];
+        IEnumerable<string> stdlib = Directory.GetFiles(path: LapilaBackend.StdlibDirectory(), searchPattern: "*.li",
             searchOption: SearchOption.AllDirectories);
         return sources.Concat(second: stdlib).Any(predicate: s => File.GetLastWriteTimeUtc(path: s) > cachedAt)
                || builders.Any(predicate: b => File.GetLastWriteTimeUtc(path: b) > cachedAt);
@@ -304,44 +304,44 @@ internal static class IngridTessera
 
     private static string Compile(string sourceDir, string[] sources)
     {
-        // The folders Tessera programs import (`decimal/` is Ingrid/Decimal) are a library, as in a Tessera build: only
-        // what an export reaches is built. The rest of the folder is RazorForge's and Suflae's, built whole.
-        List<Tessera.StandardLibrary.IngridFile> library = Tessera.StandardLibrary.IngridFiles(directory: sourceDir);
+        // The folders Lapila programs import (`decimal/` is Ingrid/Decimal) are a library, as in a Lapila build: only
+        // what an export reaches is built. The rest of the folder is Revare's and Mielia's, built whole.
+        List<Lapila.StandardLibrary.IngridFile> library = Lapila.StandardLibrary.IngridFiles(directory: sourceDir);
         var inLibrary = new HashSet<string>(collection: library.Select(selector: f => f.Path),
             comparer: StringComparer.OrdinalIgnoreCase);
-        var decls = new List<Tessera.Decl>(collection: Tessera.StandardLibrary.LoadIngrid(directory: sourceDir));
+        var decls = new List<Lapila.Decl>(collection: Lapila.StandardLibrary.LoadIngrid(directory: sourceDir));
         foreach (string file in sources.Where(predicate: f => !inLibrary.Contains(item: Path.GetFullPath(path: f))))
         {
             string shown = Path.Combine(path1: CheckoutSourceDir,
                 path2: Path.GetRelativePath(relativeTo: sourceDir, path: file));
-            decls.AddRange(collection: TesseraBackend.Parse(file: shown,
-                source: Tessera.SourceText.Read(path: file, shown: shown),
+            decls.AddRange(collection: LapilaBackend.Parse(file: shown,
+                source: Lapila.SourceText.Read(path: file, shown: shown),
                 isLibrary: false));
         }
 
-        // Each standard library file is the module its folder names (Tessera.StandardLibrary).
-        decls.AddRange(collection: Tessera.StandardLibrary.Load(directory: TesseraBackend.StdlibDirectory()));
+        // Each standard library file is the module its folder names (Lapila.StandardLibrary).
+        decls.AddRange(collection: Lapila.StandardLibrary.Load(directory: LapilaBackend.StdlibDirectory()));
 
         try
         {
             // The standard library's own exports (its crash handler, the half and bfloat conversions) stay out: the
-            // RazorForge program brings its runtime, and a stray copy would pull in POSIX calls the JIT can't resolve.
-            // Tessera's own crash trace stays out too: Ingrid's routines (ingrid_roam_hold and the like) sit on hot
-            // paths of every RazorForge program, and RazorForge keeps its own trace.
-            NativeToolchain.ShareClangWithTessera();
-            return new Tessera.Compiler(target: TargetConfig.ForCurrentHost().TesseraTarget(), decls: decls,
+            // Revare program brings its runtime, and a stray copy would pull in POSIX calls the JIT can't resolve.
+            // Lapila's own crash trace stays out too: Ingrid's routines (ingrid_roam_hold and the like) sit on hot
+            // paths of every Revare program, and Revare keeps its own trace.
+            NativeToolchain.ShareClangWithLapila();
+            return new Lapila.Compiler(target: TargetConfig.ForCurrentHost().LapilaTarget(), decls: decls,
                     trace: false)
                     { EmitLibraryExports = false }
                 .Generate();
         }
-        catch (Tessera.CompileError ex)
+        catch (Lapila.CompileError ex)
         {
-            throw new InvalidOperationException(message: $"The Tessera builder rejected Ingrid's library: {ex.Message}",
+            throw new InvalidOperationException(message: $"The Lapila builder rejected Ingrid's library: {ex.Message}",
                 innerException: ex);
         }
     }
 
-    /// <summary>Finds <c>Ingrid/tessera</c> by walking up from the executable (development checkouts only).</summary>
+    /// <summary>Finds <c>Ingrid/lapila</c> by walking up from the executable (development checkouts only).</summary>
     private static bool TryFindSourceDir(string exeDir, out string sourceDir)
     {
         // AppContext.BaseDirectory ends in a separator, and GetDirectoryName of "a/b/" is "a/b": without the trim the

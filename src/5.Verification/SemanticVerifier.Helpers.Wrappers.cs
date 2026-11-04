@@ -69,7 +69,7 @@ public sealed partial class SemanticVerifier
     /// <param name="location">Source location for error reporting.</param>
     /// <param name="receiver">The expression the routine is called on, used to name the fix when it is a read token
     /// bound from an index (<c>var x = s[a]</c>).</param>
-    /// <summary>The message for a change to a binding that is only read: a preset, or a RazorForge global, which every
+    /// <summary>The message for a change to a binding that is only read: a preset, or a Revare global, which every
     /// thread reaches.</summary>
     private string ImmutableBindingMessage(string name, string what)
     {

@@ -11,7 +11,7 @@ using TypeModel.Types;
 namespace Builder.LlvmEmit;
 
 /// <summary>
-/// LLVM IR code generator for RazorForge and Suflae.
+/// LLVM IR code generator for Revare and Mielia.
 /// Consumes a fully-typed AST from the semantic analyzer.
 /// </summary>
 public partial class LlvmEmitter
@@ -104,7 +104,7 @@ public partial class LlvmEmitter
     private readonly StringBuilder _functionDeclarations = new();
 
     /// <summary>
-    /// RF function forward declarations keyed by mangled name.
+    /// RA function forward declarations keyed by mangled name.
     /// Entries whose name is in <see cref="_generatedRoutineDefs"/> are suppressed at output
     /// time to avoid declare+define conflicts in the same LLVM module.
     /// </summary>
@@ -142,7 +142,7 @@ public partial class LlvmEmitter
     /// <summary>Map of local variable names to their types for the current function.</summary>
     private readonly Dictionary<string, TypeSymbol> _localVariables = new();
 
-    /// <summary>Suflae module-level <c>global</c> variables: source name -&gt; (type, LLVM <c>@global</c>
+    /// <summary>Mielia module-level <c>global</c> variables: source name -&gt; (type, LLVM <c>@global</c>
     /// symbol). Populated by <see cref="GenerateGlobalVariables"/> before routine bodies are emitted;
     /// consulted by the identifier read / assignment / lvalue paths as a fallback after local lookup.</summary>
     private readonly Dictionary<string, (TypeSymbol Type, string Symbol)> _moduleGlobals = new();
@@ -247,12 +247,12 @@ public partial class LlvmEmitter
     private readonly TargetConfig _target;
 
     /// <summary>The CPU attributes every routine this module defines carries (see
-    /// <see cref="TargetConfig.FunctionAttributes"/>): the same set as Ingrid's Tessera library, so its helpers inline
-    /// into RazorForge code.</summary>
+    /// <see cref="TargetConfig.FunctionAttributes"/>): the same set as Ingrid's Lapila library, so its helpers inline
+    /// into Revare code.</summary>
     private string CpuAttributes => _target.FunctionAttributes;
 
     /// <summary>Requested build optimization mode.</summary>
-    private readonly RfBuildMode _buildMode;
+    private readonly RaBuildMode _buildMode;
 
     /// <summary>Pointer bit width for the target platform (64 for x86_64, 32 for x86).</summary>
     private readonly int _pointerBitWidth;
@@ -363,9 +363,9 @@ public partial class LlvmEmitter
     /// </summary>
     private bool _traceCurrentRoutine;
 
-    /// <summary>Whether this build reads the crash trace from the stack (Tessera's <c>TraceTable</c>): a traced
+    /// <summary>Whether this build reads the crash trace from the stack (Lapila's <c>TraceTable</c>): a traced
     /// routine pushes no frame and updates no place, each of its calls carries its place as its debug location, and
-    /// the module lists the traced routines in <c>!tessera.trace</c> for the native toolchain's table.</summary>
+    /// the module lists the traced routines in <c>!lapila.trace</c> for the native toolchain's table.</summary>
     private readonly bool _traceFromStack;
 
     /// <summary>The traced routines of a build that reads the trace from the stack, by symbol: the name and file their
@@ -460,7 +460,7 @@ public partial class LlvmEmitter
         GenerateTypeDeclarations();
         Mark(label: "Stage 1 TypeDeclarations");
 
-        // Stage 1b: Emit Suflae module-level `global` storage before routine bodies reference it.
+        // Stage 1b: Emit Mielia module-level `global` storage before routine bodies reference it.
         GenerateGlobalVariables();
         Mark(label: "Stage 1b GlobalVariables");
 
@@ -698,7 +698,7 @@ public partial class LlvmEmitter
     /// Routines with bodies (user program and stdlib) are handled by GenerateRoutineDefinitions().
     /// </summary>
     /// <summary>
-    /// Emits one zero-initialized LLVM <c>@global</c> per Suflae module-level <c>global</c> declaration
+    /// Emits one zero-initialized LLVM <c>@global</c> per Mielia module-level <c>global</c> declaration
     /// and records the name-&gt;symbol mapping in <see cref="_moduleGlobals"/>. The initializer itself is
     /// NOT emitted here — <c>ModuleGlobalsSynthesisPass</c> moved it into a runtime assignment at the top of
     /// <c>start()</c>, so the storage only needs a zero placeholder. The global's resolved type comes from
@@ -775,8 +775,8 @@ public partial class LlvmEmitter
     /// <summary>
     /// Whether a routine needs no external <c>declare</c>: generic definitions / unresolved-type /
     /// generic-owner / synthesized / protocol-abstract routines, and non-extern routines that have
-    /// an emitted body. C-externs are always declared (they never have an RF body and their bare
-    /// symbol can collide with a same-named RF wrapper overload).
+    /// an emitted body. C-externs are always declared (they never have an RA body and their bare
+    /// symbol can collide with a same-named RA wrapper overload).
     /// </summary>
     private static bool ShouldSkipRoutineDeclaration(RoutineInfo routine,
         HashSet<string> routinesWithBodies)
@@ -934,12 +934,12 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Generates runtime support functions.
-    /// External("C") routines from NativeDeclarations.rf are declared via GenerateRoutineDeclarations().
+    /// External("C") routines from NativeDeclarations.rr are declared via GenerateRoutineDeclarations().
     /// </summary>
     private static void GenerateRuntimeSupport()
     {
         // No-op: external("C") routines are handled by GenerateRoutineDeclarations()
-        // via the TypeRegistry (registered from NativeDeclarations.rf).
+        // via the TypeRegistry (registered from NativeDeclarations.rr).
     }
 
     /// <summary>
@@ -951,8 +951,8 @@ public partial class LlvmEmitter
         var output = new StringBuilder();
 
         // Module header
-        output.AppendLine(value: "; ModuleID = 'razorforge_module'");
-        output.AppendLine(value: "source_filename = \"razorforge_module\"");
+        output.AppendLine(value: "; ModuleID = 'revare_module'");
+        output.AppendLine(value: "source_filename = \"revare_module\"");
         output.AppendLine(handler: $"target datalayout = \"{_dataLayout}\"");
         output.AppendLine(handler: $"target triple = \"{_targetTriple}\"");
         output.AppendLine();
@@ -974,7 +974,7 @@ public partial class LlvmEmitter
             output.Append(value: _functionDeclarations);
         }
 
-        AppendRfForwardDeclarations(output: output);
+        AppendRaForwardDeclarations(output: output);
 
         // Shadow-stack helpers, in every mode: System's crash_report reads the trace through the accessors
         // (a build without a trace pushes nothing, so its depth stays 0).
@@ -1001,7 +1001,7 @@ public partial class LlvmEmitter
             // flow is. An unmarked call would make LLVM assume it changes the program's globals, and `nocallback`,
             // which would also say it doesn't, is dropped by llvm-link. Then every path through a failure reloads
             // the trace depth, and a loop with a check in it keeps the depth in flight on its success path too (a
-            // composite check in Suflae ran 5.5 ns instead of 3.5 ns, a chain of three 12 ns instead of 7.7 ns).
+            // composite check in Mielia ran 5.5 ns instead of 3.5 ns, a chain of three 12 ns instead of 7.7 ns).
             output.AppendLine(value: "declare ptr @rf_failure_mold() nounwind cold nofree nosync memory(none)");
             output.AppendLine();
             // A throw: notes the failure and gives its number, with the bit that says the crashable is in the mold,
@@ -1067,12 +1067,12 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Appends the RF function forward declarations, skipping any symbol that now has a definition
-    /// (define wins). A symbol with BOTH a declare and a define is an RF routine, so the two MUST
+    /// Appends the RA function forward declarations, skipping any symbol that now has a definition
+    /// (define wins). A symbol with BOTH a declare and a define is an RA routine, so the two MUST
     /// describe the same function type — the signatures are asserted equal before the declare is
     /// dropped (a mismatch is an internal codegen bug).
     /// </summary>
-    private void AppendRfForwardDeclarations(StringBuilder output)
+    private void AppendRaForwardDeclarations(StringBuilder output)
     {
         foreach ((string name, string line) in _rfRoutineDeclarations)
         {
@@ -1115,14 +1115,14 @@ public partial class LlvmEmitter
     /// </summary>
     private void AppendShadowStackHelpers(StringBuilder output, bool deltaMode = false)
     {
-        // Ingrid's library reads a trace from the stack through Tessera's table, which only a build that reads the
+        // Ingrid's library reads a trace from the stack through Lapila's table, which only a build that reads the
         // trace from the stack writes (the native toolchain). Elsewhere (the JIT, a shadow stack) an empty table
         // stands in, weak, so its unused readers still link.
         if (!_traceFromStack)
         {
-            output.AppendLine(value: "@tessera_trace_table = weak constant [2 x i32] zeroinitializer");
-            output.AppendLine(value: "@tessera_trace_chains = weak constant [0 x { i32, i32 }] zeroinitializer");
-            output.AppendLine(value: "@tessera_trace_frames = weak constant [0 x { ptr, ptr, i32, i32 }] zeroinitializer");
+            output.AppendLine(value: "@lapila_trace_table = weak constant [2 x i32] zeroinitializer");
+            output.AppendLine(value: "@lapila_trace_chains = weak constant [0 x { i32, i32 }] zeroinitializer");
+            output.AppendLine(value: "@lapila_trace_frames = weak constant [0 x { ptr, ptr, i32, i32 }] zeroinitializer");
         }
 
         if (deltaMode)
@@ -1203,12 +1203,12 @@ public partial class LlvmEmitter
         // accessors — System's crash_report (LLVM::trace_depth / LLVM::trace_frames) reads the trace here
         if (_traceFromStack)
         {
-            // Read from the stack (Ingrid's tessera_trace_fill_ring): reading the depth walks the calling flow's frames
+            // Read from the stack (Ingrid's lapila_trace_fill_ring): reading the depth walks the calling flow's frames
             // and fills the ring as a shadow stack of that depth would hold them.
-            output.AppendLine(value: "declare i32 @tessera_trace_fill_ring(ptr)");
+            output.AppendLine(value: "declare i32 @lapila_trace_fill_ring(ptr)");
             output.AppendLine(value: $"define private i32 @_rf_trace_get_depth() {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: "  %d = call i32 @tessera_trace_fill_ring(ptr @_rf_trace_stack)");
+            output.AppendLine(value: "  %d = call i32 @lapila_trace_fill_ring(ptr @_rf_trace_stack)");
             output.AppendLine(value: "  ret i32 %d");
             output.AppendLine(value: "}");
             output.AppendLine();
@@ -1249,7 +1249,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: EntryLabel);
         if (_traceFromStack)
         {
-            output.AppendLine(value: "  %found = call i32 @tessera_trace_innermost(ptr %out)");
+            output.AppendLine(value: "  %found = call i32 @lapila_trace_innermost(ptr %out)");
             output.AppendLine(value: "  ret i32 %found");
         }
         else
@@ -1273,7 +1273,7 @@ public partial class LlvmEmitter
         output.AppendLine();
         if (_traceFromStack)
         {
-            output.AppendLine(value: "declare i32 @tessera_trace_innermost(ptr)");
+            output.AppendLine(value: "declare i32 @lapila_trace_innermost(ptr)");
         }
 
         // Exported entry points for the modules that do not own the stack (see AppendShadowStackForwarders).
@@ -1388,7 +1388,7 @@ public partial class LlvmEmitter
         if (_traceFromStack)
         {
             // The trace read from the stack goes straight into the entry's ring.
-            output.AppendLine(value: "  %d = call i32 @tessera_trace_fill_ring(ptr %framesPtr)");
+            output.AppendLine(value: "  %d = call i32 @lapila_trace_fill_ring(ptr %framesPtr)");
             output.AppendLine(value: "  store i32 %d, ptr %depthPtr");
         }
         else
@@ -1479,7 +1479,7 @@ public partial class LlvmEmitter
         // Trace mode: 2=shadow (debug+release), 0=none (release-time/space).
         int traceMode = _buildMode switch
         {
-            RfBuildMode.Debug or RfBuildMode.Release => 2,
+            RaBuildMode.Debug or RaBuildMode.Release => 2,
             _ => 0
         };
 
@@ -1489,19 +1489,19 @@ public partial class LlvmEmitter
         output.AppendLine(value: "declare void @rf_heap_limit_init()");
         output.AppendLine(value: "declare i32 @rf_heap_limit_status(i32)");
         output.AppendLine(value: "declare void @rf_failure_mold_size(i64)");
-        // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
-        string overflowReport = _registry.Language == Language.Suflae
-            ? "tessera_deep_calls_report"
-            : "tessera_stack_overflow_report";
+        // Revare reports a stack overflow, Mielia (no "stack" in its vocabulary) running out of memory.
+        string overflowReport = _registry.Language == Language.Mielia
+            ? "lapila_deep_calls_report"
+            : "lapila_stack_overflow_report";
         output.AppendLine(handler: $"declare void @{overflowReport}(i64)");
         output.AppendLine(value: "declare void @rf_access_configure(i32, i32, i32, ptr)");
         output.AppendLine(value: "declare void @ingrid_access_place(ptr)");
         output.AppendLine(value: "declare void @rf_set_crash_report(ptr)");
         output.AppendLine(value: "declare void @rf_set_trace_exchange(ptr)");
-        output.AppendLine(value: "declare void @tessera_runtime_crash_report(ptr, ptr, ptr)");
-        output.AppendLine(value: "declare void @tessera_set_library_folder(ptr)");
+        output.AppendLine(value: "declare void @lapila_runtime_crash_report(ptr, ptr, ptr)");
+        output.AppendLine(value: "declare void @lapila_set_library_folder(ptr)");
         // The arguments the program was started with, kept by the runtime for Environment.arguments().
-        output.AppendLine(value: "declare void @tessera_set_arguments(i32, ptr)");
+        output.AppendLine(value: "declare void @lapila_set_arguments(i32, ptr)");
         // The standard library's folder, so a crash the runtime raises names where the program called into the library.
         string library = _registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "";
         output.AppendLine(handler:
@@ -1511,20 +1511,20 @@ public partial class LlvmEmitter
         output.AppendLine(value: "; Entry point");
         output.AppendLine(value: $"define i32 @main(i32 %argc, ptr %argv) {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
-        // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RF_MEMORY_LIMIT).
+        // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RA_MEMORY_LIMIT).
         output.AppendLine(value: "  call void @rf_heap_limit_init()");
         output.AppendLine(value: "  call void @rf_runtime_init()");
         // Every flow's failure mold holds the program's largest crashable: the main thread's is reserved here.
         output.AppendLine(handler: $"  call void @rf_failure_mold_size(i64 {(CrashablesRoomBytes() + 7) / 8 * 8})");
-        output.AppendLine(value: "  call void @tessera_set_arguments(i32 %argc, ptr %argv)");
+        output.AppendLine(value: "  call void @lapila_set_arguments(i32 %argc, ptr %argv)");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
         // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace, and so
         // is a crash the runtime raises (a deadlock, a failed allocation).
         output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
-        output.AppendLine(value: "  call void @rf_set_crash_report(ptr @tessera_runtime_crash_report)");
+        output.AppendLine(value: "  call void @rf_set_crash_report(ptr @lapila_runtime_crash_report)");
         // Each coroutine keeps its own crash trace: the runtime swaps it in and out as the coroutine runs.
         output.AppendLine(value: "  call void @rf_set_trace_exchange(ptr @_rf_trace_exchange_shared)");
-        output.AppendLine(value: "  call void @tessera_set_library_folder(ptr @.crash.library)");
+        output.AppendLine(value: "  call void @lapila_set_library_folder(ptr @.crash.library)");
         // The AccessManager's checks ([debug] deadlock-check, on in debug, and access-order), the language its
         // reports speak, and where the program's code is when it takes an access (the crash trace's top frame).
         (int deadlockCheck, int accessOrder, int language) = AccessChecks(registry: _registry, mode: _buildMode);
@@ -1541,24 +1541,24 @@ public partial class LlvmEmitter
     }
 
     /// <summary>What the emitted entry passes the runtime's AccessManager: whether the deadlock check is on
-    /// (<c>[debug] deadlock-check</c>, else on in a debug build and in a Suflae program with globals), whether the
-    /// access-order check is (<c>[debug] access-order</c>), and the language its reports speak (1 RazorForge, 2
-    /// Suflae). A Suflae statement that uses the globals and a shared entity takes both locks, so two jobs doing it in
+    /// (<c>[debug] deadlock-check</c>, else on in a debug build and in a Mielia program with globals), whether the
+    /// access-order check is (<c>[debug] access-order</c>), and the language its reports speak (1 Revare, 2
+    /// Mielia). A Mielia statement that uses the globals and a shared entity takes both locks, so two jobs doing it in
     /// opposite orders wait on each other: with globals the check is on in every mode, so that ends as a
     /// <c>DeadlockError</c> instead of a hang. It runs only when a job is about to wait.</summary>
     internal static (int DeadlockCheck, int AccessOrder, int Language) AccessChecks(TypeRegistry registry,
-        RfBuildMode mode)
+        RaBuildMode mode)
     {
         bool deadlockCheck = Diagnostics.DiagnosticFlags.DeadlockCheck ??
-                             (mode == RfBuildMode.Debug || HasModuleGlobals(registry: registry));
+                             (mode == RaBuildMode.Debug || HasModuleGlobals(registry: registry));
         return (deadlockCheck ? 1 : 0, Diagnostics.DiagnosticFlags.AccessOrder ? 1 : 0,
-            registry.Language == Language.Suflae ? 2 : 1);
+            registry.Language == Language.Mielia ? 2 : 1);
     }
 
-    /// <summary>Whether the program keeps Suflae globals (the hidden singleton entity holding them exists).</summary>
+    /// <summary>Whether the program keeps Mielia globals (the hidden singleton entity holding them exists).</summary>
     private static bool HasModuleGlobals(TypeRegistry registry)
     {
-        return registry.Language == Language.Suflae &&
+        return registry.Language == Language.Mielia &&
                registry.GetAllTypes().Any(predicate: t => t.BareName == RuntimeContract.ModuleGlobals.EntityName);
     }
 

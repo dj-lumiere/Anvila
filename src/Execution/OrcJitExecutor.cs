@@ -6,7 +6,7 @@ using LLVMSharp.Interop;
 namespace Builder.Execution;
 
 /// <summary>
-/// In-process ORC LLJIT executor: JITs a full RazorForge LLVM-IR module at -O0 and calls its
+/// In-process ORC LLJIT executor: JITs a full Revare LLVM-IR module at -O0 and calls its
 /// <c>@main(argc, argv)</c> directly, skipping the opt/clang/lld subprocess chain, the on-disk exe, and
 /// the process spawn that <see cref="Program.BuildAndRun"/>'s AOT path pays. This is Stage 2b of the
 /// dev-loop-speed work — paired with the warm-compile daemon (which removes the ~5 s stdlib SA), it takes
@@ -15,7 +15,7 @@ namespace Builder.Execution;
 /// The emitted <c>@main</c> is self-contained: it calls <c>rf_runtime_init()</c>, sets trace mode, runs
 /// <c>start()</c>, and returns 0 — so calling it directly does full runtime initialization exactly as the
 /// AOT entry point would. The JIT runs IN THIS PROCESS, so the program's stdout/stderr/stdin are the
-/// caller's own streams (no forwarding) and a program crash (RF fails loudly by aborting) surfaces as this
+/// caller's own streams (no forwarding) and a program crash (RA fails loudly by aborting) surfaces as this
 /// process's crash — identical to running the AOT exe. That is why JIT-and-run happens client-side, never
 /// in the daemon (whose stdio the user can't see).
 ///
@@ -38,13 +38,13 @@ internal static unsafe class OrcJitExecutor
     private const string OrcCreateLljitWhat = "OrcCreateLLJIT";
 
     /// <summary>Ingrid's object as the warm daemon found it for this run (see
-    /// <see cref="Builder.IngridTessera.WatchedObjectPath"/>). The daemon watches the library's sources, so a client
+    /// <see cref="Builder.IngridLapila.WatchedObjectPath"/>). The daemon watches the library's sources, so a client
     /// that got this path skips checking every source itself. Null without a daemon, and then the JIT checks.</summary>
     internal static string? DaemonIngridObjectPath { get; set; }
 
     // --- Fully-lazy on-demand materialization (resident-JIT incremental (B), M2a) ---
     // Set for the duration of one JitAndRunLazy call. The ORC custom definition generator fires (under the
-    // ExecutionSession lock) with the batch of unresolved RF symbols a materialization needs; the callback
+    // ExecutionSession lock) with the batch of unresolved RA symbols a materialization needs; the callback
     // codegens each one's external-linkage one-routine module on demand and adds it, so ONLY what @main
     // transitively reaches AT RUNTIME is ever emitted + JIT-compiled — no caller-side closure walk.
     private static Func<string, string?>? _lazyMaterialize;
@@ -103,15 +103,15 @@ internal static unsafe class OrcJitExecutor
                         >)fromCtxPtr;
 
                 // Load the native runtime so its rf_* exports are visible to ORC's process-wide symbol
-                // search (this is what lets JIT'd RF code link against rf_console_show, the scheduler, …).
+                // search (this is what lets JIT'd RA code link against rf_console_show, the scheduler, …).
                 // The handle is intentionally not stored: the library stays loaded for the process lifetime
                 // by virtue of NativeLibrary.Load, so no explicit reference is needed.
-                string rtName = OperatingSystem.IsWindows() ? "razorforge_runtime.dll"
-                    : OperatingSystem.IsMacOS() ? "librazorforge_runtime.dylib"
-                    : "librazorforge_runtime.so";
+                string rtName = OperatingSystem.IsWindows() ? "revare_runtime.dll"
+                    : OperatingSystem.IsMacOS() ? "librevare_runtime.dylib"
+                    : "librevare_runtime.so";
                 string rtPath = Path.Combine(path1: dir, path2: rtName);
                 _runtimePath = File.Exists(path: rtPath) ? rtPath : null;
-                _ = NativeLibrary.Load(libraryPath: _runtimePath ?? "razorforge_runtime");
+                _ = NativeLibrary.Load(libraryPath: _runtimePath ?? "revare_runtime");
 
                 LLVM.InitializeNativeTarget();
                 LLVM.InitializeNativeAsmPrinter();
@@ -151,7 +151,7 @@ internal static unsafe class OrcJitExecutor
     /// <summary>
     /// JITs <paramref name="llvmIr"/> and calls its <c>@main</c> with the given program arguments (argv[0]
     /// is <paramref name="programName"/>). Returns the program's exit code. The JIT and code stay mapped
-    /// for the life of the process — RF's runtime spawns scheduler threads that may outlive <c>main</c>'s
+    /// for the life of the process — RA's runtime spawns scheduler threads that may outlive <c>main</c>'s
     /// return, so we deliberately do NOT tear the JIT down (the process exit that follows a one-shot run
     /// reclaims everything, exactly as the AOT exe's process exit does).
     /// </summary>
@@ -220,7 +220,7 @@ internal static unsafe class OrcJitExecutor
         JitStage(s: "LLJIT created");
 
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
-        AddIngridTessera(jit: jit, dylib: dylib);
+        AddIngridLapila(jit: jit, dylib: dylib);
 
         CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: tsm),
             what: "OrcLLJITAddLLVMIRModule");
@@ -232,21 +232,21 @@ internal static unsafe class OrcJitExecutor
         return InvokeMain(addr: addr, programName: programName, programArgs: programArgs);
     }
 
-    /// <summary>Adds Ingrid's Tessera library (see <see cref="Builder.IngridTessera"/>) to the dylib: its routines are
+    /// <summary>Adds Ingrid's Lapila library (see <see cref="Builder.IngridLapila"/>) to the dylib: its routines are
     /// not in the runtime DLL, so the process-search generator can't find them. It goes in as the object compiled once
     /// from the library's IR, so a run doesn't parse and compile the whole library: the object is linked only when the
     /// program reaches one of its symbols. Without an object (no clang to compile it) the JIT compiles the IR. The
     /// object's constant-pool symbols were made local when it was compiled, so it is loaded as it is.</summary>
-    private static void AddIngridTessera(LLVMOrcOpaqueLLJIT* jit, LLVMOrcOpaqueJITDylib* dylib)
+    private static void AddIngridLapila(LLVMOrcOpaqueLLJIT* jit, LLVMOrcOpaqueJITDylib* dylib)
     {
-        if ((DaemonIngridObjectPath ?? Builder.IngridTessera.ObjectPath(exeDir: AppContext.BaseDirectory)) is
+        if ((DaemonIngridObjectPath ?? Builder.IngridLapila.ObjectPath(exeDir: AppContext.BaseDirectory)) is
             { } objectPath)
         {
             AddObjectFile(jit: jit, dylib: dylib, objectPath: objectPath, what: "ingrid", localize: false);
             return;
         }
 
-        string ir = File.ReadAllText(path: Builder.IngridTessera.IrPath(exeDir: AppContext.BaseDirectory));
+        string ir = File.ReadAllText(path: Builder.IngridLapila.IrPath(exeDir: AppContext.BaseDirectory));
         CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: ParseToTsm(llvmIr: ir, modName: "ingrid")),
             what: "AddLLVMIRModule(ingrid)");
     }
@@ -312,7 +312,7 @@ internal static unsafe class OrcJitExecutor
 
     /// <summary>Adds the process-search generator to the JIT's main dylib and returns that dylib. The
     /// generator resolves any symbol already loaded in the process, including the rf_* runtime exports
-    /// (razorforge_runtime.dll is loaded in TryInitialize).</summary>
+    /// (revare_runtime.dll is loaded in TryInitialize).</summary>
     private static LLVMOrcOpaqueJITDylib* AddProcessSearchGenerator(LLVMOrcOpaqueLLJIT* jit)
     {
         LLVMOrcOpaqueJITDylib* dylib = LLVM.OrcLLJITGetMainJITDylib(J: jit);
@@ -554,7 +554,7 @@ internal static unsafe class OrcJitExecutor
         LLVMOrcOpaqueLLJIT* jit;
         jit = CreateLljit(builder: builder);
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
-        AddIngridTessera(jit: jit, dylib: dylib);
+        AddIngridLapila(jit: jit, dylib: dylib);
 
         // Load the precompiled stdlib base object — linked into the dylib, NOT JIT-compiled.
         AddObjectFile(jit: jit, dylib: dylib, objectPath: baseObjectPath);
@@ -607,7 +607,7 @@ internal static unsafe class OrcJitExecutor
     /// <summary>
     /// Resident-JIT incremental (B) FULLY-LAZY on-demand materialization (M2a). JITs <paramref name="mainIr"/>
     /// (@main + user routines + shared runtime globals; every stdlib callee an extern <c>declare</c>) and
-    /// attaches an ORC custom definition generator: when a materialization needs an unresolved RF symbol,
+    /// attaches an ORC custom definition generator: when a materialization needs an unresolved RA symbol,
     /// <paramref name="materialize"/> is called with that symbol's IR name (ORC's name without the global prefix)
     /// and returns its external-linkage one-routine IR module (or null → defer to the process-search generator for <c>rf_*</c>
     /// runtime symbols). Codegen happens strictly on demand as ORC resolves each symbol — only what <c>@main</c>
@@ -639,7 +639,7 @@ internal static unsafe class OrcJitExecutor
         _lazyJit = jit;
         _lazyGlobalPrefix = LLVM.OrcLLJITGetGlobalPrefix(J: jit);
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
-        AddIngridTessera(jit: jit, dylib: dylib);
+        AddIngridLapila(jit: jit, dylib: dylib);
 
         // Attach the on-demand generator BEFORE adding main, so main's unresolved stdlib callees route to it.
         // LLVMSharp 20 binds F as a raw `delegate* unmanaged[Cdecl]` fn-ptr (not the managed delegate type),
@@ -658,7 +658,7 @@ internal static unsafe class OrcJitExecutor
         return RunMain(jit: jit, programName: programName, programArgs: programArgs);
     }
 
-    /// <summary>The ORC custom-definition-generator callback: for each requested RF symbol, codegen its
+    /// <summary>The ORC custom-definition-generator callback: for each requested RA symbol, codegen its
     /// external-linkage one-routine module (via the materialize delegate) and add it to the dylib on demand.
     /// Runs under the ExecutionSession lock — adding the module here IS re-entrancy-safe (the added module's
     /// definitions satisfy the in-flight lookup, and its own unresolved callees re-fire this generator). A

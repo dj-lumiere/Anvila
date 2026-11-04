@@ -981,7 +981,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         };
         ctx.Registry.RegisterRoutine(routine: liftedInfo);
         // Attach the RoutineInfo to the lifted declaration so the codegen-input AST dump
-        // (RfAstPrinter) prints its definition — a null ResolvedInfo is otherwise dropped as an
+        // (RaAstPrinter) prints its definition — a null ResolvedInfo is otherwise dropped as an
         // "unregistered surface decl", leaving the dump showing a call to `__lambda_*` with no body.
         liftedRoutine.ResolvedInfo = liftedInfo;
 

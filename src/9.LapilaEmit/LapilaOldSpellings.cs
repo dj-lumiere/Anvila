@@ -1,12 +1,12 @@
 using System.Text.RegularExpressions;
 
-namespace Builder.TesseraEmit;
+namespace Builder.LapilaEmit;
 
 /// <summary>
 /// The rewrites this backend puts its output through: it still writes a few older spellings (`Void`, `#name`
 /// annotations, `require`). Kept next to the writer that needs them.
 /// </summary>
-internal static class TesseraOldSpellings
+internal static class LapilaOldSpellings
 {
     private static readonly Regex AnnotationLine = new(@"^(\s*)#(\[)?(.*)$", RegexOptions.Compiled);
     private static readonly Regex Keyword = new(@"^(\s*)(require|conform|concept)\b", RegexOptions.Compiled);

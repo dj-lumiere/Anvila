@@ -44,7 +44,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     // The build's target and mode: what target_os()/target_arch()/word_size()/page_size()/cache_line()/
     // build_mode() fold to at their call sites.
     private readonly TargetConfig _target;
-    private readonly RfBuildMode _buildMode;
+    private readonly RaBuildMode _buildMode;
 
     /// <summary>Creates a pass instance backed by a full <see cref="DesugaringContext"/>.</summary>
     internal BuilderQueryInliningPass(DesugaringContext ctx)
@@ -61,7 +61,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     /// </summary>
     internal BuilderQueryInliningPass(TypeRegistry registry,
         Dictionary<string, Statement>? variantBodies = null, TargetConfig? target = null,
-        RfBuildMode buildMode = RfBuildMode.Debug)
+        RaBuildMode buildMode = RaBuildMode.Debug)
     {
         _registry = registry;
         _ownedVariantBodies = variantBodies;
@@ -403,9 +403,9 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
                 string caseName = _buildMode switch
                 {
-                    RfBuildMode.Release => "RELEASE",
-                    RfBuildMode.ReleaseTime => "RELEASE_TIME",
-                    RfBuildMode.ReleaseSpace => "RELEASE_SPACE",
+                    RaBuildMode.Release => "RELEASE",
+                    RaBuildMode.ReleaseTime => "RELEASE_TIME",
+                    RaBuildMode.ReleaseSpace => "RELEASE_SPACE",
                     _ => "DEBUG"
                 };
                 ChoiceCaseInfo? found = modeChoice.Cases.FirstOrDefault(predicate: c => c.Name == caseName);
@@ -848,7 +848,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         }
 
         string baseName = string.IsNullOrEmpty(value: type.Module) ||
-                          _registry.Language == Language.Suflae && type.Module == "System"
+                          _registry.Language == Language.Mielia && type.Module == "System"
             ? type.BareName
             : $"{type.Module}.{type.BareName}";
         if (type.TypeArguments is not { Count: > 0 } args)

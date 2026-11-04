@@ -5,9 +5,9 @@ namespace TypeModel.Enums;
 /// </summary>
 public enum Language
 {
-    /// <summary>RazorForge - systems programming with manual memory management.</summary>
-    RazorForge,
+    /// <summary>Revare - systems programming with manual memory management.</summary>
+    Revare,
 
-    /// <summary>Suflae - high-level programming with automatic memory management.</summary>
-    Suflae
+    /// <summary>Mielia - high-level programming with automatic memory management.</summary>
+    Mielia
 }

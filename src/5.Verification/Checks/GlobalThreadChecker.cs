@@ -5,7 +5,7 @@ using TypeModel.Symbols;
 namespace Builder.Verification;
 
 /// <summary>
-/// A RazorForge <c>global</c> is a place the program changes (<c>count += 1</c>). Only one thing is refused: a routine
+/// A Revare <c>global</c> is a place the program changes (<c>count += 1</c>). Only one thing is refused: a routine
 /// that a Work started on another thread reaches (through any chain of calls) reading or changing a plain global that
 /// is changed anywhere in the program. The error names the global and the line the work crosses at, and says to keep
 /// the value in an <c>Unbroken</c> or a <c>Guarded</c>. A global nothing changes is read from anywhere, and a Work

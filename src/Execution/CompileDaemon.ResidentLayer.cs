@@ -19,7 +19,7 @@ internal partial class Program
         /// base and its layers are built for one room, so a program is built against the one of its own.</summary>
         private static readonly Dictionary<string, int> RoomByEntry = new(comparer: StringComparer.Ordinal);
 
-        private static ResidentLayer LayerFor(Language language, RfBuildMode buildMode, int room)
+        private static ResidentLayer LayerFor(Language language, RaBuildMode buildMode, int room)
         {
             string key = language + "\u0001" + (int)buildMode + "\u0001" + room;
             if (!ResidentLayers.TryGetValue(key: key, value: out ResidentLayer? layer))
@@ -43,7 +43,7 @@ internal partial class Program
         /// emitted against the residents of its own build, so no symbol is ever defined twice. Layers live for
         /// the daemon's lifetime (a stdlib or builder change restarts the daemon).</para>
         /// </summary>
-        private sealed class ResidentLayer(RfBuildMode buildMode)
+        private sealed class ResidentLayer(RaBuildMode buildMode)
         {
             public List<string> ObjectPaths { get; } = [];
             public HashSet<string> Symbols { get; } = new(comparer: StringComparer.Ordinal);

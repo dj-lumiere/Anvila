@@ -1403,7 +1403,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         // A reached derive member (lt/le/gt/ge from compare, or ANY capability-conferred derive — compare/eq/hash/
         // represent — on a concrete owner that does not hand-write it) whose per-type body lives ONLY in the
-        // derive-template store (DeriveText.rf `T.lt() -> me.compare(you) is ME_SMALL`, etc.). NOTHING else
+        // derive-template store (DeriveText.rr `T.lt() -> me.compare(you) is ME_SMALL`, etc.). NOTHING else
         // materializes these: they are not hand-written (programBodies), not synthesized by DerivedOperatorPass
         // (synthesizedBodies holds only ne/notcontains/crash_title/wrapper-forwarders), and not a generic
         // INSTANCE (BuildGenericInstanceIfNeeded). Clone the template for this concrete owner (T → owner) so the
@@ -1568,7 +1568,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         ///   <item>choice / flags: <c>return choice_from_serial[T](value: value)</c> / <c>flags_from_serial</c></item>
         ///   <item>variant: <c>variant_from_serial[T]</c>, behind an <c>is None => return none</c> clause when it has a <c>None</c> arm</item>
         /// </list>
-        /// The helpers live in <c>System/Serialization/FromSerial.rf</c>.
+        /// The helpers live in <c>System/Serialization/FromSerial.rr</c>.
         /// </summary>
         private void MaterializeFromSerialBodyIfNeeded(RoutineInfo r, string key)
         {
@@ -2638,12 +2638,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             expectedOwnerModule: resolvedRoutine.OwnerType?.FullName is { } ownerFn
                 ? TypeSymbol.StripTypeArgs(name: ownerFn)
                 : null,
-            // Realm-scoped: an SF overlay (`SF::System.Dict[K,V]`) and the RF type it wraps
+            // Realm-scoped: an MI overlay (`MI::System.Dict[K,V]`) and the RA type it wraps
             // (`System.Dict[K,V]`) share the same bare AST name AND owner module (`System.Dict`), so a
-            // module-only match binds the SF overlay's forwarder instance to the RF body — e.g. the SF
-            // `Dict.add` forwarder (`me.inner.add`) gets the RF `Dict.add` body (`me.keys`), which then
-            // reaches codegen calling `me.keys` on the fieldless overlay. Pass the owner realm so the SF
-            // instance resolves to the SF forwarder decl (mirrors the genDef-realm path above).
+            // module-only match binds the MI overlay's forwarder instance to the RA body — e.g. the MI
+            // `Dict.add` forwarder (`me.inner.add`) gets the RA `Dict.add` body (`me.keys`), which then
+            // reaches codegen calling `me.keys` on the fieldless overlay. Pass the owner realm so the MI
+            // instance resolves to the MI forwarder decl (mirrors the genDef-realm path above).
             expectedOwnerRealm: resolvedRoutine.OwnerType?.Realm,
             expectedSurfaceRealm: resolvedRoutine.SurfaceRealm,
             expectedSpecialization: resolvedRoutine.GenericDefinition.IsSpecialization
@@ -3047,7 +3047,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // Wrapper forwarder bodies call as_entity()/extract() on the inner type, which requires
         // T is EntityType (entity layout). For wrapper types (Hijacked, Retained, etc.)
         // with a non-entity concrete T, skip the variant body (which may be a forwarder) and
-        // fall through to the stdlib AST lookup below — the RF source handles all T without
+        // fall through to the stdlib AST lookup below — the RA source handles all T without
         // requiring entity layout.
         // NOTE: both the synthesized forwarder RoutineInfo and the stdlib RoutineInfo for
         // the same wrapper memberRoutine share the same RegistryKey, so we check by wrapper type
@@ -3153,8 +3153,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         string fallbackAstName = genDef != null
             ? BuildAstName(genDef: genDef, routineName: genMemberRoutine.Name)
             : genMemberRoutine.Name + "[generic]";
-        // Scoped by the owner's module and realm like the other lookups: Suflae's `DictEmittable.emit` and
-        // RazorForge's share the name, and RazorForge's body reads constants Suflae's file does not have.
+        // Scoped by the owner's module and realm like the other lookups: Mielia's `DictEmittable.emit` and
+        // Revare's share the name, and Revare's body reads constants Mielia's file does not have.
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: fallbackAstName,
             expectedDefinition: genMemberRoutine,
             expectedParamCount: genMemberRoutine.Parameters.Count,
@@ -3336,7 +3336,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             RecoveryOf = genMemberRoutine.RecoveryOf,
             SurfaceRealm = genMemberRoutine.SurfaceRealm,
             Recovery = genMemberRoutine.Recovery,
-            // Carry the receiver-handle type through monomorphization: a Suflae entity's `me` is the
+            // Carry the receiver-handle type through monomorphization: a Mielia entity's `me` is the
             // Roamed[E] handle (MeType), and its owner param must be substituted (Roamed[Box[T]] →
             // Roamed[Box[S64]]) so codegen binds `me` to the handle and deref's through the controller
             // instead of reading the RC refcount off the bare entity.
@@ -3541,7 +3541,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return type.Name;
         }
 
-        // A Suflae entity member routine has `MeType = Roamed[E]` (SF slice 2 in SignatureResolver),
+        // A Mielia entity member routine has `MeType = Roamed[E]` (MI slice 2 in SignatureResolver),
         // but its SOURCE receiver is the bare entity `E` — you never write `routine Roamed[Box[T]].get`.
         // Unwrap the Roamed handle so the AST-index name matches the declaration (`Box[T].get`),
         // otherwise the generic body is looked up under `Roamed[Box[T]].get`, never found, and codegen
@@ -3815,14 +3815,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
     /// <summary>
     /// Narrows a candidate list by module and realm, preferring exact matches while falling back to
-    /// the full set when no match exists (non-overlay types or RF-only compiles).
+    /// the full set when no match exists (non-overlay types or RA-only compiles).
     /// </summary>
     private static List<RoutineDeclaration> NarrowCandidatesByModuleAndRealm(
         List<RoutineDeclaration> candidates, string? expectedOwnerModule,
         string? expectedOwnerRealm)
     {
         // Module-scoped disambiguation: the same bare AST name (`List[T].add_last`) is declared in both
-        // the RazorForge-realm `System.List` and the Suflae-realm overlay `Suflae.List`. Prefer the
+        // the Revare-realm `System.List` and the Mielia-realm overlay `Mielia.List`. Prefer the
         // candidate whose registered owner module matches; fall back to the full set when none match.
         if (expectedOwnerModule != null)
         {
@@ -3850,8 +3850,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             }
             else if (expectedOwnerRealm != TypeModel.Realms.Shared && expectedOwnerModule != null)
             {
-                // A Suflae type never takes the body of RazorForge's same-named type: Suflae's `List` has no
-                // `destruct` of its own, and RazorForge's reads member variables Suflae's list does not have.
+                // A Mielia type never takes the body of Revare's same-named type: Mielia's `List` has no
+                // `destruct` of its own, and Revare's reads member variables Mielia's list does not have.
                 // Its routine is then built the way any routine without a written declaration is. A body
                 // written for every type (`hijack`) still applies.
                 candidates = candidates.Where(predicate: d =>
@@ -4029,7 +4029,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// and the AST's bare <c>SortedSet</c> compare equal.</summary>
     private static string MatchableBaseName(string typeName)
     {
-        // A qualified spelling (`RF::System.List[T]` is written `System.List`) matches by its last segment.
+        // A qualified spelling (`RA::System.List[T]` is written `System.List`) matches by its last segment.
         string baseName = StripGenericSuffix(typeName: typeName);
         baseName = baseName[(baseName.LastIndexOf(value: '.') + 1)..];
         if (BorrowWrapperNames.Contains(item: baseName) &&

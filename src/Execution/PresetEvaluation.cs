@@ -13,14 +13,14 @@ namespace Builder.Execution;
 ///
 /// <para>The program is built a second time as an evaluator: the user files are copied into a temporary project,
 /// the entry file's <c>start()</c> (or its top-level statements) is replaced by one that prints each such preset as
-/// RazorForge source (<c>T.preset_literal()</c>), and the evaluator is built and run as a child builder process (a
+/// Revare source (<c>T.preset_literal()</c>), and the evaluator is built and run as a child builder process (a
 /// crash or a runaway loop in a preset stays there). Each printed text is parsed back and becomes the preset's
 /// initializer, a literal or a construction from literals, before the real build analyzes anything.</para>
 /// </summary>
 internal static class PresetEvaluation
 {
     /// <summary>Set for the child build, whose presets are computed at run time as before (it is the evaluator).</summary>
-    private const string ChildMarker = "RF_PRESET_EVALUATION";
+    private const string ChildMarker = "RA_PRESET_EVALUATION";
 
     /// <summary>The line that comes before each printed preset value.</summary>
     private const string ValueMarker = "@@PRESET";
@@ -418,9 +418,9 @@ internal static class PresetEvaluation
     private static (int Exit, string Output, string Errors) RunChild(string evaluatorEntry)
     {
         // The language's own builder, next to this library (the entry assembly may be a test host).
-        string name = Builder.Frontends.Languages.OfFile(fileName: evaluatorEntry) == Language.Suflae
-            ? "Suflae"
-            : "RazorForge";
+        string name = Builder.Frontends.Languages.OfFile(fileName: evaluatorEntry) == Language.Mielia
+            ? "Mielia"
+            : "Revare";
         string executable = Path.Combine(path1: BuilderLocation.Directory,
             path2: name + (OperatingSystem.IsWindows() ? ".exe" : ""));
         var psi = new ProcessStartInfo
@@ -433,7 +433,7 @@ internal static class PresetEvaluation
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(path: evaluatorEntry)!,
             // The marker names the evaluator's entry file: only its start() runs there (EvaluatorEntry).
-            Environment = { [key: ChildMarker] = Path.GetFullPath(path: evaluatorEntry), [key: "RF_NO_DAEMON"] = "1" }
+            Environment = { [key: ChildMarker] = Path.GetFullPath(path: evaluatorEntry), [key: "RA_NO_DAEMON"] = "1" }
         };
         using Process child = Process.Start(startInfo: psi) ??
                               throw new InvalidOperationException(message: "The preset evaluator could not start.");

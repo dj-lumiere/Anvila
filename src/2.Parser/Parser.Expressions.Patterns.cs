@@ -345,7 +345,7 @@ public partial class Parser
             return ParseRecoveryPrefix();
         }
 
-        // Handle steal expression (steal expr = ownership transfer, RazorForge only)
+        // Handle steal expression (steal expr = ownership transfer, Revare only)
         if (CheckAndAdvance(type: TokenType.Steal))
         {
             SourceLocation stealLocation = GetLocation(token: PeekToken(offset: -1));

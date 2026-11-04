@@ -208,7 +208,7 @@ public partial class Parser
     /// 2. Name[T, U] - Generic named type
     /// 3. Name - Simple named type
     ///
-    /// Named types support qualified paths like razorforge/Collections.Dict
+    /// Named types support qualified paths like revare/Collections.Dict
     /// for referencing types from other modules in type annotations.
     /// </remarks>
     private TypeExpression ParseBaseType()
@@ -401,7 +401,7 @@ public partial class Parser
 
         string? realm = ReadRealmQualifier(name: ref name);
 
-        // Support qualified type paths like RazorForge/Collections.Dict
+        // Support qualified type paths like Revare/Collections.Dict
         // This allows referencing types from other modules in type annotations
         name = ReadQualifiedTypePath(head: name);
 
@@ -435,16 +435,16 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Reads an optional realm qualifier (<c>RF::System.List</c>) starting after the head identifier. When
+    /// Reads an optional realm qualifier (<c>RA::System.List</c>) starting after the head identifier. When
     /// a <c>::</c> follows, the head is the realm tag and the <c>.</c>/<c>/</c>-segmented remainder is
     /// consumed into <paramref name="name"/>; returns the realm tag (or null when absent).
     /// </summary>
     private string? ReadRealmQualifier(ref string name)
     {
-        // Realm qualifier: `RF::System.List` — the identifier before `::` is a realm tag (RF/SF), and the
-        // rest is a qualified type name resolved in that realm. `RF::` reaches the RazorForge/bare realm
-        // from a Suflae file (the resolver skips the entity->Roamed lowering for it). The qualified name
-        // after `::` uses `.`/`/` segment separators (e.g. `RF::System.List`), consumed here so the general
+        // Realm qualifier: `RA::System.List` — the identifier before `::` is a realm tag (RA/MI), and the
+        // rest is a qualified type name resolved in that realm. `RA::` reaches the Revare/bare realm
+        // from a Mielia file (the resolver skips the entity->Roamed lowering for it). The qualified name
+        // after `::` uses `.`/`/` segment separators (e.g. `RA::System.List`), consumed here so the general
         // `/`-path loop below is a no-op.
         if (!CheckAndAdvance(type: TokenType.DoubleColon))
         {
@@ -475,7 +475,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Reads a slash-separated qualified type path (<c>RazorForge/Collections.Dict</c>) starting from an
+    /// Reads a slash-separated qualified type path (<c>Revare/Collections.Dict</c>) starting from an
     /// already-consumed <paramref name="head"/> identifier, where a <c>.</c> separates the trailing type
     /// name from the module path and ends the path.
     /// </summary>
@@ -489,7 +489,7 @@ public partial class Parser
                 value: ConsumeIdentifier(
                     errorMessage: "Expected module path component after '/'"));
 
-            // Dot separates the type name from the slash-based module path: razorforge/System.Bool
+            // Dot separates the type name from the slash-based module path: revare/System.Bool
             if (CheckAndAdvance(type: TokenType.Dot))
             {
                 nameSb.Append(value: '.');

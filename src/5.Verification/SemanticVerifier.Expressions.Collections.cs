@@ -26,11 +26,11 @@ public sealed partial class SemanticVerifier
             // wrapped collection type — unwrap so the literal can resolve its base name
             // (PriorityQueue, SortedSet, etc.) from the expected type even when LHS is
             // `Retained[SortedSet[S64]]` etc. Use base-name extraction since instantiated record
-            // types have Name like "Foo", not bare "Retained". Roamed[T] is the Suflae lowering of an
+            // types have Name like "Foo", not bare "Retained". Roamed[T] is the Mielia lowering of an
             // annotated collection type (`var l: List[S64]` ⇒ `Roamed[List[S64]]`); it MUST be
             // transparent here too, else a bare literal element loses its S64 context and falls back
-            // to the Suflae `Int` default — producing `List[Int]` that won't assign to the
-            // `Roamed[List[S64]]` slot (RF-S201). Inferring the element type through the wrapper is
+            // to the Mielia `Int` default — producing `List[Int]` that won't assign to the
+            // `Roamed[List[S64]]` slot (RA-S201). Inferring the element type through the wrapper is
             // exactly the builder's job.
             if (current is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } recRT &&
                 GetTypeBaseName(type: recRT) is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked
@@ -47,9 +47,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Picks the collection literal's own type from an expected (annotation) type. A Suflae entity slot
+    /// Picks the collection literal's own type from an expected (annotation) type. A Mielia entity slot
     /// pins the annotation as <c>Roamed[System.List[T]]</c>, but the literal itself must stay the BARE
-    /// collection — it builds a fresh <c>create + add_last</c> sequence and the SF binding lowering roams
+    /// collection — it builds a fresh <c>create + add_last</c> sequence and the MI binding lowering roams
     /// the result at the var/field/assignment site (exactly like a <c>List[T]()</c> constructor RHS).
     /// Stamping <c>Roamed</c> onto the literal would make its <c>add</c>/<c>add_last</c> calls target the
     /// Roamed handle, which has no collection memberRoutine → codegen "no resolved member routine" (or, once the temp is
@@ -355,7 +355,7 @@ public sealed partial class SemanticVerifier
                 }
             }
 
-            // An entity element inferred from the elements is a shared handle slot in Suflae.
+            // An entity element inferred from the elements is a shared handle slot in Mielia.
             return expectedElementType != null
                 ? elementType
                 : _typeResolver.RoamInferredSlot(inferred: elementType);
@@ -607,7 +607,7 @@ public sealed partial class SemanticVerifier
         {
             TypeSymbol first = AnalyzeExpression(expression: set.Elements[index: 0],
                 expectedType: expectedElementType);
-            // An entity element inferred from the elements is a shared handle slot in Suflae.
+            // An entity element inferred from the elements is a shared handle slot in Mielia.
             return expectedElementType != null
                 ? first
                 : _typeResolver.RoamInferredSlot(inferred: first);
@@ -687,7 +687,7 @@ public sealed partial class SemanticVerifier
         (TypeSymbol? keyType, TypeSymbol? valueType) = InferDictKeyValueTypes(dict: dict,
             expectedKeyType: expectedKeyType,
             expectedValueType: expectedValueType);
-        // An entity key or value inferred from the pairs is a shared handle slot in Suflae.
+        // An entity key or value inferred from the pairs is a shared handle slot in Mielia.
         keyType = keyType is null || expectedKeyType != null ? keyType : _typeResolver.RoamInferredSlot(inferred: keyType);
         valueType = valueType is null || expectedValueType != null
             ? valueType
@@ -736,7 +736,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Determines a dict literal's key/value types: from an explicit annotation, inferred from the first
-    /// pair, taken from the expected type for an empty literal, else RF-S (empty, no annotation) with
+    /// pair, taken from the expected type for an empty literal, else RA-S (empty, no annotation) with
     /// error types.
     /// </summary>
     private (TypeSymbol? keyType, TypeSymbol? valueType) InferDictKeyValueTypes(
@@ -811,7 +811,7 @@ public sealed partial class SemanticVerifier
             TypeSymbol? elemExpected = expectedElementTypes?[i];
             TypeSymbol elementType = AnalyzeExpression(expression: tuple.Elements[i],
                 expectedType: elemExpected);
-            // An entity item inferred from its value is a shared handle slot in Suflae, as one written in the type is.
+            // An entity item inferred from its value is a shared handle slot in Mielia, as one written in the type is.
             // A bare entity written where the type says a handle (`Roamed[E]`) is that handle: the tuple has the type it is
             // expected to have.
             elementTypes.Add(item: elemExpected == null
@@ -821,7 +821,7 @@ public sealed partial class SemanticVerifier
                     ? elemExpected
                     : elementType);
 
-            // RF-S413: a tuple owns its items, so a variable, field or container element placed in one
+            // RA-S413: a tuple owns its items, so a variable, field or container element placed in one
             // without `steal` would have two owners (both tear it down).
             if (ChecksHolderOf(type: elementType) &&
                 ReadsKeptEntity(value: tuple.Elements[i], includeVariables: true) &&
@@ -898,7 +898,7 @@ public sealed partial class SemanticVerifier
 
         // Bare unsuffixed integer literals default to S64; re-infer them against the chain's concrete
         // integer operand so `0 < n < 100` (n: S32) conforms the literals to S32 instead of tripping
-        // RF-S060. A single pivot (the first non-literal fixed-width operand) covers the whole chain,
+        // RA-S060. A single pivot (the first non-literal fixed-width operand) covers the whole chain,
         // so even `0 < 5 < n` conforms both literals. Mirrors the pairwise literal re-inference in
         // AnalyzeBinaryExpression.
         // A float or decimal pivot takes the bare numbers too (`-1.0 <= x <= 1.0` with a B128 `x`).

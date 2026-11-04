@@ -192,7 +192,7 @@ internal sealed class WrapperForwardingPass
             return null;
         }
 
-        // Representation-unified Suflae entity member routine: its me is ALREADY Roamed[E]
+        // Representation-unified Mielia entity member routine: its me is ALREADY Roamed[E]
         // (SignatureResolver sets MeType), so the "bare" routine IS the Roamed routine — it does its
         // own lock_enter + project through RoamManager.data. Wrapping it in the projecting forwarder
         // below would project the controller to the entity and hand a BARE entity to a routine that
@@ -887,7 +887,7 @@ internal sealed class WrapperForwardingPass
         // param), never the bare generic def. The shared synth body is re-resolved by
         // later consumers (SA lazy analysis, GMP rewrite, codegen re-lookup) under a
         // substitution keyed on T; the open form is idempotent there — the same shape
-        // SA bakes into Retained.rf's source bodies — while a bare def gets freshly
+        // SA bakes into Retained.rr's source bodies — while a bare def gets freshly
         // instantiated with whatever binding is at hand, double-wrapping the controller
         // (RetainManager[RetainManager[X]]) and killing forwarder body emission
         // (undefined symbol at link).

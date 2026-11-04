@@ -57,7 +57,7 @@ internal static class GenericAstRewriter
 
         if (enclosingRoutine?.OwnerType is { } ownerType)
         {
-            // The routine's own `me` type when it has one (a Suflae entity's routine takes the `Roamed[E]` handle as
+            // The routine's own `me` type when it has one (a Mielia entity's routine takes the `Roamed[E]` handle as
             // `me`), else its owner: both substituted the same way.
             TypeSymbol meSource = enclosingRoutine.MeType ?? ownerType;
             TypeSymbol resolvedOwner = ctx.ResolveType(original: meSource) ?? meSource;
@@ -1489,7 +1489,7 @@ internal static class GenericAstRewriter
     /// A <c>try</c>/<c>check</c> over one member call that could not be bound while its receiver was
     /// still generic (the step of a <c>for</c> loop over <c>List[Work[V]]</c>, lowered after analysis): with
     /// the receiver concrete, bind the call to the recovery variant of that receiver's failable routine. A shared
-    /// entity's handle (<c>Roamed[E]</c>, a Suflae iterator) binds to the entity's routine, and the call reaches
+    /// entity's handle (<c>Roamed[E]</c>, a Mielia iterator) binds to the entity's routine, and the call reaches
     /// the entity through the handle as any call on it does (RoamedProjectionLoweringPass).
     /// Anything else is left as it is.
     /// </summary>
@@ -2688,7 +2688,7 @@ internal static class GenericAstRewriter
         // Substitute the member-access type through the type map: a field read `me.inner` typed
         // `System.List[T]` on the generic def must become `System.List[System.S32]` in the instantiation.
         // Copying the raw generic-def type left `T` unsubstituted, so a downstream re-resolution of the
-        // unresolved-`T` receiver mis-bound the memberRoutine to the shadowing same-named type (the SF-overlay
+        // unresolved-`T` receiver mis-bound the memberRoutine to the shadowing same-named type (the MI-overlay
         // wrapper) → self-recursion.
         rewritten.ResolvedType = ctx.ResolveType(original: me.ResolvedType) ?? me.ResolvedType;
         return rewritten;
@@ -2709,7 +2709,7 @@ internal static class GenericAstRewriter
         // Resolve the receiver name through the string substitution map first,
         // then fall back to the literal identifier name (already concrete).
         // Handles both IdentifierExpression("T") and TypeExpression("T") receivers ??
-        // the RF parser may produce either depending on context.
+        // the RA parser may produce either depending on context.
         string? typeName = callee.Object switch
         {
             IdentifierExpression { Name: "me" } when ctx.ParamTypes.TryGetValue(key: "me",
@@ -2780,7 +2780,7 @@ internal static class GenericAstRewriter
 
             "full_type_name" when textType != null => new LiteralExpression(
                 Value: ctx.Registry.ReflectedQualifiedName(type: typeInfo,
-                    omitBaseModule: ctx.Registry.Language == Language.Suflae),
+                    omitBaseModule: ctx.Registry.Language == Language.Mielia),
                 LiteralType: TokenType.TextLiteral,
                 Location: location) { ResolvedType = textType },
 
@@ -2942,7 +2942,7 @@ internal static class GenericAstRewriter
 
         if (enclosingRoutine?.OwnerType is { } ownerType)
         {
-            // The routine's own `me` type when it has one (a Suflae entity's routine takes the `Roamed[E]` handle as
+            // The routine's own `me` type when it has one (a Mielia entity's routine takes the `Roamed[E]` handle as
             // `me`), else its owner: both substituted the same way.
             TypeSymbol meSource = enclosingRoutine.MeType ?? ownerType;
             TypeSymbol resolvedOwner = ctx.ResolveType(original: meSource) ?? meSource;
@@ -3181,7 +3181,7 @@ internal static class GenericAstRewriter
         RewriteContext ctx)
     {
         TypeSymbol? source = ResolveExpandSource(sourceType: expand.SourceType, ctx: ctx);
-        if (Environment.GetEnvironmentVariable(variable: "RF_DEBUG_EXPAND") != null)
+        if (Environment.GetEnvironmentVariable(variable: "RA_DEBUG_EXPAND") != null)
         {
             Console.Error.WriteLine(value: $"[expand] {expand.SourceType.Name} -> {source?.Name ?? "null"} clone={ctx.CloneOnly} subs=[{string.Join(separator: ",", values: ctx.TypeSubs?.Select(selector: kv => kv.Key + "=" + kv.Value.Name) ?? [])}] at {expand.Location.Line}");
             Console.Error.WriteLine(value: string.Join(separator: " < ", values: Environment.StackTrace.Split(separator: '\n').Select(selector: l => l.Trim()).Where(predicate: l => l.Contains(value: "Builder.") && !l.Contains(value: "GenericAstRewriter")).Take(4)));
@@ -3476,7 +3476,7 @@ internal static class GenericAstRewriter
 
     /// <summary>
     /// Buildtime type test: <c>&lt;T&gt; is &lt;Type&gt;</c> where <c>T</c> resolves to a concrete type in
-    /// this instantiation. RF has no inheritance, so this is exact type-identity equality. Returns null
+    /// this instantiation. RA has no inheritance, so this is exact type-identity equality. Returns null
     /// when it can't be decided here (operand not a substituted type parameter, or target unresolved).
     /// </summary>
     private static bool? TryEvalTypeParamIs(Expression operand, TypePattern typePattern,

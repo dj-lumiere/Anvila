@@ -10,7 +10,7 @@ internal static class BuilderLocation
     /// <summary>The folder the builder runs from: the standard library, the native runtime and LLVM sit in or above it.</summary>
     internal static string Directory => Path.TrimEndingDirectorySeparator(path: AppContext.BaseDirectory);
 
-    /// <summary>Whether this process is the `dotnet` host running a managed builder dll (<c>dotnet RazorForge.dll</c>).</summary>
+    /// <summary>Whether this process is the `dotnet` host running a managed builder dll (<c>dotnet Revare.dll</c>).</summary>
     internal static bool RunsThroughDotnetHost =>
         Path.GetFileNameWithoutExtension(path: Environment.ProcessPath ?? "")
             .Equals(value: "dotnet", comparisonType: StringComparison.OrdinalIgnoreCase);

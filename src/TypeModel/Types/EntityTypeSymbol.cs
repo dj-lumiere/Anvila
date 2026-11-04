@@ -277,16 +277,16 @@ public class EntityTypeSymbol : TypeSymbol
 
     // The cycle-detection maps are [ThreadStatic] and SHARED across every entity definition,
     // so they must be keyed by the MODULE-QUALIFIED resolved name. Two same-Named defs from
-    // different modules/realms — RazorForge `System.List` and the Suflae-realm overlay `Suflae.List`
+    // different modules/realms — Revare `System.List` and the Mielia-realm overlay `Mielia.List`
     // — both produce the bare `List[System.S32]`; without the qualifier, a re-entrant instantiation
     // of one (triggered while substituting a field of the other) hits the "already in progress"
     // branch and returns the WRONG module's in-progress entity. The entity's own Name stays bare
     // (it drives LLVM mangling and the resolution-cache short alias).
-    // …and REALM-qualified too: `System.List` exists in BOTH the RazorForge realm (real list) and the
-    // Suflae realm (the `{ inner }` wrapper). They share module AND bare resolved name, so a realm-free
-    // cycleKey lets an in-progress SF `System.List[S32]` be handed back for an RF `System.List[S32]`
-    // CreateInstance (and vice versa) — the wrapper's `RF::System.List[T]()` inner would then resolve to
-    // the SF entity and self-recurse. Prefix the non-ambient realm to keep the two world-lines distinct.
+    // …and REALM-qualified too: `System.List` exists in BOTH the Revare realm (real list) and the
+    // Mielia realm (the `{ inner }` wrapper). They share module AND bare resolved name, so a realm-free
+    // cycleKey lets an in-progress MI `System.List[S32]` be handed back for an RA `System.List[S32]`
+    // CreateInstance (and vice versa) — the wrapper's `RA::System.List[T]()` inner would then resolve to
+    // the MI entity and self-recurse. Prefix the non-ambient realm to keep the two world-lines distinct.
     private string BuildCycleKey(string resolvedName)
     {
         string moduleQualified = string.IsNullOrEmpty(value: Module)

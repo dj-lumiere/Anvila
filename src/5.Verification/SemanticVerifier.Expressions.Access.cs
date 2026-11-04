@@ -15,7 +15,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The type whose <c>getitem</c>/<c>setitem</c> an index on <paramref name="type"/> uses: the inner value of a
-    /// transparent protocol, and the entity behind a Suflae entity handle (<c>h.kids[0]</c> with <c>kids</c> a
+    /// transparent protocol, and the entity behind a Mielia entity handle (<c>h.kids[0]</c> with <c>kids</c> a
     /// <c>Roamed[List[Int]]</c> field indexes the list, as a member call on the handle calls the list's routine).
     /// </summary>
     private TypeSymbol IndexLookupType(TypeSymbol type)
@@ -119,7 +119,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports the Suflae RF-S nullable-entity-dereference error for a member access on a possibly-none
+    /// Reports the Mielia RA-S nullable-entity-dereference error for a member access on a possibly-none
     /// entity receiver, tailoring the receiver description and hint to the receiver expression shape.
     /// </summary>
     private void ReportNullableEntityDeref(MemberExpression member)
@@ -173,7 +173,7 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // Suflae: reading through an `E?` (`Optional[Roamed[E]]`) before checking it. A checked local is
+        // Mielia: reading through an `E?` (`Optional[Roamed[E]]`) before checking it. A checked local is
         // narrowed to the handle, a field read this way is narrowed by a check on the same path (`if a.b is None`), else it is bound to a local and checked there.
         if (SharedEntities.IsOptionalEntityRef(type: objectType) && !IsStdlibFile(filePath: member.Location.FileName))
         {
@@ -396,7 +396,7 @@ public sealed partial class SemanticVerifier
 
         // The index param is often a token (`Dict.getitem!(key: Viewing[K])`) the call makes from a bare `K`.
         // Unwrap it to the key type so a bare integer key literal (`d[1]`) conforms to e.g. S64 instead of
-        // stalling at the Suflae `Int` default.
+        // stalling at the Mielia `Int` default.
         if (paramType.TypeArguments is { Count: >= 1 } referArgs &&
             GetTypeBaseName(type: paramType) is Declaration.RuntimeContract.Viewing
                 or Declaration.RuntimeContract.Modifying)
@@ -436,8 +436,8 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The types a collection index may have, most preferred first: <c>U64</c>, and before it <c>Int</c> when
-    /// the build's language counts with arbitrary-precision integers (Suflae's own collections take an
-    /// <c>Int</c> index; one from RazorForge still takes a <c>U64</c>).
+    /// the build's language counts with arbitrary-precision integers (Mielia's own collections take an
+    /// <c>Int</c> index; one from Revare still takes a <c>U64</c>).
     /// </summary>
     private List<TypeSymbol> IndexTypes()
     {
@@ -906,7 +906,7 @@ public sealed partial class SemanticVerifier
             RestoreEndedNames(names: parameterNames, ended: endedOuterNames);
         }
 
-        // RF-S413, as for `return`: a lambda that gives back a member variable or a container element of an entity
+        // RA-S413, as for `return`: a lambda that gives back a member variable or a container element of an entity
         // (`t => t.members` over teams) hands its caller an entity the holder still keeps.
         if (ChecksHolderOf(type: returnType) &&
             ReadsKeptEntity(value: lambda.Body, includeVariables: false) &&
@@ -917,7 +917,7 @@ public sealed partial class SemanticVerifier
                 location: lambda.Body.Location);
         }
 
-        // Validate captured variables (RazorForge only)
+        // Validate captured variables (Revare only)
         // Lambda bodies can reference variables from enclosing scope - these are captures
         ValidateLambdaCaptures(lambda: lambda,
             enclosingScopeVariables: enclosingScopeVariables,
@@ -976,7 +976,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Validates that lambda captures don't include forbidden types and that all
-    /// local-scope captures are declared in the 'given' clause (RazorForge only).
+    /// local-scope captures are declared in the 'given' clause (Revare only).
     /// </summary>
     /// <param name="lambda">The lambda expression being analyzed.</param>
     /// <param name="enclosingScopeVariables">All variables available in the enclosing scope.</param>
@@ -1009,7 +1009,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Validates a single identifier referenced in a lambda body as a potential capture: skips parameters
     /// and special identifiers, validates the captured type, and enforces the 'given' clause for local
-    /// captures (RazorForge only).
+    /// captures (Revare only).
     /// </summary>
     private void ValidateLambdaCaptureIdentifier(LambdaExpression lambda, IdentifierExpression id,
         IReadOnlyDictionary<string, VariableInfo> enclosingScopeVariables,
@@ -1022,7 +1022,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // `me` of a record is a value the lambda keeps a copy of, and a shared entity's `me` (Suflae) one more
+        // `me` of a record is a value the lambda keeps a copy of, and a shared entity's `me` (Mielia) one more
         // handle. An entity's `me` is reached for the call only, as a token is.
         if (id.Name == "me")
         {
@@ -1489,7 +1489,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Adapts bare-literal range bounds to match the other concrete numeric endpoint type when no forced
-    /// <c>Range[T]</c> context is present (RF-S767): <c>0 til me.count()</c> where <c>count()</c> is U64
+    /// <c>Range[T]</c> context is present (RA-S767): <c>0 til me.count()</c> where <c>count()</c> is U64
     /// makes <c>0</c> a U64, not the S64 literal default. Returns the (possibly re-analyzed) start/end types.
     /// </summary>
     private (TypeSymbol StartType, TypeSymbol EndType) AdaptLiteralRangeBounds(
@@ -1920,7 +1920,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The values of a construction no creator takes fill the member variables in order (<c>Pair[S32, S32](1, 2)</c> is
     /// <c>Pair[S32, S32](first: 1, second: 2)</c>), one for each. A value that is the bare name of another member
-    /// variable needs a label (RF-S510). Returns false when the count differs.
+    /// variable needs a label (RA-S510). Returns false when the count differs.
     /// </summary>
     private bool NamePositionalArgumentsByFieldOrder(TypeSymbol type, CreatorExpression creator)
     {

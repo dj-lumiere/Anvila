@@ -9,8 +9,8 @@ using TypeModel.Types;
 namespace Builder.Verification;
 
 /// <summary>
-/// Suflae's programs see RazorForge's library only through Suflae's own: a type or routine of a RazorForge library
-/// file is usable from a Suflae program when an <c>@rf</c> declaration of Suflae's library binds it. Everything else
+/// Mielia's programs see Revare's library only through Mielia's own: a type or routine of a Revare library
+/// file is usable from a Mielia program when an <c>@ra</c> declaration of Mielia's library binds it. Everything else
 /// the two languages share in the build (tokens, wrappers, the builder's helpers) stays out of reach.
 /// </summary>
 public sealed partial class SemanticVerifier
@@ -20,65 +20,65 @@ public sealed partial class SemanticVerifier
 
     private int _rfBoundNamesFrom = -1;
 
-    private HashSet<string> RfBoundNames()
+    private HashSet<string> RaBoundNames()
     {
-        int count = _registry.RfBindings.Count;
+        int count = _registry.RaBindings.Count;
         if (_rfBoundNames == null || _rfBoundNamesFrom != count)
         {
-            _rfBoundNames = RfBindingCheck.BoundNames(registry: _registry);
+            _rfBoundNames = RaBindingCheck.BoundNames(registry: _registry);
             _rfBoundNamesFrom = count;
         }
 
         return _rfBoundNames;
     }
 
-    private HashSet<string>? _suflaeLibraryShapes;
+    private HashSet<string>? _mieliaLibraryShapes;
 
-    private int _suflaeLibraryShapesFrom = -1;
+    private int _mieliaLibraryShapesFrom = -1;
 
     /// <summary>
-    /// The call shapes of the routines Suflae's own library declares. A call the overload resolution settles on the
-    /// shared routine is still fine when Suflae's library declares the same shape itself (its own <c>Text()</c>).
+    /// The call shapes of the routines Mielia's own library declares. A call the overload resolution settles on the
+    /// shared routine is still fine when Mielia's library declares the same shape itself (its own <c>Text()</c>).
     /// Rebuilt when a module loaded on demand brings more routines.
     /// </summary>
-    private HashSet<string> SuflaeLibraryShapes()
+    private HashSet<string> MieliaLibraryShapes()
     {
         List<RoutineInfo> routines = _registry.GetAllRoutines(requireLive: false).ToList();
-        if (_suflaeLibraryShapes == null || _suflaeLibraryShapesFrom != routines.Count)
+        if (_mieliaLibraryShapes == null || _mieliaLibraryShapesFrom != routines.Count)
         {
-            _suflaeLibraryShapes = routines
+            _mieliaLibraryShapes = routines
                                   .Where(predicate: r =>
                                        _registry.IsLanguageLibraryFile(filePath: r.Location?.FileName,
-                                           language: Language.Suflae))
-                                  .Select(selector: r => RfBindingCheck.ShapeOf(routine: r))
+                                           language: Language.Mielia))
+                                  .Select(selector: r => RaBindingCheck.ShapeOf(routine: r))
                                   .ToHashSet(comparer: StringComparer.Ordinal);
-            _suflaeLibraryShapesFrom = routines.Count;
+            _mieliaLibraryShapesFrom = routines.Count;
         }
 
-        return _suflaeLibraryShapes;
+        return _mieliaLibraryShapes;
     }
 
-    /// <summary>Whether a declaration at <paramref name="location"/> comes from RazorForge's library.</summary>
-    private bool IsRazorForgeLibraryDeclaration(SourceLocation? location)
+    /// <summary>Whether a declaration at <paramref name="location"/> comes from Revare's library.</summary>
+    private bool IsRevareLibraryDeclaration(SourceLocation? location)
     {
         return location is { FileName: { Length: > 0 } file } &&
-               _registry.IsLanguageLibraryFile(filePath: file, language: Language.RazorForge);
+               _registry.IsLanguageLibraryFile(filePath: file, language: Language.Revare);
     }
 
-    /// <summary>Whether <paramref name="file"/> is a Suflae program file (not Suflae's library).</summary>
-    private bool IsSuflaeProgramFile(string? file)
+    /// <summary>Whether <paramref name="file"/> is a Mielia program file (not Mielia's library).</summary>
+    private bool IsMieliaProgramFile(string? file)
     {
         return !string.IsNullOrEmpty(value: file) &&
                Builder.Frontends.Languages.HasSourceExtension(fileName: file) &&
-               Builder.Frontends.Languages.OfFile(fileName: file) == Language.Suflae &&
+               Builder.Frontends.Languages.OfFile(fileName: file) == Language.Mielia &&
                !IsStdlibFile(filePath: file);
     }
 
     /// <summary>
-    /// Whether a Suflae program may not name <paramref name="type"/>: it is declared in RazorForge's library and no
-    /// <c>@rf</c> declaration binds it.
+    /// Whether a Mielia program may not name <paramref name="type"/>: it is declared in Revare's library and no
+    /// <c>@ra</c> declaration binds it.
     /// </summary>
-    private bool IsUnsharedRazorForgeType(TypeSymbol type)
+    private bool IsUnsharedRevareType(TypeSymbol type)
     {
         TypeSymbol definition = type switch
         {
@@ -88,21 +88,21 @@ public sealed partial class SemanticVerifier
             _ => type
         };
 
-        // A Suflae library type of the same name (Suflae's own `List`) is stamped with Suflae's realm.
+        // A Mielia library type of the same name (Mielia's own `List`) is stamped with Mielia's realm.
         return definition.Realm == Realms.Shared &&
-               _registry.RazorForgeLibraryTypes.Contains(item: $"{definition.Module}.{definition.BareName}") &&
-               !RfBoundNames().Contains(item: definition.BareName);
+               _registry.RevareLibraryTypes.Contains(item: $"{definition.Module}.{definition.BareName}") &&
+               !RaBoundNames().Contains(item: definition.BareName);
     }
 
     /// <summary>
-    /// Reports every type name a Suflae program writes and every routine it calls that belongs to RazorForge's
-    /// library without an <c>@rf</c> declaration binding it. The builder's own routines (synthesized ones) are not the
+    /// Reports every type name a Mielia program writes and every routine it calls that belongs to Revare's
+    /// library without an <c>@ra</c> declaration binding it. The builder's own routines (synthesized ones) are not the
     /// program's to name, so they pass. Runs right after the program's bodies are analyzed, while its imports are
     /// still the ones type names resolve against.
     /// </summary>
     private void CheckSharedDeclarationsAreBound(Program program)
     {
-        if (_registry.Language != Language.Suflae)
+        if (_registry.Language != Language.Mielia)
         {
             return;
         }
@@ -125,7 +125,7 @@ public sealed partial class SemanticVerifier
             }
 
             // A type the builder completed (`to[List]` written, `List[Crate]` filled in) is checked as the type it
-            // stands for. The arguments it spells are how the builder holds that type (a Suflae entity's handle), not
+            // stands for. The arguments it spells are how the builder holds that type (a Mielia entity's handle), not
             // names the program wrote.
             if (node is TypeExpression { KnownType: not null })
             {
@@ -140,7 +140,7 @@ public sealed partial class SemanticVerifier
 
         void Check(Expression expression)
         {
-            if (!IsSuflaeProgramFile(file: expression.Location?.FileName))
+            if (!IsMieliaProgramFile(file: expression.Location?.FileName))
             {
                 return;
             }
@@ -150,7 +150,7 @@ public sealed partial class SemanticVerifier
                 // A type the builder wrote in (an implicit token's target) carries the type it stands for, which a
                 // lookup by its name could find in the other library.
                 if ((written.KnownType ?? LookupTypeWithImports(name: written.Name)) is { } type &&
-                    IsUnsharedRazorForgeType(type: type))
+                    IsUnsharedRevareType(type: type))
                 {
                     ReportUnshared(name: type.BareName, location: written.Location);
                 }
@@ -172,23 +172,23 @@ public sealed partial class SemanticVerifier
 
             RoutineInfo definition = routine.GenericDefinition ?? routine;
             // A creator the builder writes (the member-wise one) still names its type.
-            if (definition is { IsCreator: true, OwnerType: { } created } && IsUnsharedRazorForgeType(type: created))
+            if (definition is { IsCreator: true, OwnerType: { } created } && IsUnsharedRevareType(type: created))
             {
                 ReportUnshared(name: created.BareName, location: expression.Location);
                 return;
             }
 
-            if (routine.IsSynthesized || !IsRazorForgeLibraryDeclaration(location: definition.Location))
+            if (routine.IsSynthesized || !IsRevareLibraryDeclaration(location: definition.Location))
             {
                 return;
             }
 
-            string shape = RfBindingCheck.ShapeOf(routine: routine);
-            HashSet<string> bound = RfBoundNames();
+            string shape = RaBindingCheck.ShapeOf(routine: routine);
+            HashSet<string> bound = RaBoundNames();
             if (!bound.Contains(item: shape) && !(definition.OwnerType is { } owner &&
                     ProtocolsOf(type: owner).Any(predicate: p =>
-                        bound.Contains(item: RfBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)))) &&
-                !SuflaeLibraryShapes().Contains(item: shape))
+                        bound.Contains(item: RaBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)))) &&
+                !MieliaLibraryShapes().Contains(item: shape))
             {
                 ReportUnshared(name: shape, location: expression.Location);
             }
@@ -224,13 +224,13 @@ public sealed partial class SemanticVerifier
 
     private void ReportUnshared(string name, SourceLocation location)
     {
-        // A number every job changes has one way in Suflae, so the message names it.
+        // A number every job changes has one way in Mielia, so the message names it.
         string way = name is "Unbroken" or "Atomic"
             ? " A number every job changes is a 'global' or a member variable of an entity: the builder keeps each " +
               "change whole, so write 'hits += 1' on it."
             : "";
-        ReportError(code: SemanticDiagnosticCode.UnsharedRazorForgeDeclaration,
-            message: $"Suflae's library has no '{name}'.{way}",
+        ReportError(code: SemanticDiagnosticCode.UnsharedRevareDeclaration,
+            message: $"Mielia's library has no '{name}'.{way}",
             location: location);
     }
 }

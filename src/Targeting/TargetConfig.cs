@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Builder.Targeting;
 
 /// <summary>Requested build optimization mode.</summary>
-public enum RfBuildMode
+public enum RaBuildMode
 {
     /// <summary>Debug build — includes debug info, no optimization.</summary>
     Debug = 0,
@@ -58,8 +58,8 @@ public sealed class TargetConfig
         ? "x86-64-v3"
         : null;
 
-    /// <summary>The target as the Tessera builder names it (arch-os-abi), with <see cref="Cpu"/>.</summary>
-    public Tessera.BuildTarget TesseraTarget()
+    /// <summary>The target as the Lapila builder names it (arch-os-abi), with <see cref="Cpu"/>.</summary>
+    public Lapila.BuildTarget LapilaTarget()
     {
         string abi = TargetOS switch
         {
@@ -67,24 +67,24 @@ public sealed class TargetConfig
             "macos" => "none",
             _ => "gnu"
         };
-        return Tessera.BuildTarget.Parse(triple: $"{TargetArch}-{TargetOS}-{abi}") with { Cpu = Cpu };
+        return Lapila.BuildTarget.Parse(triple: $"{TargetArch}-{TargetOS}-{abi}") with { Cpu = Cpu };
     }
 
     private string? _functionAttributes;
 
     /// <summary>
     /// The <c>"target-cpu"</c> / <c>"target-features"</c> attributes every defined routine carries, as clang resolves
-    /// <see cref="Cpu"/> for the triple. The RazorForge module and Ingrid's Tessera library carry the same set: LLVM
+    /// <see cref="Cpu"/> for the triple. The Revare module and Ingrid's Lapila library carry the same set: LLVM
     /// inlines a routine only into one whose features cover its own, so a mismatch keeps even a one-line runtime
-    /// helper a call. It also tells opt the CPU, which otherwise optimizes for the triple's baseline. The Tessera
+    /// helper a call. It also tells opt the CPU, which otherwise optimizes for the triple's baseline. The Lapila
     /// builder asks clang, so it gets the clang this build resolved first (a release package's bundled one).
     /// </summary>
     public string FunctionAttributes => _functionAttributes ??= ResolveFunctionAttributes();
 
     private string ResolveFunctionAttributes()
     {
-        NativeToolchain.ShareClangWithTessera();
-        return Tessera.CpuModel.For(target: TesseraTarget(), pos: new Tessera.Pos(File: "", Line: 0, Col: 0)).FnAttrs;
+        NativeToolchain.ShareClangWithLapila();
+        return Lapila.CpuModel.For(target: LapilaTarget(), pos: new Lapila.Pos(File: "", Line: 0, Col: 0)).FnAttrs;
     }
 
     /// <summary>
@@ -206,6 +206,6 @@ public sealed class TargetConfig
         return new PlatformNotSupportedException(
             message:
             $"Unsupported host platform: OS='{os}', Architecture='{RuntimeInformation.OSArchitecture}'. " +
-            "RazorForge supports x86_64 (Windows/Linux) and AArch64 (macOS/Linux).");
+            "Revare supports x86_64 (Windows/Linux) and AArch64 (macOS/Linux).");
     }
 }

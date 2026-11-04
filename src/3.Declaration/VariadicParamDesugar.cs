@@ -90,8 +90,8 @@ public static class VariadicParamDesugar
 
         // nums: T   ->   nums: Slots[T, __VarargN]. Slots holds any T (the arguments may be entities), and is a
         // `module System` type (auto-imported), so a bare reference resolves in every file.
-        // Suflae has no `Slots` (an entity there is a shared handle, which an `Array` holds as a value).
-        string pack = param.Location.FileName.EndsWith(value: ".sf", comparisonType: StringComparison.Ordinal)
+        // Mielia has no `Slots` (an entity there is a shared handle, which an `Array` holds as a value).
+        string pack = param.Location.FileName.EndsWith(value: ".mi", comparisonType: StringComparison.Ordinal)
             ? "Items"
             : PackTypeName;
         var arrayType = new TypeExpression(Name: pack,

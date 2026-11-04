@@ -342,7 +342,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// <summary>Visits a steal expression node (ownership transfer like 'steal node')</summary>
     /// <param name="node">The steal expression to visit</param>
     /// <returns>Result of visiting the steal expression</returns>
-    /// <remarks>RazorForge only - transfers ownership and invalidates the source</remarks>
+    /// <remarks>Revare only - transfers ownership and invalidates the source</remarks>
     T VisitStealExpression(StealExpression node);
 
     /// <summary>Visits a try/check/lookup recovery expression node (wraps a failable call into a carrier).</summary>

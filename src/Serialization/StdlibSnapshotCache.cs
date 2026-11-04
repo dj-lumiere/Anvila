@@ -6,8 +6,8 @@ using Builder.Verification;
 namespace Builder.Serialization;
 
 /// <summary>
-/// On-disk cache of the compiled-stdlib snapshot as a prebuilt file (<c>.pbrf</c> "prebuilt razorforge",
-/// <c>.pbsf</c> "prebuilt suflae" — see <see cref="PrebuiltFormat"/>). This is
+/// On-disk cache of the compiled-stdlib snapshot as a prebuilt file (<c>.pbrf</c> "prebuilt revare",
+/// <c>.pbsf</c> "prebuilt mielia" — see <see cref="PrebuiltFormat"/>). This is
 /// the "cold under 1 s" foundation: instead of re-analyzing the whole stdlib (~5–8 s) on every daemon
 /// startup / cold build, we deserialize a previously-captured snapshot (~1–2 s). The cache is keyed by a
 /// content hash of (all stdlib source files' path+size+mtime) + (the builder assembly's mtime) +
@@ -286,7 +286,7 @@ public static class StdlibSnapshotCache
     }
 
     /// <summary>Appends each stdlib source file's path+size+mtime to <paramref name="sb"/>, in Ordinal path
-    /// order. Same scan roots as StdlibLoader: RazorForge/*.rf always; Suflae/*.sf under an SF build.</summary>
+    /// order. Same scan roots as StdlibLoader: Revare/*.rr always; Mielia/*.mi under an MI build.</summary>
     private static void AppendSourceFileMetadata(StringBuilder sb, string root, Language language)
     {
         List<(string Dir, string Glob)> roots =

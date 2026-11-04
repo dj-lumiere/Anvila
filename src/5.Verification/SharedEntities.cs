@@ -6,13 +6,13 @@ namespace Builder.Verification;
 
 /// <summary>
 /// Shared entity references, for a language whose entities are shared handles
-/// (<see cref="Frontends.LanguageRules.EntitiesAreShared"/>, Suflae): an entity slot is a <c>Roamed[E]</c>
+/// (<see cref="Frontends.LanguageRules.EntitiesAreShared"/>, Mielia): an entity slot is a <c>Roamed[E]</c>
 /// handle and an <c>E?</c> slot is <c>Optional[Roamed[E]]</c>.
 /// </summary>
 internal sealed class SharedEntities(TypeRegistry registry)
 {
     /// <summary>
-    /// Suflae: true if the type is an entity reference (a bare <c>EntityTypeSymbol</c> or a
+    /// Mielia: true if the type is an entity reference (a bare <c>EntityTypeSymbol</c> or a
     /// <c>Roamed[E]</c> handle).
     /// </summary>
     internal bool IsEntityRef(TypeSymbol type)
@@ -26,7 +26,7 @@ internal sealed class SharedEntities(TypeRegistry registry)
     }
 
     /// <summary>
-    /// Suflae: true if the type is an optional entity reference, an <c>E?</c> (<c>Optional[Roamed[E]]</c>).
+    /// Mielia: true if the type is an optional entity reference, an <c>E?</c> (<c>Optional[Roamed[E]]</c>).
     /// </summary>
     internal bool IsOptionalEntityRef(TypeSymbol type)
     {
@@ -52,17 +52,17 @@ internal sealed class SharedEntities(TypeRegistry registry)
     }
 
     /// <summary>
-    /// Suflae: resolves an entity-reference variable/parameter type annotation into its <c>Roamed[E]</c>
+    /// Mielia: resolves an entity-reference variable/parameter type annotation into its <c>Roamed[E]</c>
     /// storage representation, mirroring the field substitution in <c>TypeBodyResolver</c>. A bare
     /// <c>E</c> annotation is a <c>Roamed[E]</c>, an optional <c>E?</c> (parsed as <c>Optional[E]</c>) is
-    /// <c>Optional[Roamed[E]]</c>. For non-Suflae or non-entity annotations the type is returned unchanged.
+    /// <c>Optional[Roamed[E]]</c>. For non-Mielia or non-entity annotations the type is returned unchanged.
     /// </summary>
     internal TypeSymbol ResolveAnnotation(TypeSymbol annotated, TypeExpression? typeExpr = null)
     {
-        // An `RF::`-qualified annotation opts OUT of the entity->Roamed lowering: ResolveType already
-        // honored the realm and left it BARE (a wrapper's `inner: RF::System.List[T]` holds a bare RF
+        // An `RA::`-qualified annotation opts OUT of the entity->Roamed lowering: ResolveType already
+        // honored the realm and left it BARE (a wrapper's `inner: RA::System.List[T]` holds a bare RA
         // entity, not a re-roamed `Roamed[List]`). Do NOT re-roam it here — this is the SA twin of
-        // TypeResolver.ResolveType's `Realm != "RF"` gate. The realm tag lives on the TypeExpression,
+        // TypeResolver.ResolveType's `Realm != "RA"` gate. The realm tag lives on the TypeExpression,
         // not on the already-resolved TypeSymbol, so it must be threaded in explicitly.
         if (typeExpr?.Realm == TypeModel.Realms.Shared || !registry.EntitiesAreShared ||
             registry.LookupType(name: Declaration.RuntimeContract.Roamed) is not { } roamedDef)

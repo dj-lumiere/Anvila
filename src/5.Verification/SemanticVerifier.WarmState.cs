@@ -19,7 +19,7 @@ public partial class SemanticVerifier
     /// </summary>
     public sealed class CompiledStdlibState
     {
-        /// <summary>The language mode (RF or SF) the stdlib was compiled under.</summary>
+        /// <summary>The language mode (RA or MI) the stdlib was compiled under.</summary>
         public required Language Language { get; init; }
 
         /// <summary>The post-SA type registry snapshot (all stdlib types and routines).</summary>
@@ -276,12 +276,12 @@ public partial class SemanticVerifier
     /// full <see cref="Analyze"/> only processes the user program (+ its incremental instantiations) and
     /// can codegen without redoing the ~5 s of stdlib desugaring/verification/monomorphization.
     /// </summary>
-    /// <param name="language">The source language (RazorForge or Suflae) this build targets.</param>
+    /// <param name="language">The source language (Revare or Mielia) this build targets.</param>
     /// <param name="warm">The resident compiled-stdlib snapshot to restore from.</param>
     /// <param name="target">Optional target configuration; null uses the host default.</param>
-    /// <param name="buildMode">The RazorForge build mode (optimization level).</param>
+    /// <param name="buildMode">The Revare build mode (optimization level).</param>
     public SemanticVerifier(Language language, CompiledStdlibState warm,
-        TargetConfig? target = null, RfBuildMode buildMode = RfBuildMode.Debug)
+        TargetConfig? target = null, RaBuildMode buildMode = RaBuildMode.Debug)
     {
         _warmState = warm;
         _registry = new TypeRegistry(language: language, snapshot: warm.Registry);

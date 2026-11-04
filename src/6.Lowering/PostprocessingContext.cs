@@ -22,7 +22,7 @@ public sealed class PostprocessingContext
     /// <summary>
     /// Build mode used by BuilderQuery and other buildtime metadata lowering.
     /// </summary>
-    public RfBuildMode BuildMode { get; }
+    public RaBuildMode BuildMode { get; }
 
     /// <summary>
     /// Pre-transformed bodies for error-handling variant routines, keyed by RoutineInfo.RegistryKey.
@@ -53,7 +53,7 @@ public sealed class PostprocessingContext
     public PostprocessingContext(TypeRegistry registry,
         Dictionary<string, Statement>? variantBodies = null,
         Dictionary<string, Statement>? synthesizedBodies = null, TargetConfig? target = null,
-        RfBuildMode buildMode = RfBuildMode.Debug,
+        RaBuildMode buildMode = RaBuildMode.Debug,
         Dictionary<string, Instantiation.MonomorphizedBody>? monomorphizedBodies = null)
     {
         Registry = registry;

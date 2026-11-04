@@ -44,9 +44,9 @@ public sealed partial class TypeRegistry
     /// signature but with DIFFERENT bodies, defined in DIFFERENT files. Registration is last-wins, so
     /// one silently shadows the other — the hazard class that made <c>B64(from: B128)</c> resolve to a
     /// recursive-forwarder stub instead of the real engine impl (infinite recursion), and that let
-    /// <c>B16.sin()</c> exist in both B16.rf and CoreMath/B16Sin.rf with no diagnostic. Surfaced as a
+    /// <c>B16.sin()</c> exist in both B16.rr and CoreMath/B16Sin.rr with no diagnostic. Surfaced as a
     /// build error by <see cref="Builder.Verification.SemanticVerifier"/>. Benign identical duplicates (same
-    /// body, e.g. <c>U16(from: U8)</c> in both U8.rf and U16.rf) are NOT recorded (equal body hash).
+    /// body, e.g. <c>U16(from: U8)</c> in both U8.rr and U16.rr) are NOT recorded (equal body hash).
     /// </summary>
     public List<(RoutineInfo First, RoutineInfo Second)> DivergentDuplicateRoutines { get; } = [];
 
@@ -100,7 +100,7 @@ public sealed partial class TypeRegistry
             return null;
         }
 
-        return body.Accept(visitor: new Builder.RfSyntaxTreePrinter())
+        return body.Accept(visitor: new Builder.RaSyntaxTreePrinter())
                    .GetHashCode(comparisonType: StringComparison.Ordinal);
     }
 
@@ -197,7 +197,7 @@ public sealed partial class TypeRegistry
     {
         TypeShapeVersion.Bump();
         // Realm-aware storage key: ambient-realm routines key bare (unchanged); a bridged-realm routine
-        // (e.g. the RF-realm System.List reached via RF:: inside an SF compile) is `{realm}::`-prefixed so it
+        // (e.g. the RA-realm System.List reached via RA:: inside an MI compile) is `{realm}::`-prefixed so it
         // never collides with / shadows the ambient same-signature routine — the two world-lines coexist.
         string registryKey = RealmRoutineKey(routine: routine);
         string baseName = routine.BaseName;
@@ -227,7 +227,7 @@ public sealed partial class TypeRegistry
         // unqualified call site: e.g. the `LLVM::atan2` intrinsic must not hide the free `atan2(y, x)`.
         // The first ambient overload therefore claims the bare slot AND displaces a foreign squatter
         // that merely registered first. (A foreign routine still takes the slot when it is the only
-        // one, so a bare call to a foreign-only name still reports the RF-S460 "call it as LLVM::…".)
+        // one, so a bare call to a foreign-only name still reports the RA-S460 "call it as LLVM::…".)
         bool bareExists = _routines.TryGetValue(key: baseName, value: out RoutineInfo? existingBare);
         if (!bareExists || (existingBare!.IsForeign && !routine.IsForeign))
         {
@@ -753,7 +753,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The routine the code being analyzed calls in place of a shared free routine found by its name: its
-    /// realm's surface routine called the same way (Suflae's generic <c>memvars</c> handing back its own list),
+    /// realm's surface routine called the same way (Mielia's generic <c>memvars</c> handing back its own list),
     /// when there is one, else the routine itself.
     /// </summary>
     private RoutineInfo SurfaceStandIn(RoutineInfo routine)
@@ -1025,7 +1025,7 @@ public sealed partial class TypeRegistry
             return;
         }
 
-        // A Suflae entity's `me` is its shared handle (`Roamed[List[T]]` for `routine List[T].second()`), while the
+        // A Mielia entity's `me` is its shared handle (`Roamed[List[T]]` for `routine List[T].second()`), while the
         // owner it is called on is the entity itself (`List[Int]`): the handle's entity is the pattern.
         if (pattern is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [var handled] } &&
             concrete is not RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed })
@@ -1590,7 +1590,7 @@ public sealed partial class TypeRegistry
     public void RegisterDeriveTemplate(string memberRoutine, string ownerParam, int arity,
         List<GenericConstraintDeclaration>? constraints, Statement body, string? realm = null)
     {
-        // A realm's own derive (Suflae's `all_cases` giving its own `List`) is kept apart from the shared one,
+        // A realm's own derive (Mielia's `all_cases` giving its own `List`) is kept apart from the shared one,
         // under the realm's key, and serves only that realm's types.
         memberRoutine = DeriveTemplateKey(name: memberRoutine, realm: realm);
         if (!_deriveTemplates.TryGetValue(key: memberRoutine,
@@ -1621,7 +1621,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The realm whose derives a type takes: the language of the file that declares it (a choice written in a
-    /// <c>.sf</c> file takes Suflae's <c>all_cases</c>, even in a build whose ambient realm is RazorForge's), else
+    /// <c>.mi</c> file takes Mielia's <c>all_cases</c>, even in a build whose ambient realm is Revare's), else
     /// the type's own realm.
     /// </summary>
     public string DeriveRealmOf(TypeSymbol type)
@@ -2663,7 +2663,7 @@ public sealed partial class TypeRegistry
             candidates: candidates);
 
         // Protocol abstract memberRoutines are never a valid dispatch target on a concrete receiver —
-        // RF protocols are abstract-only (no default impls). Including them would let lookup
+        // RA protocols are abstract-only (no default impls). Including them would let lookup
         // pick `Equatable.eq(Self)` for `S128 == S64`, masking the integer-promotion fallback
         // and emitting an unresolved `System.Equatable.eq` symbol at link time.
         if (type is not ProtocolTypeSymbol)
@@ -3247,9 +3247,9 @@ public sealed partial class TypeRegistry
             // Carry the specialized-receiver pattern (e.g. List[Work[V]]) unchanged: V is a memberRoutine
             // generic param, not an owner param, so owner substitution leaves it intact. Receiver-
             // based memberRoutine-generic inference at the call site needs this pattern to bind V. (The
-            // Suflae entity `me`=Roamed[E] handle is substituted downstream in
+            // Mielia entity `me`=Roamed[E] handle is substituted downstream in
             // GenericMonomorphizationPass, so it does not need owner substitution here — and doing it
-            // here mistyped some stdlib Hijacked `me` receivers, tripping RF-S627.)
+            // here mistyped some stdlib Hijacked `me` receivers, tripping RA-S627.)
             // `me` is the owner's own `me` form: a protocol's `Me` (or a universal `T`) bound to the concrete owner, and
             // for a shared entity its handle (the form the entity's own routines take), so a call through the handle
             // reaches the right body with the right receiver.
@@ -4048,7 +4048,7 @@ public sealed partial class TypeRegistry
             return true;
         }
 
-        // A Suflae entity and its shared handle are the same value: an argument typed `Counter` fills a
+        // A Mielia entity and its shared handle are the same value: an argument typed `Counter` fills a
         // parameter whose `T` became `Roamed[Counter]`, and the other way round.
         return IsRoamedHandleOf(handle: target, entity: source) ||
                IsRoamedHandleOf(handle: source, entity: target);
@@ -4268,9 +4268,9 @@ public sealed partial class TypeRegistry
     private List<RoutineInfo> DefinitionMemberRoutinesFor(TypeSymbol type)
     {
 
-        // Cache key is realm-QUALIFIED: RF and SF resolutions share a realm-free FullName
+        // Cache key is realm-QUALIFIED: RA and MI resolutions share a realm-free FullName
         // (`System.List[System.U64]`), so a FullName key would cross-contaminate — the first-computed realm's
-        // member set (e.g. SF List's `inner`-forwarders) would be served for the other realm's instance.
+        // member set (e.g. MI List's `inner`-forwarders) would be served for the other realm's instance.
         if (_memberRoutinesForTypeCache.TryGetValue(key: MemberRoutinesCacheKey(type: type),
                 value: out List<RoutineInfo>? cached))
         {
@@ -4422,7 +4422,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The store-site hook the copy-lowering pass injects at each <c>store</c> point to make an aliased
-    /// value sound: the RC <c>share</c> verb for a Suflae RC wrapper, the deep <c>duplicate</c> for a
+    /// value sound: the RC <c>share</c> verb for a Mielia RC wrapper, the deep <c>duplicate</c> for a
     /// variant with a destructible arm, or the retaining record <c>assign</c> (hand-written, or the
     /// synthesized field-walk when a field itself retains). Null ⇒ the value is not Assignable and no
     /// implicit copy is injected.
@@ -4444,9 +4444,9 @@ public sealed partial class TypeRegistry
         // copy — checked BEFORE the RecordTypeSymbol branch (RC wrappers ARE records). AUTO-RETAIN IN BOTH
         // REALMS (2026-09-21): an RC copy IS an implicit `share` (a refcount bump), so `var b = rc` is allowed
         // and copy-lowering injects the retain here; release is already automatic (`destruct` at teardown IS
-        // the decrement — see Retained.rf). This is the store side of the copy-policy decoupling; thread-
-        // boundary crossing stays barred separately via `IsThreadUnsafeReferenceWrapper`. (SF already relied on
-        // this for `Roamed[E]` container elements; RazorForge now shares the retaining-copy path.)
+        // the decrement — see Retained.rr). This is the store side of the copy-policy decoupling; thread-
+        // boundary crossing stays barred separately via `IsThreadUnsafeReferenceWrapper`. (MI already relied on
+        // this for `Roamed[E]` container elements; Revare now shares the retaining-copy path.)
         if (GetRcWrapperBaseName(type: type) is not null)
         {
             // RC copy verb is `share` (the refcount-bump co-owner mint) — renamed from the STEP-3 unified

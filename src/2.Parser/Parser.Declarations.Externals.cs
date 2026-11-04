@@ -135,7 +135,7 @@ public partial class Parser
         // A foreign routine's parameters bind by POSITION + TYPE, never by name (C headers carry
         // no caller-visible parameter names, and a foreign call is always @positional). So the
         // name here is purely cosmetic: it may be OMITTED (type-only, `routine C::f(S32, Text)`)
-        // or, when present, may be ANY token — including a RazorForge keyword like `flags` that a
+        // or, when present, may be ANY token — including a Revare keyword like `flags` that a
         // C header uses — because it never has to be a bindable identifier. The `:` after the
         // first token is the disambiguator: `<anything>: type` is a named param, otherwise the
         // param is type-only.

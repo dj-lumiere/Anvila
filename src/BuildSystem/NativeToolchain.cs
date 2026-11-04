@@ -34,7 +34,7 @@ internal static class NativeToolchain
     /// </summary>
     private static readonly string[] NativeRuntimeDlls =
     [
-        "razorforge_runtime.dll"
+        "revare_runtime.dll"
     ];
 
     /// <summary>The platform-specific link-time artifact of the bundled native runtime.</summary>
@@ -44,20 +44,20 @@ internal static class NativeToolchain
         {
             if (OperatingSystem.IsWindows())
             {
-                return "razorforge_runtime.lib";
+                return "revare_runtime.lib";
             }
 
             if (OperatingSystem.IsMacOS())
             {
-                return "librazorforge_runtime.dylib";
+                return "librevare_runtime.dylib";
             }
 
-            return "librazorforge_runtime.so";
+            return "librevare_runtime.so";
         }
     }
 
     /// <summary>
-    /// Resolves the directory containing the running RazorForge assembly.
+    /// Resolves the directory containing the running Revare assembly.
     /// </summary>
     internal static string ResolveExecutableDirectory()
     {
@@ -140,7 +140,7 @@ internal static class NativeToolchain
         try
         {
             // Every build in a checkout and every `dotnet build` (Ingrid/native/build.sh) works in this one build
-            // tree. Two at once (the RazorForge and Suflae test suites side by side) could configure it while the
+            // tree. Two at once (the Revare and Mielia test suites side by side) could configure it while the
             // other builds in it, so each holds the tree's lock while it builds and copies.
             using FileStream held = LockNativeBuildTree(nativeBuildDir: nativeBuildDir);
             // Nothing cmake builds from changed and the copies are in place since the last build here: running cmake
@@ -198,7 +198,7 @@ internal static class NativeToolchain
             CopyDirectoryFiles(srcDir: nativeLibDir, dstDir: exeNativeLibDir);
 
             // Also copy DLLs to the exe root (matches csproj LinkBase="." behavior).
-            // The builder itself P/Invokes razorforge_runtime.dll, so the target file may be
+            // The builder itself P/Invokes revare_runtime.dll, so the target file may be
             // locked by this process. In that case the already-loaded copy is what this run
             // will use anyway — warn and continue rather than failing the build.
             if (Directory.Exists(path: nativeBinDir))
@@ -231,7 +231,7 @@ internal static class NativeToolchain
     /// <summary>
     /// What a native runtime build in <paramref name="nativeBuildDir"/> (Ingrid/native/build) depends on, and what it
     /// left: the path, size and time of every file cmake builds from (Ingrid/native's CMake files, Ingrid's runtime
-    /// Tessera sources, Tessera's standard library, the Tessera builder named in the CMake cache, the cache and the
+    /// Lapila sources, Lapila's standard library, the Lapila builder named in the CMake cache, the cache and the
     /// build rules), of every file it built, and of the copies next to <paramref name="exeDir"/>. One line per file.
     /// </summary>
     private static string NativeRuntimeStamp(string exeDir, string nativeBuildDir)
@@ -242,20 +242,20 @@ internal static class NativeToolchain
         var files = new List<string>();
         AddFiles(files: files, dir: nativeDir, pattern: "CMakeLists.txt", recursive: false);
         AddFiles(files: files, dir: nativeDir, pattern: "*.cmake", recursive: false);
-        AddFiles(files: files, dir: Path.Combine(path1: ingridDir, path2: "runtime-tessera"), pattern: "*.te",
+        AddFiles(files: files, dir: Path.Combine(path1: ingridDir, path2: "runtime-lapila"), pattern: "*.li",
             recursive: false);
-        AddFiles(files: files, dir: Path.Combine(path1: workspace, path2: "Tessera", path3: "Standard"),
-            pattern: "*.te", recursive: true);
+        AddFiles(files: files, dir: Path.Combine(path1: workspace, path2: "Lapila", path3: "Standard"),
+            pattern: "*.li", recursive: true);
         string cache = Path.Combine(path1: nativeBuildDir, path2: "CMakeCache.txt");
         files.Add(item: cache);
         files.Add(item: Path.Combine(path1: nativeBuildDir, path2: "build.ninja"));
         files.Add(item: Path.Combine(path1: nativeBuildDir, path2: "Makefile"));
         if (File.Exists(path: cache) && File.ReadLines(path: cache)
                                             .FirstOrDefault(predicate: l =>
-                                                 l.StartsWith(value: "TESSERA_DLL:", comparisonType: StringComparison.Ordinal))
-                                           ?.Split(separator: '=', count: 2) is [_, { } tesseraDll])
+                                                 l.StartsWith(value: "LAPILA_DLL:", comparisonType: StringComparison.Ordinal))
+                                           ?.Split(separator: '=', count: 2) is [_, { } lapilaDll])
         {
-            files.Add(item: tesseraDll);
+            files.Add(item: lapilaDll);
         }
 
         foreach (string sub in new[] { "bin", "lib" })
@@ -363,7 +363,7 @@ internal static class NativeToolchain
     }
 
     // Copies a file, tolerating sharing violations when the target is already loaded into this
-    // process (e.g. razorforge_runtime.dll, which the builder itself P/Invokes). On Windows, a
+    // process (e.g. revare_runtime.dll, which the builder itself P/Invokes). On Windows, a
     // loaded DLL is locked against overwrite but can still be renamed — so we move the locked
     // file aside under a unique name and then copy the fresh one into the original path. This
     // guarantees the on-disk artifact is always up to date; the renamed sidecar is harmless and
@@ -426,8 +426,8 @@ internal static class NativeToolchain
 
     /// <summary>
     /// Resolves an LLVM toolchain tool (clang/opt) to a concrete path. Resolution order:
-    /// 1. RAZORFORGE_LLVM_HOME/bin/&lt;tool&gt; — explicit user override.
-    /// 2. &lt;dir of RazorForge executable&gt;/toolchain/bin/&lt;tool&gt; — self-contained release
+    /// 1. REVARE_LLVM_HOME/bin/&lt;tool&gt; — explicit user override.
+    /// 2. &lt;dir of Revare executable&gt;/toolchain/bin/&lt;tool&gt; — self-contained release
     ///    packages bundle a relocatable LLVM (llvm-mingw on Windows) there.
     /// 3. The bare tool name, resolved from PATH (dev setups).
     /// </summary>
@@ -437,7 +437,7 @@ internal static class NativeToolchain
             ? name + ".exe"
             : name;
 
-        string? llvmHome = Environment.GetEnvironmentVariable(variable: "RAZORFORGE_LLVM_HOME");
+        string? llvmHome = Environment.GetEnvironmentVariable(variable: "REVARE_LLVM_HOME");
         if (!string.IsNullOrWhiteSpace(value: llvmHome))
         {
             string fromEnv = Path.Combine(path1: llvmHome, path2: "bin", path3: exeName);
@@ -460,16 +460,16 @@ internal static class NativeToolchain
         new(valueFactory: () => ResolveToolchainTool(name: ClangToolName));
 
     /// <summary>
-    /// Hands the clang this build resolved (a release package's bundled one included) to the Tessera builder, which
+    /// Hands the clang this build resolved (a release package's bundled one included) to the Lapila builder, which
     /// runs in this process and otherwise looks for clang on PATH only: it asks clang for the target's CPU features.
-    /// A <c>TESSERA_CLANG</c> the user set wins.
+    /// A <c>LAPILA_CLANG</c> the user set wins.
     /// </summary>
-    public static void ShareClangWithTessera()
+    public static void ShareClangWithLapila()
     {
-        if (string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: "TESSERA_CLANG")) &&
+        if (string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: "LAPILA_CLANG")) &&
             ClangTool.Value != ClangToolName)
         {
-            Environment.SetEnvironmentVariable(variable: "TESSERA_CLANG", value: ClangTool.Value);
+            Environment.SetEnvironmentVariable(variable: "LAPILA_CLANG", value: ClangTool.Value);
         }
     }
 
@@ -678,13 +678,13 @@ internal static class NativeToolchain
     }
 
     /// <summary>Maps a build mode to the LLVM optimization level token (O0/O2/O3/Os).</summary>
-    private static string OptLevelString(RfBuildMode buildMode)
+    private static string OptLevelString(RaBuildMode buildMode)
     {
         return buildMode switch
         {
-            RfBuildMode.Release => "O2",
-            RfBuildMode.ReleaseTime => "O3",
-            RfBuildMode.ReleaseSpace => "Os",
+            RaBuildMode.Release => "O2",
+            RaBuildMode.ReleaseTime => "O3",
+            RaBuildMode.ReleaseSpace => "Os",
             _ => "O0"
         };
     }
@@ -694,7 +694,7 @@ internal static class NativeToolchain
     /// Debug builds run mem2reg+sroa at O0 (readability without semantic change); optimized builds
     /// run the full pipeline at the requested level. Returns 0 on success or 1 if opt fails.
     /// </summary>
-    internal static int OptimizeIr(string llFile, string optFile, RfBuildMode buildMode,
+    internal static int OptimizeIr(string llFile, string optFile, RaBuildMode buildMode,
         bool internalizeForLto = false)
     {
         string optPipelineLevel = OptLevelString(buildMode: buildMode);
@@ -712,12 +712,12 @@ internal static class NativeToolchain
 
         // Use -passes='default<Ox>,...' syntax (LLVM 14+; replaces the -Ox -passes=... split form).
         // With internalizeForLto, `internalize` runs FIRST (preserving only `main`), so the module's
-        // definitions, Ingrid's Tessera library among them (the allocators, the divide primitives), become
+        // definitions, Ingrid's Lapila library among them (the allocators, the divide primitives), become
         // internal: the inliner inlines them (exposing libc calloc/free and divq) and DCE drops the unused
         // ones. Every other symbol in a whole-program executable is internal by construction, so preserving
         // `main` alone is the standard LTO-of-an-exe behavior (callbacks are passed by address, which
         // internalize keeps alive).
-        string basePipeline = buildMode == RfBuildMode.Debug
+        string basePipeline = buildMode == RaBuildMode.Debug
             ? $"default<{optPipelineLevel}>,mem2reg,sroa"
             : $"default<{optPipelineLevel}>";
         string optPipeline = internalizeForLto
@@ -781,7 +781,7 @@ internal static class NativeToolchain
     }
 
     // ========================================================================
-    // Dev-loop LTO: llvm-link the hot native-runtime bitcode into the RF module
+    // Dev-loop LTO: llvm-link the hot native-runtime bitcode into the RA module
     // ========================================================================
 
     /// <summary>
@@ -831,22 +831,22 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// llvm-links the emitted RF module (<paramref name="llFile"/>) with Ingrid's Tessera library
-    /// (<see cref="IngridTessera"/>) into <paramref name="linkedFile"/>. Unlike the hot-runtime LTO below this isn't
+    /// llvm-links the emitted RA module (<paramref name="llFile"/>) with Ingrid's Lapila library
+    /// (<see cref="IngridLapila"/>) into <paramref name="linkedFile"/>. Unlike the hot-runtime LTO below this isn't
     /// optional: the library's routines are not in the runtime DLL, so a module that calls one links only with it.
     /// Only what the module reaches is linked (<c>--only-needed</c>): the library holds every export, generated
     /// engines included, and a hello world would otherwise compile all of them in a debug build (about 400 ms of
     /// -O0 code generation). Returns false, with the reason in <paramref name="error"/>, when the library can't be
     /// built or linked.
     /// </summary>
-    internal static bool TryLinkIngridTessera(string exeDir, string llFile, out string linkedFile, out string error,
+    internal static bool TryLinkIngridLapila(string exeDir, string llFile, out string linkedFile, out string error,
         bool bitcodeOutput = false)
     {
         linkedFile = "";
         string ingrid;
         try
         {
-            ingrid = IngridTessera.IrPath(exeDir: exeDir);
+            ingrid = IngridLapila.IrPath(exeDir: exeDir);
         }
         catch (InvalidOperationException ex)
         {
@@ -858,7 +858,7 @@ internal static class NativeToolchain
         string? bitcode = null;
         try
         {
-            bitcode = IngridTessera.BitcodePath(exeDir: exeDir);
+            bitcode = IngridLapila.BitcodePath(exeDir: exeDir);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -887,7 +887,7 @@ internal static class NativeToolchain
 
         if (rc != 0)
         {
-            error = $"llvm-link could not merge Ingrid's Tessera library into the module: {err.Trim()}";
+            error = $"llvm-link could not merge Ingrid's Lapila library into the module: {err.Trim()}";
             return false;
         }
 
@@ -958,7 +958,7 @@ internal static class NativeToolchain
     // MSVC-target clang needs the CRT and kernel32 import libraries named explicitly when
     // linking from LLVM IR. The mingw-target clang (bundled self-contained toolchain) links
     // its own CRT and the Win32 import libraries automatically. Either way synchronization is
-    // named: Ingrid's Tessera code (the Roamed runtime's world lock) waits with WaitOnAddress /
+    // named: Ingrid's Lapila code (the Roamed runtime's world lock) waits with WaitOnAddress /
     // WakeByAddressAll, which no default import library carries.
     private static string WindowsThreadingLibsFragment()
     {
@@ -976,7 +976,7 @@ internal static class NativeToolchain
     // pthread/dl runtime. Modern ld defaults to --as-needed, so libm must be named explicitly
     // on the command line or linking fails with "DSO missing from command line". We also embed
     // an rpath pointing at the runtime library directory so the produced executable can locate
-    // librazorforge_runtime.so at load time without requiring LD_LIBRARY_PATH.
+    // librevare_runtime.so at load time without requiring LD_LIBRARY_PATH.
     private static string UnixRuntimeLibsFragment(string runtimeLibDir)
     {
         return OperatingSystem.IsWindows()
@@ -1075,9 +1075,9 @@ internal static class NativeToolchain
     // The modes that print a crash trace (debug, release) write a PDB next to the Windows executable: DbgHelp names
     // the trace's frames, with file and line, from it and from nothing else (the emitter writes the debug information
     // as CodeView on Windows). lld-link takes /DEBUG, the mingw linker --pdb= (empty: next to the output).
-    private static string WindowsDebugInfoFragment(RfBuildMode buildMode)
+    private static string WindowsDebugInfoFragment(RaBuildMode buildMode)
     {
-        if (!OperatingSystem.IsWindows() || buildMode is not (RfBuildMode.Debug or RfBuildMode.Release))
+        if (!OperatingSystem.IsWindows() || buildMode is not (RaBuildMode.Debug or RaBuildMode.Release))
         {
             return "";
         }
@@ -1102,7 +1102,7 @@ internal static class NativeToolchain
     /// stdlib fingerprint, then the dev-loop client loads that object and JITs only the per-run delta,
     /// instead of re-JIT-compiling the whole stdlib IR every run. Returns 0 on success, 1 on failure.
     /// </summary>
-    internal static int CompileIrToObject(string optFile, string objFile, RfBuildMode buildMode)
+    internal static int CompileIrToObject(string optFile, string objFile, RaBuildMode buildMode)
     {
         // clang uses -Ox flag style (not opt's -passes=). Same target codegen flags as the link path so the
         // object's ABI/target matches the delta the JIT layers on top of it.
@@ -1132,8 +1132,8 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// For IR that names its traced routines (<c>!tessera.trace</c>): writes the IR with each traced call's chain, then
-    /// its assembly with the return addresses marked and the table (Tessera's <see cref="Tessera.TraceTable"/>), and
+    /// For IR that names its traced routines (<c>!lapila.trace</c>): writes the IR with each traced call's chain, then
+    /// its assembly with the return addresses marked and the table (Lapila's <see cref="Lapila.TraceTable"/>), and
     /// gives the assembly's path, which is linked in place of the IR. Other IR is linked as it is. Null when clang fails.
     /// </summary>
     private static string? WriteTraceTableAssembly(string optFile, string clangOptLevel)
@@ -1145,15 +1145,15 @@ internal static class NativeToolchain
         }
 
         string ir = File.ReadAllText(path: optFile);
-        if (!Tessera.TraceTable.Wanted(ir: ir))
+        if (!Lapila.TraceTable.Wanted(ir: ir))
         {
             return optFile;
         }
 
         TargetConfig target = TargetConfig.ForCurrentHost();
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        bool timing = Environment.GetEnvironmentVariable(variable: "RF_TRACE_TIMING") == "1";
-        Tessera.TraceTable.Annotation annotation = Tessera.TraceTable.Annotate(ir: ir);
+        bool timing = Environment.GetEnvironmentVariable(variable: "RA_TRACE_TIMING") == "1";
+        Lapila.TraceTable.Annotation annotation = Lapila.TraceTable.Annotate(ir: ir);
         if (timing)
         {
             Console.Error.WriteLine(value: $"[trace] annotate {clock.ElapsedMilliseconds} ms");
@@ -1179,13 +1179,13 @@ internal static class NativeToolchain
 
         clock.Restart();
         File.WriteAllText(path: asm,
-            contents: Tessera.TraceTable.Patch(asm: File.ReadAllText(path: asm), arch: target.TargetArch,
+            contents: Lapila.TraceTable.Patch(asm: File.ReadAllText(path: asm), arch: target.TargetArch,
                 annotation: annotation));
         if (timing)
         {
             Console.Error.WriteLine(value: $"[trace] patch {clock.ElapsedMilliseconds} ms");
         }
-        if (Environment.GetEnvironmentVariable(variable: "RF_TRACE_KEEP") != "1")
+        if (Environment.GetEnvironmentVariable(variable: "RA_TRACE_KEEP") != "1")
         {
             File.Delete(path: annotated);
         }
@@ -1244,14 +1244,14 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// The runtime of a development checkout (<c>ingrid_runtime_tessera.ll</c>, beside the library folder) compiled
-    /// with ThreadSanitizer instrumentation into <c>ingrid_runtime_tessera.tsan.o</c> beside it, rebuilt when the IR is
+    /// The runtime of a development checkout (<c>ingrid_runtime_lapila.ll</c>, beside the library folder) compiled
+    /// with ThreadSanitizer instrumentation into <c>ingrid_runtime_lapila.tsan.o</c> beside it, rebuilt when the IR is
     /// newer. Null, with the reason printed, when the IR is not there or clang fails.
     /// </summary>
     private static string? BuildThreadSanitizedRuntime(string runtimeLibDir)
     {
         string runtimeIr = Path.GetFullPath(path: Path.Combine(path1: runtimeLibDir, path2: "..",
-            path3: "ingrid_runtime_tessera.ll"));
+            path3: "ingrid_runtime_lapila.ll"));
         if (!File.Exists(path: runtimeIr))
         {
             Console.WriteLine(
@@ -1283,7 +1283,7 @@ internal static class NativeToolchain
     }
 
     internal static int LinkExecutable(string optFile, string exeFile, string runtimeLibDir,
-        RfBuildMode buildMode, IReadOnlyList<string>? cLibraries = null,
+        RaBuildMode buildMode, IReadOnlyList<string>? cLibraries = null,
         IReadOnlyList<string>? libraryPaths = null)
     {
         // Compile .ll -> .exe using clang (clang uses -Ox flag style, not opt's -passes= form)
@@ -1298,7 +1298,7 @@ internal static class NativeToolchain
         }
 
         // A build that reads its crash trace from the stack: the optimized IR gets its chains, the assembly marks the
-        // calls' return addresses, and that assembly is linked (Tessera's TraceTable).
+        // calls' return addresses, and that assembly is linked (Lapila's TraceTable).
         if (WriteTraceTableAssembly(optFile: optFile, clangOptLevel: clangOptLevel) is not { } linkInput)
         {
             return 1;
@@ -1307,7 +1307,7 @@ internal static class NativeToolchain
         optFile = linkInput;
         // Preserve frame pointers in debug/release for accurate platform stack unwinding.
         // release-time/release-space omit frame pointers for maximum performance.
-        string framePointerFlag = buildMode is RfBuildMode.Debug or RfBuildMode.Release
+        string framePointerFlag = buildMode is RaBuildMode.Debug or RaBuildMode.Release
             ? " -fno-omit-frame-pointer"
             : "";
         string windowsThreadingLibs = WindowsThreadingLibsFragment();
@@ -1328,7 +1328,7 @@ internal static class NativeToolchain
         // Under ThreadSanitizer the runtime is linked as an object compiled with the instrumentation, in place of the
         // runtime library: the locks, the queues and the scheduler's atomics are what orders the program's accesses.
         bool threadSanitizer = Diagnostics.DiagnosticFlags.Sanitize == "thread";
-        string runtimeArg = $"-L\"{runtimeLibDir}\" -lrazorforge_runtime";
+        string runtimeArg = $"-L\"{runtimeLibDir}\" -lrevare_runtime";
         if (threadSanitizer)
         {
             if (BuildThreadSanitizedRuntime(runtimeLibDir: runtimeLibDir) is not { } runtimeObject)
@@ -1377,7 +1377,7 @@ internal static class NativeToolchain
             stderrThread.Join();
             // The trace table's assembly is a step of the build, not a byproduct to keep (it is as large as the IR).
             if (optFile.EndsWith(value: ".s", comparisonType: StringComparison.Ordinal) &&
-                Environment.GetEnvironmentVariable(variable: "RF_TRACE_KEEP") != "1")
+                Environment.GetEnvironmentVariable(variable: "RA_TRACE_KEEP") != "1")
             {
                 File.Delete(path: optFile);
             }

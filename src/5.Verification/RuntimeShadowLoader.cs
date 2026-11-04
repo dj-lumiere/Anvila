@@ -4,20 +4,20 @@ using System.Runtime.InteropServices;
 namespace Builder.Verification;
 
 /// <summary>
-/// Redirects P/Invoke loads of <c>razorforge_runtime</c> to a per-process shadow copy in
+/// Redirects P/Invoke loads of <c>revare_runtime</c> to a per-process shadow copy in
 /// <c>%TEMP%</c>. Without this, Windows holds an exclusive lock on the canonical DLL for
 /// the lifetime of the builder process, blocking the build driver from refreshing the
 /// copy that emitted user programs link against.
 /// </summary>
 public static class RuntimeShadowLoader
 {
-    private const string RuntimeLib = "razorforge_runtime";
+    private const string RuntimeLib = "revare_runtime";
     private static string? _shadowPath;
     private static int _initialized;
 
     /// <summary>
     /// Installs the shadow-copy resolver. Idempotent and safe to call multiple times.
-    /// Must run before any P/Invoke into <c>razorforge_runtime</c>.
+    /// Must run before any P/Invoke into <c>revare_runtime</c>.
     /// </summary>
     public static void Install()
     {

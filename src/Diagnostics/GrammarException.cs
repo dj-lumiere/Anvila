@@ -3,7 +3,7 @@ using TypeModel.Enums;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Exception thrown for grammar (lexer/parser) errors in both RazorForge and Suflae.
+/// Exception thrown for grammar (lexer/parser) errors in both Revare and Mielia.
 /// Contains diagnostic code, message, source location, and language.
 /// </summary>
 /// <param name="code">The code.</param>
@@ -61,7 +61,7 @@ public class GrammarException(
 
     /// <summary>
     /// Formats the error message in the standard format:
-    /// error[RF-G001]: filename.rf:10:5: message
+    /// error[RA-G001]: filename.rr:10:5: message
     /// </summary>
     private static string FormatMessage(GrammarDiagnosticCode code, string message,
         string fileName, int line, int column,

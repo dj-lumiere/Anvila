@@ -29,7 +29,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         return name switch
         {
             "gather" or "race" => $" '{name}' is a routine of the Work list now: 'jobs.{name}()'.",
-            "blank" or "hollow" when registry.Language == TypeModel.Enums.Language.Suflae =>
+            "blank" or "hollow" when registry.Language == TypeModel.Enums.Language.Mielia =>
                 $" '{name}[T]()' is gone: give the value its first contents where you declare it.",
             "blank" => " 'blank[T]()' is gone: give the value its first contents where you declare it, or use " +
                        "'T.hollow()' for an all-zero value inside 'danger'.",
@@ -82,9 +82,9 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     /// <c>CircularList</c> is <c>RotatableList</c>, <c>Integer</c> is <c>Int</c>), whether or not the module of the new name is loaded, or null.</summary>
     private string? TypeNamesStepRename(string name)
     {
-        // A Suflae program changes shared numbers through a global or an entity's member variable, which the builder
+        // A Mielia program changes shared numbers through a global or an entity's member variable, which the builder
         // keeps whole for every job: it has no cell type for it.
-        if (registry.Language == TypeModel.Enums.Language.Suflae && name is "Atomic" or "Unbroken")
+        if (registry.Language == TypeModel.Enums.Language.Mielia && name is "Atomic" or "Unbroken")
         {
             return " A number every job changes is a 'global' or a member variable of an entity: the builder keeps " +
                    "each change whole, so write 'hits += 1' on it.";
@@ -220,7 +220,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         {
             "Lookup" => " 'Lookup[T]' is gone: 'check f(x)' gives a 'Check[T]', and a missing value is its " +
                         "'AbsentValueError' arm.",
-            "Accessing" or "Controlling" when registry.Language == TypeModel.Enums.Language.Suflae =>
+            "Accessing" or "Controlling" when registry.Language == TypeModel.Enums.Language.Mielia =>
                 $" '{typeName}' is gone: use the value itself.",
             "Accessing" or "Controlling" => $" '{typeName}' is gone: take the handle itself, or the token a " +
                                             "'viewing' / 'modifying' block gives ('Viewing[T]' / 'Modifying[T]').",
@@ -253,12 +253,12 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         // A member renamed or removed for 0.5 names what is written now.
         switch (name)
         {
-            case "access" or "control" when registry.Language == TypeModel.Enums.Language.Suflae:
+            case "access" or "control" when registry.Language == TypeModel.Enums.Language.Mielia:
                 return $" '{name}()' is gone: use the value itself.";
             case "access" or "control":
                 return $" '{name}()' is gone: use the handle itself (a 'Retained' is used directly, and a 'Guarded' is " +
                        $"opened with '{(name == "access" ? "viewing g as v" : "modifying g as m")}').";
-            case "start_here" or "start_apart" when registry.Language == TypeModel.Enums.Language.Suflae &&
+            case "start_here" or "start_apart" when registry.Language == TypeModel.Enums.Language.Mielia &&
                                                     SemanticVerifier.IsWorkType(type: type):
                 return " A Work starts with 'start_now()' (migrate --step work rewrites it).";
             case "now" when type.BareName is "Moment":

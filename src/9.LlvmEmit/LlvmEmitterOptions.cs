@@ -17,7 +17,7 @@ public sealed class LlvmEmitterOptions
     public TargetConfig? Target { get; init; }
 
     /// <summary>Build optimization mode (defaults to Debug).</summary>
-    public RfBuildMode BuildMode { get; init; } = RfBuildMode.Debug;
+    public RaBuildMode BuildMode { get; init; } = RaBuildMode.Debug;
 
     /// <summary>AST bodies for builder-generated derived operators.</summary>
     public IReadOnlyDictionary<string, Statement>? SynthesizedBodies { get; init; }

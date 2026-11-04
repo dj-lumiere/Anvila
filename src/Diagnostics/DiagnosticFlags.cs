@@ -2,7 +2,7 @@ namespace Builder.Diagnostics;
 
 /// <summary>
 /// Process-wide builder diagnostic / dev-loop flags, populated from <c>config.toml</c> at the start
-/// of a build. These REPLACE the former <c>RAZORFORGE_*</c> / <c>RF_*</c> environment variables (removed):
+/// of a build. These REPLACE the former <c>REVARE_*</c> / <c>RF_*</c> environment variables (removed):
 /// dev-loop routing lives in <c>[target]</c> (<c>use-daemon</c>, <c>mode = "debug-jit"</c>) while the
 /// diagnostics below — incl. <c>timing</c> (merged sa/phase) — live in <c>[debug]</c>.
 /// <para>The one-shot CLI sets these once per run; the compile daemon serves requests SERIALLY, so it
@@ -12,14 +12,14 @@ namespace Builder.Diagnostics;
 /// </summary>
 public static class DiagnosticFlags
 {
-    /// <summary>Print per-phase <c>[SA]</c>/<c>[phase]</c> timing. Was <c>RAZORFORGE_PHASE_TIMING</c>.</summary>
+    /// <summary>Print per-phase <c>[SA]</c>/<c>[phase]</c> timing. Was <c>REVARE_PHASE_TIMING</c>.</summary>
     public static bool PhaseTiming { get; set; }
 
-    /// <summary>Survey unresolved marker-protocol conformances. Was <c>RF_MARKER_SURVEY</c>.</summary>
-    /// <summary>Print codegen DCE prune statistics. Was <c>RF_PRUNE_STATS</c>.</summary>
+    /// <summary>Survey unresolved marker-protocol conformances. Was <c>RA_MARKER_SURVEY</c>.</summary>
+    /// <summary>Print codegen DCE prune statistics. Was <c>RA_PRUNE_STATS</c>.</summary>
     public static bool PruneStats { get; set; }
 
-    /// <summary>Trace ORC-JIT lowering stages. Was <c>RAZORFORGE_JIT_TRACE</c>.</summary>
+    /// <summary>Trace ORC-JIT lowering stages. Was <c>REVARE_JIT_TRACE</c>.</summary>
     public static bool JitTrace { get; set; }
 
     /// <summary>Keep the emitted LLVM IR as <c>&lt;entry&gt;.ll</c> next to the source (<c>dump-ir</c>).
@@ -27,19 +27,19 @@ public static class DiagnosticFlags
     /// never write a <c>.ll</c>) and the <c>.ll</c> is NOT cleaned up — so the IR is inspectable after a run.</summary>
     public static bool DumpIr { get; set; }
 
-    /// <summary>Keep the Tessera source the Tessera backend writes as <c>&lt;entry&gt;.te</c> next to the
-    /// source (<c>dump-tessera</c>).</summary>
-    public static bool DumpTessera { get; set; }
+    /// <summary>Keep the Lapila source the Lapila backend writes as <c>&lt;entry&gt;.li</c> next to the
+    /// source (<c>dump-lapila</c>).</summary>
+    public static bool DumpLapila { get; set; }
 
-    /// <summary>Path to dump the routine-reachability set, or null. Was <c>RF_REACHABILITY_DUMP</c>.</summary>
+    /// <summary>Path to dump the routine-reachability set, or null. Was <c>RA_REACHABILITY_DUMP</c>.</summary>
     public static string? ReachabilityDump { get; set; }
 
-    /// <summary>Path to dump the maysuspend analysis, or null. Was <c>RF_MAYSUSPEND_DUMP</c>.</summary>
+    /// <summary>Path to dump the maysuspend analysis, or null. Was <c>RA_MAYSUSPEND_DUMP</c>.</summary>
     public static string? MaySuspendDump { get; set; }
 
     /// <summary><c>[debug] deadlock-check</c>: whether jobs waiting on each other for access stop the program, or
     /// null for the build mode's default (on in debug). The emitted <c>main</c> passes it to the runtime's
-    /// AccessManager. It replaces the <c>RF_DEADLOCK_DETECT</c> environment variable.</summary>
+    /// AccessManager. It replaces the <c>RA_DEADLOCK_DETECT</c> environment variable.</summary>
     public static bool? DeadlockCheck { get; set; }
 
     /// <summary><c>[debug] access-order</c>: whether accesses taken in opposite orders stop the program.</summary>
@@ -60,7 +60,7 @@ public static class DiagnosticFlags
         PruneStats = false;
         JitTrace = false;
         DumpIr = false;
-        DumpTessera = false;
+        DumpLapila = false;
         ReachabilityDump = null;
         MaySuspendDump = null;
         DeadlockCheck = null;

@@ -2,16 +2,16 @@ using System.Globalization;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
-namespace Builder.TesseraEmit;
+namespace Builder.LapilaEmit;
 
 /// <summary>
 /// The standard library's primitive operations (the <c>LLVM::</c> routines, each an <c>@llvm_ir</c> template) as
-/// Tessera operations. Most map onto Tessera's raw generic operations of the same LLVM instruction (<c>add</c>,
+/// Lapila operations. Most map onto Lapila's raw generic operations of the same LLVM instruction (<c>add</c>,
 /// <c>sdiv</c>, <c>sext</c>, <c>ptrtoint</c>, ...), written with explicit type arguments, so they keep the
-/// instruction's exact meaning whatever the operand's Tessera signedness. A primitive not in the table fails the
+/// instruction's exact meaning whatever the operand's Lapila signedness. A primitive not in the table fails the
 /// build, naming it.
 /// </summary>
-internal sealed class TesseraIntrinsics
+internal sealed class LapilaIntrinsics
 {
     private readonly RoutineInfo _routine;
     private readonly List<(string Value, TypeSymbol? Type)> _arguments;
@@ -21,7 +21,7 @@ internal sealed class TesseraIntrinsics
     private readonly Func<string, TypeSymbol?, string> _spill;
     private readonly Action<string> _emit;
 
-    private TesseraIntrinsics(RoutineInfo routine, List<(string Value, TypeSymbol? Type)> arguments,
+    private LapilaIntrinsics(RoutineInfo routine, List<(string Value, TypeSymbol? Type)> arguments,
         TypeSymbol? resultType, Func<TypeSymbol?, string> typeText, Func<TypeSymbol?, string> zero,
         Func<string, TypeSymbol?, string> spill, Action<string> emit)
     {
@@ -34,11 +34,11 @@ internal sealed class TesseraIntrinsics
         _emit = emit;
     }
 
-    /// <summary>The Tessera expression for a call to the primitive <paramref name="routine"/>.</summary>
+    /// <summary>The Lapila expression for a call to the primitive <paramref name="routine"/>.</summary>
     /// <param name="routine">The primitive routine.</param>
     /// <param name="arguments">Its arguments in parameter order, each a value with its type.</param>
     /// <param name="resultType">The call's type.</param>
-    /// <param name="typeText">The Tessera spelling of a type.</param>
+    /// <param name="typeText">The Lapila spelling of a type.</param>
     /// <param name="zero">An expression for the all-zero value of a type.</param>
     /// <param name="spill">Stores a value of a type in a fresh slot and returns the slot.</param>
     /// <param name="emit">Writes a statement before the expression.</param>
@@ -46,7 +46,7 @@ internal sealed class TesseraIntrinsics
         TypeSymbol? resultType, Func<TypeSymbol?, string> typeText, Func<TypeSymbol?, string> zero,
         Func<string, TypeSymbol?, string> spill, Action<string> emit)
     {
-        return new TesseraIntrinsics(routine: routine, arguments: arguments, resultType: resultType,
+        return new LapilaIntrinsics(routine: routine, arguments: arguments, resultType: resultType,
             typeText: typeText, zero: zero, spill: spill, emit: emit).Translate();
     }
 
@@ -123,9 +123,9 @@ internal sealed class TesseraIntrinsics
             "float_narrow" => Conversion(operation: "fptrunc"),
             // A value with no bytes (None) is read and written at any address, a hollow one too: a list of None
             // keeps no storage, so its address can be zero (`allocate_storage` gives none for 0 bytes).
-            "load" when TesseraWriter.IsVoid(type: _resultType) =>
+            "load" when LapilaWriter.IsVoid(type: _resultType) =>
                 $"bitcast[Addr, @{_typeText(arg: _resultType)}]({Argument(index: 0)}).peek()",
-            "store" when TesseraWriter.IsVoid(type: _arguments[index: 1].Type) =>
+            "store" when LapilaWriter.IsVoid(type: _arguments[index: 1].Type) =>
                 $"bitcast[Addr, @{Type(index: 1)}]({Argument(index: 0)}).poke({Argument(index: 1)})",
             "load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek()",
             "load_unaligned" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_unaligned()",
@@ -133,12 +133,12 @@ internal sealed class TesseraIntrinsics
             // zero_value is zeroed under an older name: every byte of a T zero.
             "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"({Argument(index: 0)} === {Argument(index: 1)})",
-            // The crash trace the routines keep (TesseraTrace), read by System's crash_report.
-            "trace_depth" => "RF_TRACE_DEPTH.load()",
+            // The crash trace the routines keep (LapilaTrace), read by System's crash_report.
+            "trace_depth" => "RA_TRACE_DEPTH.load()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
-                ? $"RF_TRACE_STACK.to[@{pointee}]()"
-                : "RF_TRACE_STACK",
-            // The trace a failure was first thrown with (TesseraTrace's ring of recent failures).
+                ? $"RA_TRACE_STACK.to[@{pointee}]()"
+                : "RA_TRACE_STACK",
+            // The trace a failure was first thrown with (LapilaTrace's ring of recent failures).
             "failure_trace_depth" => $"rf_failure_get_depth({Argument(index: 0)})",
             "failure_trace_frames" => _typeText(arg: _resultType) is ['@', .. var framePointee]
                 // The address may be zero (no trace kept), which the program's own code checks, so it is not to[@T]().
@@ -167,13 +167,13 @@ internal sealed class TesseraIntrinsics
             "set_byte_at" => SetElement(),
             "entity_from_hijacked" => Argument(index: 0),
             _ => throw new NotSupportedException(
-                message: $"The Tessera backend has no translation for the primitive LLVM::{_routine.Name} yet " +
+                message: $"The Lapila backend has no translation for the primitive LLVM::{_routine.Name} yet " +
                          $"(result {_resultType?.FullName ?? "none"}).")
         };
     }
 
     /// <summary>
-    /// The address <c>count</c> elements past <c>ptr</c>, the element being the result's pointee: a Tessera
+    /// The address <c>count</c> elements past <c>ptr</c>, the element being the result's pointee: a Lapila
     /// <c>stride</c>, whose count is the pointer-width integer of the same signedness (the index wraps to its width).
     /// </summary>
     private string ElementPointer()
@@ -183,7 +183,7 @@ internal sealed class TesseraIntrinsics
             : _routine.TypeArguments is [var typeArgument]
                 ? typeArgument
                 : throw new NotSupportedException(
-                    message: "The Tessera backend found an LLVM::element_pointer without an element type.");
+                    message: "The Lapila backend found an LLVM::element_pointer without an element type.");
         return $"{Argument(index: 0)}.to[@{_typeText(arg: element)}]().stride({Index(index: 1)})";
     }
 
@@ -207,12 +207,12 @@ internal sealed class TesseraIntrinsics
             ('i', 'p') => $"inttoptr[{from}, {to}]({Argument(index: 0)})",
             ('a', 'p') => _spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type),
             ('a', _) or (_, 'a') => throw new NotSupportedException(
-                message: $"The Tessera backend cannot reinterpret {from} as {to}."),
+                message: $"The Lapila backend cannot reinterpret {from} as {to}."),
             _ => $"bitcast[{from}, {to}]({Argument(index: 0)})"
         };
     }
 
-    /// <summary>The kind of a Tessera type: <c>i</c>nteger, <c>f</c>loat, <c>p</c>ointer or <c>a</c>ggregate.</summary>
+    /// <summary>The kind of a Lapila type: <c>i</c>nteger, <c>f</c>loat, <c>p</c>ointer or <c>a</c>ggregate.</summary>
     private static char Kind(string text)
     {
         if (text is "Addr" || text.StartsWith(value: '@'))
@@ -232,8 +232,8 @@ internal sealed class TesseraIntrinsics
     }
 
     /// <summary>
-    /// A sequentially consistent compare-and-exchange as the pair RazorForge returns: the value the address held and
-    /// whether it was replaced. Tessera's raw form returns the flag and stores the held value in a slot. A builder
+    /// A sequentially consistent compare-and-exchange as the pair Revare returns: the value the address held and
+    /// whether it was replaced. Lapila's raw form returns the flag and stores the held value in a slot. A builder
     /// tuple is a record with fields <c>item0</c>, <c>item1</c>.
     /// </summary>
     private string CompareExchange()
@@ -277,7 +277,7 @@ internal sealed class TesseraIntrinsics
         return index < _arguments.Count
             ? _arguments[index: index].Value
             : throw new NotSupportedException(
-                message: $"The Tessera backend expected an argument {index} to LLVM::{_routine.Name}.");
+                message: $"The Lapila backend expected an argument {index} to LLVM::{_routine.Name}.");
     }
 
     private string Type(int index)
@@ -301,7 +301,7 @@ internal sealed class TesseraIntrinsics
 
     /// <summary>
     /// The absolute value with the minimum wrapping to itself, as <c>llvm.abs</c> with a defined minimum: the sign
-    /// mask <c>m = v &gt;&gt; (W - 1)</c> (all ones when negative) gives <c>(v ^ m) - m</c>. Tessera has no abs
+    /// mask <c>m = v &gt;&gt; (W - 1)</c> (all ones when negative) gives <c>(v ^ m) - m</c>. Lapila has no abs
     /// operation (its <c>abs_wrap</c> is a library routine), so it is built from raw operations.
     /// </summary>
     private string IntAbs()
@@ -331,7 +331,7 @@ internal sealed class TesseraIntrinsics
     }
 
     /// <summary>
-    /// An ordered comparison. Tessera takes signedness from the type, so an operand whose Tessera type has the
+    /// An ordered comparison. Lapila takes signedness from the type, so an operand whose Lapila type has the
     /// other signedness is reinterpreted to the same-width type of the wanted signedness first.
     /// </summary>
     private string Ordered(string method, bool signed)

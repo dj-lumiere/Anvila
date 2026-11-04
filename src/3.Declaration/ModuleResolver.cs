@@ -206,8 +206,8 @@ public sealed class ModuleResolver
                     searchPattern: glob,
                     searchOption: SearchOption.TopDirectoryOnly));
             }
-            // File-granularity conditional compilation: drop `.rf` files whose leading
-            // `#@target(...)` directive doesn't match the build target (RazorForge-only).
+            // File-granularity conditional compilation: drop `.rr` files whose leading
+            // `#@target(...)` directive doesn't match the build target (Revare-only).
             files.RemoveAll(match: f => !Targeting.TargetGate.ShouldCompile(filePath: f));
             files.Sort(comparer: StringComparer.Ordinal);
 
@@ -245,7 +245,7 @@ public sealed class ModuleResolver
 
         // Search roots in priority order: project, then external library dependencies
         // (manifest [target] library entries), then each registered language's standard library,
-        // RazorForge first.
+        // Revare first.
         string[] roots =
         [
             _projectRoot,
@@ -273,7 +273,7 @@ public sealed class ModuleResolver
     private Dictionary<string, string>? _derivedModuleFiles;
 
     /// <summary>
-    /// A file without a <c>module</c> header is named after its location (<c>tools/text utils.rf</c> is
+    /// A file without a <c>module</c> header is named after its location (<c>tools/text utils.rr</c> is
     /// <c>Tools/TextUtils</c>). That name cannot be turned back into a path — the PascalCasing drops
     /// spaces and changes letter case, which a case-sensitive file system will not match — so such
     /// imports are found by deriving the name of every header-less file instead.
@@ -301,7 +301,7 @@ public sealed class ModuleResolver
                                        .Order(comparer: StringComparer.Ordinal);
             foreach (string file in files)
             {
-                // A `module` line names the file's module wherever the file lives (`geometry/shapes.sf` with
+                // A `module` line names the file's module wherever the file lives (`geometry/shapes.mi` with
                 // `module Geometry/Shapes`), so the path it was imported by need not match the folders' case.
                 _derivedModuleFiles.TryAdd(
                     key: ModulePathDerivation.ReadDeclaredModule(filePath: file) ??
@@ -316,13 +316,13 @@ public sealed class ModuleResolver
 
     /// <summary>
     /// Probes one search root for the import's module/symbol under every file-layout convention
-    /// (module file, type-per-file symbol, index.rf, same-name-as-directory). Returns the first
+    /// (module file, type-per-file symbol, index.rr, same-name-as-directory). Returns the first
     /// existing file, or null if none match under this root.
     /// </summary>
     private static string? TryFilesystemRoot(string root, string relPath, string? symbolPart)
     {
-        // Each convention is tried in every registered language, RazorForge first.
-        // root/module.rf
+        // Each convention is tried in every registered language, Revare first.
+        // root/module.rr
         foreach (string ext in Builder.Frontends.Languages.FileExtensions)
         {
             string module = Path.Combine(path1: root, path2: relPath + ext);
@@ -332,7 +332,7 @@ public sealed class ModuleResolver
             }
         }
 
-        // root/module/symbol.rf (type-per-file convention)
+        // root/module/symbol.rr (type-per-file convention)
         if (symbolPart is not null)
         {
             foreach (string ext in Builder.Frontends.Languages.FileExtensions)
@@ -345,14 +345,14 @@ public sealed class ModuleResolver
             }
         }
 
-        // root/module/index.rf
-        string idxRf = Path.Combine(path1: root, path2: relPath, path3: "index.rf");
-        if (File.Exists(path: idxRf))
+        // root/module/index.rr
+        string idxRa = Path.Combine(path1: root, path2: relPath, path3: "index.rr");
+        if (File.Exists(path: idxRa))
         {
-            return idxRf;
+            return idxRa;
         }
 
-        // root/module/module.rf (same-name-as-directory convention, e.g., BuilderQuery/BuilderQuery.rf)
+        // root/module/module.rr (same-name-as-directory convention, e.g., BuilderQuery/BuilderQuery.rr)
         string dirName = Path.GetFileName(path: relPath);
         if (!string.IsNullOrEmpty(value: dirName))
         {

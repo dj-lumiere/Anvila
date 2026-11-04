@@ -6,7 +6,7 @@ namespace Builder.Parser;
 
 /// <summary>
 /// Partial class containing declaration parsing (variables, routines, entities, records, variants, etc.).
-/// Unified parser for both RazorForge and Suflae languages.
+/// Unified parser for both Revare and Mielia languages.
 /// </summary>
 public partial class Parser
 {
@@ -295,7 +295,7 @@ public partial class Parser
     /// <param name="visibility">Access modifier for the routine.</param>
     /// <param name="annotations">List of annotations applied to the routine.</param>
     /// <param name="isCommon">Whether this is a <c>common</c> (type-level static) member routine.</param>
-    /// <param name="isDangerous">Whether the routine is marked as dangerous (RF only).</param>
+    /// <param name="isDangerous">Whether the routine is marked as dangerous (RA only).</param>
     /// <returns>A <see cref="RoutineDeclaration"/> AST node.</returns>
     private RoutineDeclaration ParseRoutineDeclaration(
         VisibilityModifier visibility = VisibilityModifier.Open, List<string>? annotations = null,
@@ -548,9 +548,9 @@ public partial class Parser
     /// </summary>
     private BlockStatement ParseRoutineBody(List<string>? annotations, SourceLocation location)
     {
-        // An `@rf("...")` routine shows a RazorForge routine in the file's language: its body is RazorForge's.
+        // An `@ra("...")` routine shows a Revare routine in the file's language: its body is Revare's.
         bool isInnate = annotations != null && (annotations.Contains(item: "innate") ||
-                                                annotations.Any(predicate: a => a.StartsWith(value: "rf(",
+                                                annotations.Any(predicate: a => a.StartsWith(value: "ra(",
                                                     comparisonType: StringComparison.Ordinal)));
         // A body exists when the next tokens are Newline+Indent or just Indent.
         // A bare Newline without a following Indent means no body (next declaration follows).
@@ -892,7 +892,7 @@ public partial class Parser
     /// </summary>
     private static string SerializeTypeExpression(TypeExpression type)
     {
-        // A realm qualifier (`SF::System.List[T]`) is part of the name: the bracket names that language's type.
+        // A realm qualifier (`MI::System.List[T]`) is part of the name: the bracket names that language's type.
         string name = type.Realm != null ? $"{type.Realm}::{type.Name}" : type.Name;
         if (type.GenericArguments is not { Count: > 0 })
         {

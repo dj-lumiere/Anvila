@@ -9,26 +9,26 @@ using SyntaxTree;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
-namespace Builder.TesseraEmit;
+namespace Builder.LapilaEmit;
 
 /// <summary>
-/// Writes the Phase 9 program as one Tessera module: a record per struct record, an external declaration per C
-/// routine called, a routine per routine body, and Tessera's entry point <c>start</c>. It translates and decides
+/// Writes the Phase 9 program as one Lapila module: a record per struct record, an external declaration per C
+/// routine called, a routine per routine body, and Lapila's entry point <c>start</c>. It translates and decides
 /// nothing about the language: what to emit is the set the demand collector materialized, and every call is already
 /// resolved.
 /// </summary>
-internal sealed class TesseraWriter
+internal sealed class LapilaWriter
 {
     private readonly BackendInput _input;
 
     /// <summary>
-    /// The module in Tessera's current spellings: this writer still writes some of the old ones (`Void`, `#name`
+    /// The module in Lapila's current spellings: this writer still writes some of the old ones (`Void`, `#name`
     /// annotations, `require`).
     /// </summary>
     private static string Current(string text) =>
-        TesseraOldSpellings.NoneSpelling(text: TesseraOldSpellings.Spellings(text: text));
+        LapilaOldSpellings.NoneSpelling(text: LapilaOldSpellings.Spellings(text: text));
 
-    /// <summary>Tessera names of the routines this module defines, keyed by the routine's mangled symbol.</summary>
+    /// <summary>Lapila names of the routines this module defines, keyed by the routine's mangled symbol.</summary>
     private readonly Dictionary<string, string> _routineNames = new(comparer: StringComparer.Ordinal);
 
     private readonly HashSet<string> _usedNames = new(comparer: StringComparer.Ordinal);
@@ -51,7 +51,7 @@ internal sealed class TesseraWriter
     /// declared, not written (<see cref="ResidentDeclaration"/>).</summary>
     private readonly IReadOnlySet<string> _resident;
 
-    public TesseraWriter(BackendInput input, bool residentBase = false)
+    public LapilaWriter(BackendInput input, bool residentBase = false)
     {
         _input = input;
         _residentBase = residentBase;
@@ -60,8 +60,8 @@ internal sealed class TesseraWriter
             : new HashSet<string>();
         foreach (string name in new[]
                  {
-                     TesseraTrace.Push, TesseraTrace.Pop, TesseraTrace.UpdateLocation, "rf_runtime_init", "start", "c_rf_exit_code",
-                     "c_rf_set_trace_mode", "RfTraceFrame", "RF_TRACE_STACK", "RF_TRACE_DEPTH", "rf_trace_get_depth",
+                     LapilaTrace.Push, LapilaTrace.Pop, LapilaTrace.UpdateLocation, "rf_runtime_init", "start", "c_rf_exit_code",
+                     "c_rf_set_trace_mode", "RaTraceFrame", "RA_TRACE_STACK", "RA_TRACE_DEPTH", "rf_trace_get_depth",
                      "rf_trace_get_frames"
                  })
         {
@@ -73,7 +73,7 @@ internal sealed class TesseraWriter
     public bool Traces => Collection.TraceFrames.Enabled(mode: _input.BuildMode);
 
     /// <summary>What starts the declaration of <paramref name="routine"/>. Every routine written here is generated
-    /// code, which Tessera lets use blocks and jumps.</summary>
+    /// code, which Lapila lets use blocks and jumps.</summary>
     public string RoutinePrefix(RoutineInfo routine)
     {
         return "@generated\n";
@@ -87,13 +87,13 @@ internal sealed class TesseraWriter
             registry: _input.Registry);
     }
 
-    /// <summary>The Tessera names of the routines the module defines.</summary>
+    /// <summary>The Lapila names of the routines the module defines.</summary>
     public IReadOnlyCollection<string> DefinedRoutineNames =>
         _routineNames.Where(predicate: r => !_residentDeclarations.Contains(item: r.Key))
                      .Select(selector: r => r.Value)
                      .ToList();
 
-    /// <summary>The routine symbols of the routines the module defines (the builder's names, not Tessera's).</summary>
+    /// <summary>The routine symbols of the routines the module defines (the builder's names, not Lapila's).</summary>
     public IReadOnlyCollection<string> DefinedRoutineSymbols =>
         _routineNames.Keys.Where(predicate: s => !_residentDeclarations.Contains(item: s)).ToList();
 
@@ -119,7 +119,7 @@ internal sealed class TesseraWriter
         {
             try
             {
-                definitions.Append(value: new TesseraRoutineWriter(module: this, routine: info, body: body).Write());
+                definitions.Append(value: new LapilaRoutineWriter(module: this, routine: info, body: body).Write());
             }
             catch (NotSupportedException ex) when (!ex.Message.Contains(value: " (in ",
                                                        comparisonType: StringComparison.Ordinal))
@@ -139,7 +139,7 @@ internal sealed class TesseraWriter
     private readonly StringBuilder _definitions = new();
 
     /// <summary>
-    /// The module as far as translation got, for <c>[debug] dump-tessera</c> when it stops at an unsupported
+    /// The module as far as translation got, for <c>[debug] dump-lapila</c> when it stops at an unsupported
     /// construct: everything written before that point, then the reason as a comment.
     /// </summary>
     public string PartialModule(string stoppedBecause)
@@ -151,9 +151,9 @@ internal sealed class TesseraWriter
     {
         StringBuilder definitions = _definitions;
         var module = new StringBuilder();
-        module.Append(value: "# Generated by the RazorForge builder's Tessera backend.\n\n");
+        module.Append(value: "# Generated by the Revare builder's Lapila backend.\n\n");
         // In every mode: crash_report reads the trace (a build without a trace pushes nothing, so its depth is 0).
-        module.Append(value: TesseraTrace.Support);
+        module.Append(value: LapilaTrace.Support);
 
         module.Append(value: _records);
         module.Append(value: _globals);
@@ -279,7 +279,7 @@ internal sealed class TesseraWriter
         if (arms is not [{ Member.ReturnType: { } result }, ..])
         {
             throw new NotSupportedException(
-                message: $"The Tessera backend found no live crashable with {Article.For(name: member)} '{member}' to dispatch to.");
+                message: $"The Lapila backend found no live crashable with {Article.For(name: member)} '{member}' to dispatch to.");
         }
 
         string name = VerbatimName(text: $"crashable dispatch {member} {ArmsTag(arms: arms)}");
@@ -323,7 +323,7 @@ internal sealed class TesseraWriter
         if (routine.OwnerType is not CrashableTypeSymbol crashable)
         {
             throw new NotSupportedException(
-                message: $"The Tessera backend dispatches a caught error's members only on crashables, not on {routine.OwnerType?.FullName}.");
+                message: $"The Lapila backend dispatches a caught error's members only on crashables, not on {routine.OwnerType?.FullName}.");
         }
 
         string error = $"error.to[@{TypeText(type: crashable)}]()";
@@ -384,7 +384,7 @@ internal sealed class TesseraWriter
 
     // ── Names ─────────────────────────────────────────────────────────────────
 
-    /// <summary>The Tessera routine a call to <paramref name="routine"/> goes to: its definition in this module,
+    /// <summary>The Lapila routine a call to <paramref name="routine"/> goes to: its definition in this module,
     /// or for a C routine, its external declaration.</summary>
     public string RoutineName(RoutineInfo routine)
     {
@@ -402,7 +402,7 @@ internal sealed class TesseraWriter
             }
 
             throw new NotSupportedException(
-                message: $"The Tessera backend found a call to {symbol}, which has no body in this build.");
+                message: $"The Lapila backend found a call to {symbol}, which has no body in this build.");
         }
 
         return name;
@@ -410,9 +410,9 @@ internal sealed class TesseraWriter
 
     /// <summary>
     /// A routine of the resident base, which a delta calls but does not define: written with its signature and a body
-    /// that is never built, since its Tessera symbol is one the base provides (<c>Tessera.Compiler.ProvidedSymbols</c>),
-    /// so Tessera declares it and the call links to the base's definition. The signature is the one the base's routine
-    /// has (<see cref="TesseraRoutineWriter.WriteDeclarationOnly"/>), so the two symbols are one. Written once, on the
+    /// that is never built, since its Lapila symbol is one the base provides (<c>Lapila.Compiler.ProvidedSymbols</c>),
+    /// so Lapila declares it and the call links to the base's definition. The signature is the one the base's routine
+    /// has (<see cref="LapilaRoutineWriter.WriteDeclarationOnly"/>), so the two symbols are one. Written once, on the
     /// first call.
     /// </summary>
     private string ResidentDeclaration(RoutineInfo routine, string symbol)
@@ -420,7 +420,7 @@ internal sealed class TesseraWriter
         string name = VerbatimName(text: symbol);
         _routineNames[key: symbol] = name;
         _residentDeclarations.Add(item: symbol);
-        _definitions.Append(value: new TesseraRoutineWriter(module: this, routine: routine, body: new BlockStatement(
+        _definitions.Append(value: new LapilaRoutineWriter(module: this, routine: routine, body: new BlockStatement(
                 Statements: [], Location: routine.Location ?? new SourceLocation(FileName: "", Line: 0, Column: 0, Position: 0)))
            .WriteDeclarationOnly());
         _definitions.Append(value: '\n');
@@ -441,7 +441,7 @@ internal sealed class TesseraWriter
         name = UniqueName(wanted: "c_" + Sanitize(text: symbol));
         _externNames[key: symbol] = name;
         string parameters = string.Join(separator: ", ",
-            // A C parameter's name is only a label, and Tessera reserves `me` for a receiver.
+            // A C parameter's name is only a label, and Lapila reserves `me` for a receiver.
             values: routine.Parameters.Select(selector: p =>
                 $"{(p.Name == "me" ? "me_" : ValueName(name: p.Name))}: {TypeText(type: p.Type)}"));
         _externs.Append(value: $"@external(\"c\")\n@symbol(\"{symbol}\")\n" +
@@ -456,12 +456,12 @@ internal sealed class TesseraWriter
     /// <summary>
     /// The record a variant is, laid out as the LLVM emitter lays it out: the live case's type id, then the
     /// bytes of the largest payload, which every case shares (a payload is stored and read at its own type
-    /// through a cast of those bytes). Tessera sizes the bytes, from the payload types themselves.
+    /// through a cast of those bytes). Lapila sizes the bytes, from the payload types themselves.
     /// </summary>
     public string VariantRecord(VariantTypeSymbol variant)
     {
-        // Suflae's own types share full names with the shared library's (SF `System.List` and RF `System.List`), so
-        // the realm-marked name keys and names each Tessera record.
+        // Mielia's own types share full names with the shared library's (MI `System.List` and RA `System.List`), so
+        // the realm-marked name keys and names each Lapila record.
         if (_variantRecords.TryGetValue(key: variant.InstanceArgumentName, value: out string? name))
         {
             return name;
@@ -508,7 +508,7 @@ internal sealed class TesseraWriter
     }
 
     /// <summary>
-    /// The Tessera <c>Callable</c> a routine value's code address is called as: the routine type's parameters,
+    /// The Lapila <c>Callable</c> a routine value's code address is called as: the routine type's parameters,
     /// and with <paramref name="withBound"/> the bound payload after them.
     /// </summary>
     public string CallableText(RoutineTypeSymbol routineType, bool withBound)
@@ -611,7 +611,7 @@ internal sealed class TesseraWriter
     }
 
     /// <summary>
-    /// The read-only memory holding <paramref name="data"/>'s elements (a Tessera preset in memory, a private constant
+    /// The read-only memory holding <paramref name="data"/>'s elements (a Lapila preset in memory, a private constant
     /// as in the LLVM emitter, so each module keeps its own), laid down once per distinct content; its name is the
     /// address. Empty data is the zero address typed as the element pointer, since an `Addr` doesn't go where a
     /// `@T` is expected.
@@ -636,7 +636,7 @@ internal sealed class TesseraWriter
             return name;
         }
 
-        name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
+        name = UniqueName(wanted: $"RA_DATA_{_texts.Count}");
         _texts[key: key] = name;
         _globals.Append(value: $"preset {name}: {type} = {initial}\n\n");
         // The value is a pointer to the first element, taken from the view of every element.
@@ -648,7 +648,7 @@ internal sealed class TesseraWriter
     /// <summary>
     /// The aggregate preset (an <c>Items[T, N]</c> or <c>Bits[N]</c> table) <paramref name="name"/> names,
     /// seen from <paramref name="routine"/>: the bare name, then qualified by the routine's module, as in the LLVM
-    /// emitter. Its table is a Tessera preset, a value in read-only data declared once, which Tessera reads in place
+    /// emitter. Its table is a Lapila preset, a value in read-only data declared once, which Lapila reads in place
     /// through its name (a routine on the table's address, `peek` included, takes it as a view). Null when the
     /// name is not an aggregate preset.
     /// </summary>
@@ -671,15 +671,15 @@ internal sealed class TesseraWriter
             return (global, preset.Type);
         }
 
-        global = UniqueName(wanted: $"RF_PRESET_{_presets.Count}");
+        global = UniqueName(wanted: $"RA_PRESET_{_presets.Count}");
         _presets[key: preset.QualifiedName] = global;
         var elements = ((ListLiteralExpression)preset.PresetValue!).Elements;
         string type = TypeText(type: preset.Type);
         // One element per slot (a Bits table is registered as its packed bytes).
         IEnumerable<string> values = elements.Select(selector: e => e is LiteralExpression literal
-            ? TesseraRoutineWriter.ConstantText(literal: literal)
+            ? LapilaRoutineWriter.ConstantText(literal: literal)
             : throw new NotSupportedException(
-                message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
+                message: $"The Lapila backend found a non-literal element in the preset {preset.QualifiedName}."));
         _globals.Append(value: $"preset {global}: {type} = [{string.Join(separator: ", ", values: values)}]\n\n");
         return (global, preset.Type);
     }
@@ -689,7 +689,7 @@ internal sealed class TesseraWriter
     private readonly Dictionary<(string? Module, string Name), (string Global, TypeSymbol Type)> _moduleGlobals = new();
 
     /// <summary>
-    /// The module-level cell of the program's <c>global</c> <paramref name="name"/>: a Tessera <c>global</c> that
+    /// The module-level cell of the program's <c>global</c> <paramref name="name"/>: a Lapila <c>global</c> that
     /// starts zeroed, as the LLVM emitter's does. The initializer is an assignment at the top of <c>start()</c>, and
     /// the teardown at its exits. <paramref name="module"/> is the module of the global analysis resolved the name
     /// to (two modules may each have a global of one name), null for the first program that declares one. Null when
@@ -723,7 +723,7 @@ internal sealed class TesseraWriter
                 return known;
             }
 
-            string global = UniqueName(wanted: $"RF_GLOBAL_{(string.IsNullOrEmpty(value: programModule) ? name : $"{programModule.Replace(oldChar: '/', newChar: '_')}_{name}")}");
+            string global = UniqueName(wanted: $"RA_GLOBAL_{(string.IsNullOrEmpty(value: programModule) ? name : $"{programModule.Replace(oldChar: '/', newChar: '_')}_{name}")}");
             // The global's value is written at the top of `start` before anything reads it, and a type that holds a
             // pointer has no all-zero value to start from, so the cell is declared `lateinit`.
             _globals.Append(value: $"lateinit global {global}: &{TypeText(type: type)}\n\n");
@@ -735,11 +735,11 @@ internal sealed class TesseraWriter
         return null;
     }
 
-    /// <summary>The Tessera record laid out like an entity's heap block (its fields in order, no header), declared
+    /// <summary>The Lapila record laid out like an entity's heap block (its fields in order, no header), declared
     /// on first use. An entity value is the block's address; a field is read through this record.</summary>
     public string EntityRecord(EntityTypeSymbol entity)
     {
-        // Realm-marked like the variant records: SF `System.List` and RF `System.List` have different fields.
+        // Realm-marked like the variant records: MI `System.List` and RA `System.List` have different fields.
         if (_entityRecords.TryGetValue(key: entity.InstanceArgumentName, value: out string? name))
         {
             return name;
@@ -765,14 +765,14 @@ internal sealed class TesseraWriter
         return name;
     }
 
-    /// <summary>The names Tessera reads as keywords where a value's name goes (its parser's own list), plus `Me` (the
+    /// <summary>The names Lapila reads as keywords where a value's name goes (its parser's own list), plus `Me` (the
     /// receiver's type), `self`/`Self` and the old `private`/`internal`: a value of such a name is written between
     /// backticks.</summary>
-    private static readonly HashSet<string> TesseraKeywords =
-        [.. Tessera.ReservedNames.Values, "Me", "self", "Self", "private", "internal"];
+    private static readonly HashSet<string> LapilaKeywords =
+        [.. Lapila.ReservedNames.Values, "Me", "self", "Self", "private", "internal"];
 
-    /// <summary>A value named as the builder's program names it: a Tessera keyword goes between backticks.</summary>
-    public static string ValueName(string name) => TesseraKeywords.Contains(item: name) ? $"`{name}`" : name;
+    /// <summary>A value named as the builder's program names it: a Lapila keyword goes between backticks.</summary>
+    public static string ValueName(string name) => LapilaKeywords.Contains(item: name) ? $"`{name}`" : name;
 
     /// <summary>Whether an operand's text is a value's name (a binding, a parameter, a preset), as opposed to a
     /// literal or an expression.</summary>
@@ -792,7 +792,7 @@ internal sealed class TesseraWriter
         return name;
     }
 
-    /// <summary>A builder name as it is, between backticks: a Tessera backtick name holds any character but a
+    /// <summary>A builder name as it is, between backticks: a Lapila backtick name holds any character but a
     /// backtick or a line break, so the name needs no rewriting, and two different names never meet.</summary>
     private string VerbatimName(string text)
     {
@@ -800,13 +800,13 @@ internal sealed class TesseraWriter
         text = text.Trim(trimChar: '"');
         if (text.Length == 0 || text.IndexOfAny(anyOf: ['`', '\n', '\r']) >= 0)
         {
-            throw new NotSupportedException(message: $"The Tessera backend can't name '{text}' between backticks.");
+            throw new NotSupportedException(message: $"The Lapila backend can't name '{text}' between backticks.");
         }
 
         string name = $"`{text}`";
         return _usedNames.Add(item: name)
             ? name
-            : throw new InvalidOperationException(message: $"The Tessera backend named '{text}' twice.");
+            : throw new InvalidOperationException(message: $"The Lapila backend named '{text}' twice.");
     }
 
     /// <summary>A routine symbol without the attribute prefix the LLVM path writes first (<c>[member] </c>).</summary>
@@ -815,7 +815,7 @@ internal sealed class TesseraWriter
             ? text[(close + 2)..]
             : text;
 
-    /// <summary>A Tessera identifier for a builder name: letters and digits kept, every other run of
+    /// <summary>A Lapila identifier for a builder name: letters and digits kept, every other run of
     /// characters one underscore, the routine attribute prefix (<c>[member] </c>) dropped.</summary>
     private static string Sanitize(string text)
     {
@@ -842,7 +842,7 @@ internal sealed class TesseraWriter
 
     // ── Types ─────────────────────────────────────────────────────────────────
 
-    /// <summary>The Tessera spelling of a builder type.</summary>
+    /// <summary>The Lapila spelling of a builder type.</summary>
     public string TypeText(TypeSymbol? type)
     {
         switch (type)
@@ -865,7 +865,7 @@ internal sealed class TesseraWriter
                 return RecordName(record: record);
             default:
                 throw new NotSupportedException(
-                    message: $"The Tessera backend does not translate {type.GetType().Name} '{type.FullName}' yet.");
+                    message: $"The Lapila backend does not translate {type.GetType().Name} '{type.FullName}' yet.");
         }
     }
 
@@ -875,12 +875,12 @@ internal sealed class TesseraWriter
     {
         return _input.Registry.LookupType(name: constant.ExplicitTypeName ?? "U64") ??
                throw new NotSupportedException(
-                   message: $"The Tessera backend found no type '{constant.ExplicitTypeName ?? "U64"}' for a constant.");
+                   message: $"The Lapila backend found no type '{constant.ExplicitTypeName ?? "U64"}' for a constant.");
     }
 
     /// <summary>The builder's <c>Text</c> type.</summary>
     public TypeSymbol TextType => _input.Registry.LookupType(name: "Text") ??
-                                  throw new NotSupportedException(message: "The Tessera backend found no Text type.");
+                                  throw new NotSupportedException(message: "The Lapila backend found no Text type.");
 
     /// <summary>A cancellation node: the three untyped addresses the coroutine runtime links a local by.</summary>
     public TypeSymbol CancellationNodeType
@@ -888,22 +888,22 @@ internal sealed class TesseraWriter
         get
         {
             TypeSymbol pointer = _input.Registry.LookupType(name: Declaration.RuntimeContract.Addr) ??
-                                 throw new NotSupportedException(message: "The Tessera backend found no Addr type.");
+                                 throw new NotSupportedException(message: "The Lapila backend found no Addr type.");
             return _input.Registry.GetOrCreateTupleType(elementTypes: [pointer, pointer, pointer]);
         }
     }
 
     /// <summary>The builder's <c>U64</c> type.</summary>
     public TypeSymbol U64Type => _input.Registry.LookupType(name: "U64") ??
-                                 throw new NotSupportedException(message: "The Tessera backend found no U64 type.");
+                                 throw new NotSupportedException(message: "The Lapila backend found no U64 type.");
 
     /// <summary>The builder's <c>Bool</c> type.</summary>
     public TypeSymbol BoolType => _input.Registry.LookupType(name: "Bool") ??
-                                  throw new NotSupportedException(message: "The Tessera backend found no Bool type.");
+                                  throw new NotSupportedException(message: "The Lapila backend found no Bool type.");
 
-    /// <summary>The builder's <c>Addr</c> type: an untyped address, Tessera's <c>Addr</c>.</summary>
+    /// <summary>The builder's <c>Addr</c> type: an untyped address, Lapila's <c>Addr</c>.</summary>
     public TypeSymbol PointerType => _input.Registry.LookupType(name: Declaration.RuntimeContract.Addr) ??
-                                     throw new NotSupportedException(message: "The Tessera backend found no Addr type.");
+                                     throw new NotSupportedException(message: "The Lapila backend found no Addr type.");
 
     /// <summary>True for the unit type <c>None</c>, which has no value.</summary>
     public static bool IsVoid(TypeSymbol? type)
@@ -927,7 +927,7 @@ internal sealed class TesseraWriter
             return byName;
         }
 
-        // Hijacked[T] is a pointer to a T: Tessera's @T (an entity's points at its heap block). Any other pointer
+        // Hijacked[T] is a pointer to a T: Lapila's @T (an entity's points at its heap block). Any other pointer
         // record is an untyped address.
         if (backend == "ptr")
         {
@@ -961,10 +961,10 @@ internal sealed class TesseraWriter
         }
 
         throw new NotSupportedException(
-            message: $"The Tessera backend has no translation for the primitive type {record.FullName} ({backend}).");
+            message: $"The Lapila backend has no translation for the primitive type {record.FullName} ({backend}).");
     }
 
-    /// <summary>The Tessera record for a struct record, declared on first use with its fields in order.</summary>
+    /// <summary>The Lapila record for a struct record, declared on first use with its fields in order.</summary>
     private string RecordName(RecordTypeSymbol record)
     {
         // Realm-marked like the variant records.
@@ -1005,16 +1005,16 @@ internal sealed class TesseraWriter
         return $"{deadlockCheck}, {accessOrder}, {language}";
     }
 
-    /// <summary>Tessera's entry point <c>start</c>: initializes the runtime, runs the entry module's <c>start</c>, and
-    /// hands the exit status the program set (the runtime's <c>rf_exit_code</c>) to Tessera's <c>set_exit_code</c>,
-    /// which the <c>main</c> Tessera writes returns.</summary>
+    /// <summary>Lapila's entry point <c>start</c>: initializes the runtime, runs the entry module's <c>start</c>, and
+    /// hands the exit status the program set (the runtime's <c>rf_exit_code</c>) to Lapila's <c>set_exit_code</c>,
+    /// which the <c>main</c> Lapila writes returns.</summary>
     private string WriteStart(List<(RoutineInfo Info, Statement Body)> routines)
     {
         string? entry = _input.EntryModule;
         RoutineInfo start = Collection.EntryPoint.StartOf(defined: routines.Select(selector: r => r.Info),
                                 entryModule: entry) ??
                             throw new NotSupportedException(
-                                message: $"The Tessera backend found no start() routine in the entry module '{entry}'.");
+                                message: $"The Lapila backend found no start() routine in the entry module '{entry}'.");
 
         return "@external(\"c\")\n@symbol(\"rf_runtime_init\")\n" +
                "routine rf_runtime_init() -> Void\n\n" +
@@ -1022,15 +1022,15 @@ internal sealed class TesseraWriter
                "routine c_rf_set_trace_mode(mode: S32) -> Void\n\n" +
                "@external(\"c\")\n@symbol(\"rf_set_stack_overflow_report\")\n" +
                "routine c_rf_set_stack_overflow_report(report: Addr) -> Void\n\n" +
-               // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
-               $"@external(\"c\")\n@symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Suflae ? "tessera_deep_calls_report" : "tessera_stack_overflow_report")}\")\n" +
-               "routine c_tessera_stack_overflow_report(stack_size: U64) -> Void\n\n" +
+               // Revare reports a stack overflow, Mielia (no "stack" in its vocabulary) running out of memory.
+               $"@external(\"c\")\n@symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Mielia ? "lapila_deep_calls_report" : "lapila_stack_overflow_report")}\")\n" +
+               "routine c_lapila_stack_overflow_report(stack_size: U64) -> Void\n\n" +
                "@external(\"c\")\n@symbol(\"rf_set_crash_report\")\n" +
                "routine c_rf_set_crash_report(report: Addr) -> Void\n\n" +
-               "@external(\"c\")\n@symbol(\"tessera_runtime_crash_report\")\n" +
-               "routine c_tessera_runtime_crash_report(name: CStrView, message: CStrView, place: Addr) -> Void\n\n" +
-               "@external(\"c\")\n@symbol(\"tessera_set_library_folder\")\n" +
-               "routine c_tessera_set_library_folder(library: CStrView) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"lapila_runtime_crash_report\")\n" +
+               "routine c_lapila_runtime_crash_report(name: CStrView, message: CStrView, place: Addr) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"lapila_set_library_folder\")\n" +
+               "routine c_lapila_set_library_folder(library: CStrView) -> Void\n\n" +
                "@external(\"c\")\n@symbol(\"rf_exit_code\")\n" +
                "routine c_rf_exit_code() -> S32\n\n" +
                "@external(\"c\")\n@symbol(\"rf_access_configure\")\n" +
@@ -1040,11 +1040,11 @@ internal sealed class TesseraWriter
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
                $"    c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +
                // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
-               "    c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
+               "    c_rf_set_stack_overflow_report(c_lapila_stack_overflow_report.addr())\n" +
                // So is a crash the runtime raises (a deadlock, a failed allocation), named by where the program called
                // into the standard library.
-               "    c_rf_set_crash_report(c_tessera_runtime_crash_report.addr())\n" +
-               $"    c_tessera_set_library_folder({TesseraTrace.CString(text: _input.Registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "")})\n" +
+               "    c_rf_set_crash_report(c_lapila_runtime_crash_report.addr())\n" +
+               $"    c_lapila_set_library_folder({LapilaTrace.CString(text: _input.Registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "")})\n" +
                // The AccessManager's checks and the language its reports speak. The places in its reports come from
                // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
                $"    c_rf_access_configure({AccessCheckArguments()}, Addr.zero())\n" +

@@ -1,15 +1,15 @@
 using System.Text;
 using TypeModel.Symbols;
 
-namespace Builder.TesseraEmit;
+namespace Builder.LapilaEmit;
 
 /// <summary>
-/// The crash trace in Tessera, the same shadow stack the LLVM emitter writes: each thread has 32 frames of
+/// The crash trace in Lapila, the same shadow stack the LLVM emitter writes: each thread has 32 frames of
 /// (routine name, file, line, column) and a depth. A routine that can crash pushes a frame on entry, moves the
 /// frame's position before each call, and pops it at each return. System's <c>crash_report</c> reads the frames
 /// through the <c>LLVM::trace_depth</c> and <c>LLVM::trace_frames</c> primitives and prints them itself.
 /// </summary>
-internal static class TesseraTrace
+internal static class LapilaTrace
 {
     /// <summary>The routine that pushes a frame.</summary>
     public const string Push = "rf_trace_push";
@@ -27,41 +27,41 @@ internal static class TesseraTrace
     /// <summary>The frame stack, the depth, and the routines over them.</summary>
     public const string Support = """
         ### One frame of the crash trace, laid out as the runtime's printer reads it.
-        record RfTraceFrame
+        record RaTraceFrame
             `routine`: Addr
             file: Addr
             line: S32
             column: S32
 
         @threadlocal
-        global RF_TRACE_STACK: &Items[RfTraceFrame, 32]
+        global RA_TRACE_STACK: &Items[RaTraceFrame, 32]
 
         @threadlocal
-        global RF_TRACE_DEPTH: &S32
+        global RA_TRACE_DEPTH: &S32
 
         ### Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
-            depth: S32 = RF_TRACE_DEPTH.load()
+            depth: S32 = RA_TRACE_DEPTH.load()
             index: U64 = zext[S32, U64](band[S32](depth, 31))
-            frame: @RfTraceFrame = RF_TRACE_STACK.getview().to[@RfTraceFrame]().stride(index)
+            frame: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(index)
             frame.`routine`.poke(routine_name)
             frame.file.poke(file)
             frame.line.poke(line)
             frame.column.poke(column)
-            add[S32](depth, 1).poke_into(RF_TRACE_DEPTH)
+            add[S32](depth, 1).poke_into(RA_TRACE_DEPTH)
             return
 
         routine rf_trace_pop() -> Void
-            sub[S32](RF_TRACE_DEPTH.load(), 1).poke_into(RF_TRACE_DEPTH)
+            sub[S32](RA_TRACE_DEPTH.load(), 1).poke_into(RA_TRACE_DEPTH)
             return
 
         ### Moves the top frame to the position of the call about to be made.
         routine rf_trace_update_loc(line: S32, column: S32) -> Void
-            depth: S32 = RF_TRACE_DEPTH.load()
+            depth: S32 = RA_TRACE_DEPTH.load()
             if depth.le(0)
                 return
             index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
-            frame: @RfTraceFrame = RF_TRACE_STACK.getview().to[@RfTraceFrame]().stride(index)
+            frame: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(index)
             frame.line.poke(line)
             frame.column.poke(column)
             return
@@ -69,61 +69,61 @@ internal static class TesseraTrace
         ### The trace's depth, under the name the LLVM emitter exports it by: Ingrid's crash handler reads it.
         @export("_rf_trace_get_depth_shared")
         routine rf_trace_get_depth() -> S32
-            depth: S32 = RF_TRACE_DEPTH.load()
+            depth: S32 = RA_TRACE_DEPTH.load()
             return depth
 
         ### The trace's 32 frames, under the name the LLVM emitter exports them by.
         @export("_rf_trace_get_frames_shared")
-        routine rf_trace_get_frames() -> @RfTraceFrame
-            frames: @RfTraceFrame = RF_TRACE_STACK.getview().to[@RfTraceFrame]()
+        routine rf_trace_get_frames() -> @RaTraceFrame
+            frames: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]()
             return frames
 
         ### The trace's innermost frame, under the name the LLVM emitter exports it by: Ingrid's place of an access reads
         ### it. 1 when there is one, 0 for an empty trace.
         @export("_rf_trace_get_innermost_shared")
-        routine rf_trace_get_innermost(out: @RfTraceFrame) -> S32
-            depth: S32 = RF_TRACE_DEPTH.load()
+        routine rf_trace_get_innermost(out: @RaTraceFrame) -> S32
+            depth: S32 = RA_TRACE_DEPTH.load()
             if depth.le(0)
                 return 0
             index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
-            frame: @RfTraceFrame = RF_TRACE_STACK.getview().to[@RfTraceFrame]().stride(index)
+            frame: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(index)
             out.poke(frame.peek())
             return 1
 
         ### One failure a thread remembers: its number, the depth of the trace when it was thrown, and the trace.
-        record RfFailure
+        record RaFailure
             seq: U64
             depth: S32
-            frames: Items[RfTraceFrame, 32]
+            frames: Items[RaTraceFrame, 32]
 
         ### The program's most recent failures, a ring of 64: a failure a Work threw is reported where it is retrieved,
         ### on another thread.
-        global RF_FAILURES: &Items[RfFailure, 64]
+        global RA_FAILURES: &Items[RaFailure, 64]
 
         ### The number of the last failure, on every thread.
-        global RF_FAILURE_COUNT: &U64
+        global RA_FAILURE_COUNT: &U64
 
         ### Notes the running thread's trace as a new failure's, in the entry its number picks, and gives the failure's
         ### number (never 0), which a caught error keeps so a report of it thrown again shows where it began.
         routine rf_failure_note() -> U64
-            previous: U64 = RF_FAILURE_COUNT.fetch_add_unbroken[RELAXED](1)
+            previous: U64 = RA_FAILURE_COUNT.fetch_add_unbroken[RELAXED](1)
             seq: U64 = add[U64](previous, 1)
-            entry: @RfFailure = RF_FAILURES.getview().to[@RfFailure]().stride(band[U64](previous, 63))
+            entry: @RaFailure = RA_FAILURES.getview().to[@RaFailure]().stride(band[U64](previous, 63))
             entry.seq.poke_unbroken(0)
-            RF_TRACE_DEPTH.load().poke_into(entry.depth)
+            RA_TRACE_DEPTH.load().poke_into(entry.depth)
             for i in 0 til 32
-                from: @RfTraceFrame = RF_TRACE_STACK.getview().to[@RfTraceFrame]().stride(i)
-                to: @RfTraceFrame = entry.frames.getview().to[@RfTraceFrame]().stride(i)
+                from: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(i)
+                to: @RaTraceFrame = entry.frames.getview().to[@RaTraceFrame]().stride(i)
                 to.poke(from.peek())
             entry.seq.poke_unbroken(seq)
             return seq
 
         ### The entry of failure `seq`, or None when the thread doesn't remember it.
-        infallible routine rf_failure_find(seq: U64) -> @RfFailure?
+        infallible routine rf_failure_find(seq: U64) -> @RaFailure?
             if ieq[U64](seq, 0)
                 return None()
             for i in 0 til 64
-                entry: @RfFailure = RF_FAILURES.getview().to[@RfFailure]().stride(i)
+                entry: @RaFailure = RA_FAILURES.getview().to[@RaFailure]().stride(i)
                 if ieq[U64](entry.seq.peek_unbroken(), seq)
                     return entry
             return None()
@@ -133,20 +133,20 @@ internal static class TesseraTrace
         @export("_rf_failure_get_frames_shared")
         routine rf_failure_get_frames(seq: U64) -> Addr
             when rf_failure_find(seq)
-                is @RfFailure as entry => return entry.frames.getview().to[@RfTraceFrame]()
+                is @RaFailure as entry => return entry.frames.getview().to[@RaTraceFrame]()
                 is None => return Addr.zero()
 
         ### The depth of failure `seq`'s trace, under the name the LLVM emitter exports it by, or 0.
         @export("_rf_failure_get_depth_shared")
         routine rf_failure_get_depth(seq: U64) -> S32
             when rf_failure_find(seq)
-                is @RfFailure as entry => return entry.depth.peek()
+                is @RaFailure as entry => return entry.depth.peek()
                 is None => return 0
 
 
         """;
 
-    /// <summary>A Tessera string literal for a C string: printable ASCII as is, every other byte (of the UTF-8
+    /// <summary>A Lapila string literal for a C string: printable ASCII as is, every other byte (of the UTF-8
     /// encoding) as a <c>\xXX</c> escape.</summary>
     public static string CString(string text)
     {

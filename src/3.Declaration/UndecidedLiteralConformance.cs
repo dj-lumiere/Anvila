@@ -69,7 +69,7 @@ internal static class UndecidedLiteralConformance
             RuntimeContract.Addr => TokenType.AddressLiteral,
             "Int" => TokenType.IntegerLiteral,
             _ => TokenType
-               .S64Literal // This should be language specific: Suflae should use IntegerLiteral
+               .S64Literal // This should be language specific: Mielia should use IntegerLiteral
         };
     }
 
@@ -86,7 +86,7 @@ internal static class UndecidedLiteralConformance
             "D128" => TokenType.D128Literal,
             "Decimal" => TokenType.DecimalLiteral,
             _ => TokenType
-               .B64Literal // This should be language specific: Suflae should use DecimalLiteral
+               .B64Literal // This should be language specific: Mielia should use DecimalLiteral
         };
     }
 }

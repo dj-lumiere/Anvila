@@ -7,7 +7,7 @@ using TypeModel.Enums;
 namespace Builder.Parser;
 
 /// <summary>
-/// Unified parser for both RazorForge and Suflae languages.
+/// Unified parser for both Revare and Mielia languages.
 /// Converts a stream of tokens into an Abstract Syntax Tree (AST).
 /// Language-specific constructs are guarded by <see cref="_language"/> checks.
 /// </summary>
@@ -87,7 +87,7 @@ public partial class Parser
     public string FileName { get; set; } = "";
 
     /// <summary>
-    /// The language being parsed (RazorForge or Suflae).
+    /// The language being parsed (Revare or Mielia).
     /// Used to guard language-specific constructs.
     /// </summary>
     private readonly Language _language;
@@ -187,7 +187,7 @@ public partial class Parser
     /// Creates a new unified parser for the given token stream and language.
     /// </summary>
     /// <param name="tokens">The tokens to parse.</param>
-    /// <param name="language">The language being parsed (RazorForge or Suflae).</param>
+    /// <param name="language">The language being parsed (Revare or Mielia).</param>
     /// <param name="fileName">Optional source file name for error reporting.</param>
     public Parser(List<Token> tokens, Language language, string? fileName = null)
     {
@@ -323,8 +323,8 @@ public partial class Parser
             catch (GrammarException ex)
             {
                 // GrammarException.Message already contains formatted error:
-                // error[RF-G150]: filename.rf:9:14: message
-                // error[SF-G150]: filename.sf:9:14: message
+                // error[RA-G150]: filename.rr:9:14: message
+                // error[MI-G150]: filename.mi:9:14: message
                 RecordError(ex: ex);
                 Synchronize();
             }
@@ -358,7 +358,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Script mode (RazorForge and Suflae): a file whose top level has loose STATEMENTS (an expression, `for`/`while`/
+    /// Script mode (Revare and Mielia): a file whose top level has loose STATEMENTS (an expression, `for`/`while`/
     /// `if`, an assignment, …) needs no explicit entry point — those statements, together with any top-level
     /// runtime <c>var</c> declarations, become the body of an implicit <c>routine start()</c> (in source
     /// order; a trailing <c>return</c> is added). Hoistable declarations (module/import/type/routine/preset/
@@ -440,7 +440,7 @@ public partial class Parser
 
                     body.Add(item: s);
                     break;
-                // A Suflae `global` is module-level state, not a statement: it stays a sibling
+                // A Mielia `global` is module-level state, not a statement: it stays a sibling
                 // declaration so ModuleGlobalsSynthesisPass moves it onto the __ModuleGlobals singleton.
                 case VariableDeclaration { IsGlobal: false } vd:
                     if (!locSet)
@@ -486,7 +486,7 @@ public partial class Parser
     /// <summary>
     /// Parses a single top-level or nested declaration.
     /// Handles: module, import, define, using, var, routine, entity, record, choice, variant, protocol, impl.
-    /// RazorForge-only: external, dangerous modifier, threaded async status.
+    /// Revare-only: external, dangerous modifier, threaded async status.
     /// </summary>
     /// <remarks>
     /// Declaration parsing order (checked in sequence):
@@ -502,14 +502,14 @@ public partial class Parser
     ///   visibility   - secret, posted, open, external
     ///   storage      - common, global
     ///
-    /// RF-ONLY MODIFIERS:
-    ///   dangerous    - Marks routine as unsafe (RazorForge only)
+    /// RA-ONLY MODIFIERS:
+    ///   dangerous    - Marks routine as unsafe (Revare only)
     ///
     /// TYPE/VALUE DECLARATIONS:
-    ///   external     - FFI routine declaration (RazorForge only)
+    ///   external     - FFI routine declaration (Revare only)
     ///   name: Type  - Member variable declaration (inside type bodies)
     ///   var          - Variable declarations
-    ///   nothing      - The body of a type with no member variables (RazorForge only)
+    ///   nothing      - The body of a type with no member variables (Revare only)
     ///   routine      - FreeRoutine declaration
     ///   entity       - Heap-allocated reference type
     ///   record       - Stack-allocated value type
@@ -700,7 +700,7 @@ public partial class Parser
             return ParsePresetInDeclarationPosition(visibility: visibility);
         }
 
-        // `global NAME: Type = value` — module-level mutable global (Suflae only).
+        // `global NAME: Type = value` — module-level mutable global (Mielia only).
         if (Check(type: TokenType.Global))
         {
             return ParseGlobalInDeclarationPosition(visibility: visibility,
@@ -771,11 +771,11 @@ public partial class Parser
         RejectCommonOnTypeDeclaration(isCommon: isCommon);
         RejectNoEffectOnTypeDeclaration(annotations: annotations, visibility: visibility, isDangerous: isDangerous);
 
-        // An `@rf("...")` binding may sit on any type declaration: it is kept on the node for the standard library
-        // loader, which takes the declaration out (see RfBindingCheck).
+        // An `@ra("...")` binding may sit on any type declaration: it is kept on the node for the standard library
+        // loader, which takes the declaration out (see RaBindingCheck).
         // The standard library's `@self_locking` on an entity is kept the same way (the type registration reads it).
         // `@reflectable` and a program's own annotations (`@Tagged`) are kept the same way for ObjectHacker.
-        List<string> bindings = annotations.Where(predicate: a => a.StartsWith(value: "rf(",
+        List<string> bindings = annotations.Where(predicate: a => a.StartsWith(value: "ra(",
                                                      comparisonType: StringComparison.Ordinal) ||
                                                  a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation ||
                                                  a == "reflectable" ||
@@ -913,7 +913,7 @@ public partial class Parser
 
     /// <summary>
     /// Handles a <c>global</c> keyword encountered in declaration position. Rejects <c>global</c> in
-    /// RazorForge (no module-level mutable state) and inside a type body, then routes to
+    /// Revare (no module-level mutable state) and inside a type body, then routes to
     /// <see cref="ParseGlobalDeclaration"/>.
     /// </summary>
     private VariableDeclaration ParseGlobalInDeclarationPosition(VisibilityModifier visibility,
@@ -1026,7 +1026,7 @@ public partial class Parser
             return;
         }
 
-        List<string> ineffective = annotations.Where(predicate: a => !a.StartsWith(value: "rf(",
+        List<string> ineffective = annotations.Where(predicate: a => !a.StartsWith(value: "ra(",
                                                       comparisonType: StringComparison.Ordinal) &&
                                                   !(a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation &&
                                                     CurrentToken.Type == TokenType.Entity) &&
@@ -1121,7 +1121,7 @@ public partial class Parser
     /// <summary>
     /// Parses a single statement within a block or function body.
     /// Handles: if, while, for, when, return, throw, absent, break, continue, and expression statements.
-    /// RazorForge-only: danger block, steal expression, release statement, block statements.
+    /// Revare-only: danger block, steal expression, release statement, block statements.
     /// </summary>
     /// <remarks>
     /// Statement types (checked in sequence):
@@ -1148,7 +1148,7 @@ public partial class Parser
     ///   nothing      - A line with no work
     ///   using        - Resource management (declaration form)
     ///
-    /// MEMORY BLOCKS (RazorForge only):
+    /// MEMORY BLOCKS (Revare only):
     ///   danger      - Unsafe block (raw pointers, FFI)
     ///   release      - Early resource cleanup
     ///
@@ -1156,7 +1156,7 @@ public partial class Parser
     ///   var          - Variable declarations (including destructuring)
     ///
     /// BLOCK/EXPRESSION:
-    ///   { ... }      - Block statement (RazorForge only)
+    ///   { ... }      - Block statement (Revare only)
     ///   expr         - Expression statement (fallback)
     /// </remarks>
     /// <returns>The parsed statement, or null if at end of block.</returns>
@@ -1189,7 +1189,7 @@ public partial class Parser
         }
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // RF-ONLY: MEMORY/SCOPE BLOCKS
+        // RA-ONLY: MEMORY/SCOPE BLOCKS
         // ═══════════════════════════════════════════════════════════════════════════
 
         // Danger block (unsafe operations)
@@ -1274,7 +1274,7 @@ public partial class Parser
 
     /// <summary>
     /// <c>while c</c>: a loop is written <c>until</c> with the condition that ends it, or <c>loop</c>, so this is
-    /// RF-G224. The loop is read as written, so the rest of the file is still checked.
+    /// RA-G224. The loop is read as written, so the rest of the file is still checked.
     /// </summary>
     private Statement ParseWrittenWhile()
     {
@@ -1324,7 +1324,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Takes a <c>nothing</c> line. The old <c>pass</c> is taken too, after RF-G225 with the quick fix
+    /// Takes a <c>nothing</c> line. The old <c>pass</c> is taken too, after RA-G225 with the quick fix
     /// <c>nothing</c>, so the rest of the file is still checked.
     /// </summary>
     private bool AcceptNothing()

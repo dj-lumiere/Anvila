@@ -1,7 +1,7 @@
 namespace TypeModel.Enums;
 
 /// <summary>
-/// Categories of types in RazorForge/Suflae.
+/// Categories of types in Revare/Mielia.
 /// </summary>
 public enum TypeCategory
 {
@@ -31,10 +31,10 @@ public enum TypeCategory
     // User-Defined Type Categories
     // ═══════════════════════════════════════════════════════════════════════
 
-    /// <summary>Value type with copy semantics (RazorForge: record, Suflae: class).</summary>
+    /// <summary>Value type with copy semantics (Revare: record, Mielia: class).</summary>
     Record,
 
-    /// <summary>Reference type, heap-allocated, single owner (RazorForge: entity).</summary>
+    /// <summary>Reference type, heap-allocated, single owner (Revare: entity).</summary>
     Entity,
 
     /// <summary>Simple enumeration with optional integer values, CAN have memberRoutines.</summary>

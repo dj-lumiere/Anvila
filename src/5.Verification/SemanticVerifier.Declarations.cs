@@ -47,7 +47,7 @@ public sealed partial class SemanticVerifier
                         message: $"Import '{import.ModulePath}' is misplaced. " +
                                  "Move all 'import' statements to the top of the file, " +
                                  "immediately after the 'module' declaration and before any other declaration. " +
-                                 "RazorForge enforces top-of-file imports for uniform structure across modules.",
+                                 "Revare enforces top-of-file imports for uniform structure across modules.",
                         location: import.Location);
                 }
             }
@@ -393,7 +393,7 @@ public sealed partial class SemanticVerifier
                 location: global.Location);
         }
 
-        // A RazorForge global is a place the program changes. Only a routine a Work reaches on another thread may not
+        // A Revare global is a place the program changes. Only a routine a Work reaches on another thread may not
         // use a plain global that is changed somewhere (GlobalThreadChecker): an Unbroken or a Guarded changes what it
         // holds through its own routines.
         // Two modules may each have a global of one name: each is registered under its module, and a lookup from
@@ -872,13 +872,13 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Suflae: a bare <c>RF::</c> RazorForge entity may NOT be a routine parameter or (non-constructor)
-    /// return. An RF entity has no reference count, so passing it by value across an SF routine boundary
-    /// lets SF's scope-exit teardown destroy the same object multiple times (caller + callee + return)
-    /// → heap corruption. It is fine as a LOCAL or as a FIELD of an SF entity (the container owns it);
-    /// only the by-value boundary crossing is unsafe. Reports RF-S439 with the safe alternatives. The
+    /// Mielia: a bare <c>RA::</c> Revare entity may NOT be a routine parameter or (non-constructor)
+    /// return. An RA entity has no reference count, so passing it by value across an MI routine boundary
+    /// lets MI's scope-exit teardown destroy the same object multiple times (caller + callee + return)
+    /// → heap corruption. It is fine as a LOCAL or as a FIELD of an MI entity (the container owns it);
+    /// only the by-value boundary crossing is unsafe. Reports RA-S439 with the safe alternatives. The
     /// build-time invariant <c>AssertNoBareEntityInSignature</c> still guards the OTHER bare-entity case
-    /// (an SF entity that slipped roaming — a builder bug, no <c>RF::</c> tag).
+    /// (an MI entity that slipped roaming — a builder bug, no <c>RA::</c> tag).
     /// </summary>
     internal void CheckSignatureHasNoForeignBareEntity(RoutineDeclaration routine,
         RoutineKind kind, IReadOnlyList<ParamInfo> parameters, TypeSymbol? returnType)
@@ -892,20 +892,20 @@ public sealed partial class SemanticVerifier
         }
 
         const string advice =
-            " A RazorForge entity written with `RF::` is not shared and has no reference count, so handing it " +
+            " A Revare entity written with `RA::` is not shared and has no reference count, so handing it " +
             "across a routine here would release the same object more than once. Keep it as a member variable of " +
-            "an entity of this program and pass that entity, or do the work on it inside a `.rf` module.";
+            "an entity of this program and pass that entity, or do the work on it inside a `.rr` module.";
 
-        // The resolved type decides: an entity of an imported `.rf` module resolves to a shared handle here, and
-        // only one written with `RF::` stays bare.
+        // The resolved type decides: an entity of an imported `.rr` module resolves to a shared handle here, and
+        // only one written with `RA::` stays bare.
         foreach (ParamInfo p in parameters)
         {
-            if (p.Type is EntityTypeSymbol pe && IsRazorForgeEntity(type: pe))
+            if (p.Type is EntityTypeSymbol pe && IsRevareEntity(type: pe))
             {
                 Parameter? declared = routine.Parameters.FirstOrDefault(predicate: d => d.Name == p.Name);
-                ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
+                ReportError(code: SemanticDiagnosticCode.MieliaBareRaEntityInSignature,
                     message:
-                    $"You declare parameter '{p.Name}' as '{pe.Name}', a RazorForge entity." +
+                    $"You declare parameter '{p.Name}' as '{pe.Name}', a Revare entity." +
                     advice,
                     location: declared?.Type?.Location ?? routine.Location);
             }
@@ -913,10 +913,10 @@ public sealed partial class SemanticVerifier
 
         // A constructor's return is the freshly-built entity the CALLER receives, not a
         // by-value hand-off of an already-live object, so it is exempt (mirrors the invariant's carve-out).
-        if (kind != RoutineKind.Creator && returnType is EntityTypeSymbol re && IsRazorForgeEntity(type: re))
+        if (kind != RoutineKind.Creator && returnType is EntityTypeSymbol re && IsRevareEntity(type: re))
         {
-            ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
-                message: $"You declare the return type as '{re.Name}', a RazorForge entity." +
+            ReportError(code: SemanticDiagnosticCode.MieliaBareRaEntityInSignature,
+                message: $"You declare the return type as '{re.Name}', a Revare entity." +
                          advice,
                 location: routine.ReturnType?.Location ?? routine.Location);
         }
@@ -946,7 +946,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The owner of a member routine declared outside its type (<c>routine List[T].second()</c>), looked up in the
-    /// realm of the file that declares it: in a Suflae file, <c>List</c> is Suflae's own list, as it is everywhere
+    /// realm of the file that declares it: in a Mielia file, <c>List</c> is Mielia's own list, as it is everywhere
     /// else in that file. Declarations are collected before the per-file analysis sets that realm.
     /// </summary>
     private TypeSymbol? LookupOwnerInFileRealm(string name)
@@ -954,14 +954,14 @@ public sealed partial class SemanticVerifier
         return InFileRealm(resolve: () => LookupTypeWithImports(name: name));
     }
 
-    /// <summary>Runs <paramref name="resolve"/> in the realm of the file being collected (Suflae's own types in a
-    /// Suflae file), which declaration collection does not set yet.</summary>
+    /// <summary>Runs <paramref name="resolve"/> in the realm of the file being collected (Mielia's own types in a
+    /// Mielia file), which declaration collection does not set yet.</summary>
     private T InFileRealm<T>(Func<T> resolve)
     {
         string previousRealm = _registry.ResolutionRealm;
         if (!string.IsNullOrEmpty(value: _currentFilePath) && !IsStdlibFile(filePath: _currentFilePath) &&
             Builder.Frontends.Languages.HasSourceExtension(fileName: _currentFilePath) &&
-            Builder.Frontends.Languages.OfFile(fileName: _currentFilePath) != Language.RazorForge)
+            Builder.Frontends.Languages.OfFile(fileName: _currentFilePath) != Language.Revare)
         {
             _registry.ResolutionRealm = Builder.Frontends.Languages.RealmOf(fileName: _currentFilePath);
         }
@@ -1121,7 +1121,7 @@ public sealed partial class SemanticVerifier
         // Index operators (getitem/setitem) are governed by PROTOCOL conformance, not type KIND:
         // any type that follows ViewingIndexable/ModifyingIndexable may define them (records like
         // Array[T,N]/BitArray[N], entities like List/Dict, and user containers alike). The
-        // conformance requirement is enforced by RF-S411 (OperatorWithoutProtocol) via the
+        // conformance requirement is enforced by RA-S411 (OperatorWithoutProtocol) via the
         // wired-routine→protocol catalog, so no type-kind restriction is applied here.
 
         // @writable is removed — emit error before the conflict check
@@ -1133,7 +1133,7 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // A language without the readonly discipline (Suflae) has neither mark: a record already keeps its value
+        // A language without the readonly discipline (Mielia) has neither mark: a record already keeps its value
         // to itself, and a change of a container's shape during a loop is caught as it happens.
         TypeModel.Enums.Language writtenIn = Builder.Frontends.Languages.OfFile(fileName: routine.Location.FileName);
         if (Builder.Frontends.Languages.IsRegistered(language: writtenIn) &&
@@ -1226,8 +1226,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// A <c>@throws([A, B])</c> on a failable routine fixes what it may throw (an exported routine says so, and what it
     /// is built from may change): every crashable the builder collected for it (its own throws and those of the
-    /// routines it calls) must be in the list (RF-S712). On an <c>infallible</c> routine, or naming something that
-    /// isn't a crashable, it is RF-S713.
+    /// routines it calls) must be in the list (RA-S712). On an <c>infallible</c> routine, or naming something that
+    /// isn't a crashable, it is RA-S713.
     /// </summary>
     private void ValidateThrowsLists()
     {
@@ -1352,7 +1352,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// A crashable says what went wrong in its own words: it must declare <c>crash_message</c> (RF-S704). Its
+    /// A crashable says what went wrong in its own words: it must declare <c>crash_message</c> (RA-S704). Its
     /// <c>crash_title</c> comes from its name.
     /// </summary>
     private void ValidateCrashMessage(TypeSymbol type)
@@ -1487,8 +1487,8 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// A type's name as the program writes it, each part without its module (<c>List[Team]</c>). Suflae has no
-    /// access tokens and writes an entity as itself, so in a Suflae build a <c>Viewing</c>, <c>Modifying</c> or
+    /// A type's name as the program writes it, each part without its module (<c>List[Team]</c>). Mielia has no
+    /// access tokens and writes an entity as itself, so in a Mielia build a <c>Viewing</c>, <c>Modifying</c> or
     /// <c>Roamed</c> around a type is shown as the type it holds.
     /// </summary>
     private string WrittenTypeName(TypeSymbol type)
@@ -1650,7 +1650,7 @@ public sealed partial class SemanticVerifier
                               Column: 0,
                               Position: 0));
         }
-        // Suflae has no `@readonly` or `@reshaping`: the contract is RazorForge's.
+        // Mielia has no `@readonly` or `@reshaping`: the contract is Revare's.
         else if (_registry.CompilationRules.ChecksReadonly &&
                  typeMemberRoutine.MutationCategory > requiredMemberRoutine.Mutation)
         {

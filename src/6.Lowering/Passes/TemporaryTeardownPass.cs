@@ -39,7 +39,7 @@ namespace Builder.Lowering.Passes;
 /// <c>store</c> on <c>me</c>/lvalue returns) — so freeing the receiver leaves the result valid. The
 /// only alias hazard is a borrow/view result pointing into the receiver, which the guard excludes.</para>
 ///
-/// <para><b>Entities.</b> A RazorForge entity a call or construction makes only to call one of its routines or read
+/// <para><b>Entities.</b> A Revare entity a call or construction makes only to call one of its routines or read
 /// one of its member variables (<c>pair(x: 3).count()</c>, <c>make().a().b()</c>) is its own (a routine never
 /// gives back an entity it still keeps), so it is spilled too, into a local that lives to the end of its block as a
 /// declared one would: what the call gives back may point into it (an emitter or adapter over it, a token), and its
@@ -375,7 +375,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             // statement ends (a record a member routine returns is its own, never an alias of the receiver).
             case DropStatement dropped:
             {
-                // An entity a call hands over is its own (a RazorForge routine never returns one it still keeps), so
+                // An entity a call hands over is its own (a Revare routine never returns one it still keeps), so
                 // the dropped one is torn down too.
                 _droppedEntityTop = dropped.Expression is CallExpression or CreatorExpression;
                 Statement lowered = SpillAround(owner: dropped,
@@ -443,7 +443,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 rebuild: rhs => es with { Expression = bin with { Right = rhs } });
         }
 
-        // A language without `drop` (Suflae) leaves a result it does not need without a marker, so the result is
+        // A language without `drop` (Mielia) leaves a result it does not need without a marker, so the result is
         // torn down when the statement ends, as `drop` would. An entity there is a shared handle and a returned
         // `me` is one more holder, so the result is always its own.
         if (es.Location?.FileName is { } file &&
@@ -1058,11 +1058,11 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// True for an entity a call or construction made fresh (RazorForge: a routine never gives back an entity it still
+    /// True for an entity a call or construction made fresh (Revare: a routine never gives back an entity it still
     /// keeps) with a destroy: not a token, not a view verb's result, and not what a library routine that gives back a
     /// bare <c>T</c> reads in place (<c>get_raw</c>, <c>peek</c>). In a monomorphized body only a routine value's
     /// result and a construction are spilled, as only those the definition could not see are fresh for sure. Shared
-    /// entities (Suflae) are handles, torn down as records.
+    /// entities (Mielia) are handles, torn down as records.
     /// </summary>
     private bool IsSpillableEntityTemporary(Expression e)
     {
@@ -1099,7 +1099,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
     /// <summary>
     /// Whether <paramref name="e"/> is a call giving back a carrier (<c>Optional</c>, <c>Check</c>) of an entity,
-    /// which the carrier's teardown ends: a RazorForge routine never gives back an entity it still keeps, so the
+    /// which the carrier's teardown ends: a Revare routine never gives back an entity it still keeps, so the
     /// entity is the carrier's own.
     /// </summary>
     private bool IsFreshEntityCarrier(Expression e)
@@ -1369,7 +1369,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             GenericParameterTypeSymbol => true,
             ProtocolTypeSymbol => true,
             // A single-thread token taken from a temporary (`make().view()`) is used within its statement only
-            // (RazorForge's TokenLifetimeChecker rejects a later use), and the spill lives until the statement ends.
+            // (Revare's TokenLifetimeChecker rejects a later use), and the spill lives until the statement ends.
             _ => WrapperShape.TryGet(type: resultType, name: out string wrapper, inner: out _) &&
                  BorrowWrapperNames.Contains(item: wrapper) &&
                  wrapper is not (RuntimeContract.Viewing or RuntimeContract.Modifying)

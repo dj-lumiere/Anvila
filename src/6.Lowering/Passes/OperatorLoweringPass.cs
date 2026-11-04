@@ -174,7 +174,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // The token IS the element's own pointer (Viewing/Modifying and an entity share one pointer
         // representation), so the call or field access on it dispatches on the ELEMENT type, exactly as
         // a wrapper forwarder would after unwrapping. The read/write intent and the container freeze
-        // were already checked at analysis (RF-S639). An entity-typed temporary is not torn down, so
+        // were already checked at analysis (RA-S639). An entity-typed temporary is not torn down, so
         // the element stays owned by the container.
         return new CallExpression(Callee: callee, Arguments: [FirstOperand(argument: IndexOperand(index: index, routine: mint), routine: mint)],
             Location: element.Location)
@@ -459,7 +459,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// <summary>
     /// Resolves the <c>setitem</c> overload for an index assignment, mirroring
     /// <see cref="ResolveGetItemRoutine"/>: look through a marker borrow protocol
-    /// (<c>Controlling[X]</c>) and a Suflae <c>Roamed</c> container to the real owner, then bind any
+    /// (<c>Controlling[X]</c>) and a Mielia <c>Roamed</c> container to the real owner, then bind any
     /// member-routine generics from the argument types.
     /// </summary>
     private RoutineInfo? ResolveSetItemRoutine(TypeSymbol targetType, TypeSymbol? indexType,
@@ -1099,7 +1099,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // (`Viewing[List[T]]`) has no `getitem` of its own: take the forwarder analysis bound for it.
         RoutineInfo? resolvedGetItem =
             ResolveGetItemOn(targetType: targetType, indexType: indexType) ?? analyzedGetItem;
-        // Suflae container locals are `Roamed[Dict]`/`Roamed[List]` post-SA; the wrapper
+        // Mielia container locals are `Roamed[Dict]`/`Roamed[List]` post-SA; the wrapper
         // has no `getitem`, so resolve against the UNWRAPPED inner container (exactly as the
         // membership/comparison branch does for `x in d`). RoamedProjectionLoweringPass then
         // projects the Roamed receiver to the inner value via `raw_inner()`.
@@ -1471,7 +1471,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// A shift amount may be any integer: one of another type than the routine's parameter becomes the U32 the shift
     /// routine takes through its own <c>to_shift_amount()</c>, which crashes on a negative amount and gives
     /// <c>U32_MAX</c> for one too large (still past every width). Where the shift takes an <c>Int</c> amount
-    /// (Suflae), a fixed-width one becomes that <c>Int</c>. Returns the (possibly converted) argument, and
+    /// (Mielia), a fixed-width one becomes that <c>Int</c>. Returns the (possibly converted) argument, and
     /// points <paramref name="resolvedMemberRoutine"/> at the routine taking the U32.
     /// </summary>
     private Expression ConvertShiftAmount(BinaryExpression bin, TypeSymbol? receiverType,
@@ -1490,7 +1490,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return argument;
         }
 
-        // A Suflae shift takes an `Int` amount, which handles the count itself.
+        // A Mielia shift takes an `Int` amount, which handles the count itself.
         if (amountType.Name == "Int")
         {
             return CountCall(value: argument, memberRoutineName: "to_integer_count") ?? argument;
@@ -1511,7 +1511,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     }
 
     /// <summary>The types a subscript's index may be taken as when no accessor takes its own type: an index may be any
-    /// integer, and a <c>U64</c> (RazorForge) or an <c>Int</c> (Suflae) parameter takes it through
+    /// integer, and a <c>U64</c> (Revare) or an <c>Int</c> (Mielia) parameter takes it through
     /// <see cref="IndexOperand"/>.</summary>
     private IEnumerable<TypeSymbol> IndexTypesFor(TypeSymbol indexType)
     {
@@ -1642,7 +1642,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                 isFailable: true);
         }
 
-        // Suflae wraps container locals as `Roamed[Dict]` / `Roamed[Set]` post-SA. A
+        // Mielia wraps container locals as `Roamed[Dict]` / `Roamed[Set]` post-SA. A
         // membership/comparison operator lowers to `receiver.contains(x)` / `.eq(x)` HERE in
         // Phase 8 — after the wrapper-forwarder pass has frozen — so the memberRoutine is unresolved
         // on the wrapper. Resolve it against the UNWRAPPED inner type (exactly as SA did for
@@ -1849,7 +1849,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         BackIndexExpression backIndex, TypeSymbol targetType, SourceLocation location)
     {
         // Resolve the count member routine on the receiver; its return type is U64.
-        // A Suflae collection held by its `Roamed` handle counts as the collection (RoamedProjectionLoweringPass
+        // A Mielia collection held by its `Roamed` handle counts as the collection (RoamedProjectionLoweringPass
         // projects the receiver), as `getitem` does.
         // Through a token on an entity container (`xs[^1]` with `xs: Modifying[List[S64]]`) the count is the
         // container's own: the token shares the entity's pointer, so it is the receiver as it is (as in
@@ -1889,12 +1889,12 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // IndexOutOfBoundsError on overshoot). `^` carries no runtime type; the offset is the `^n`
         // operand, already typed U64 by semantic analysis (see AnalyzeBackIndexExpression).
         // NOTE: do NOT filter on `isFailable: true`. `back_resolve` has no `!` marker — its failability
-        // is INFERRED from the body's `throw` (RF-S753). Under the demand pipeline this lowering runs on
-        // the USER body BEFORE the collector analyzes BackIndex.rf on reach, so at this point back_resolve
+        // is INFERRED from the body's `throw` (RA-S753). Under the demand pipeline this lowering runs on
+        // the USER body BEFORE the collector analyzes BackIndex.rr on reach, so at this point back_resolve
         // is registered (signature/return-type resolved) but not yet marked failable — an `isFailable:true`
-        // filter would spuriously reject it and the unresolved call would trip RF-S959 at codegen. The name
+        // filter would spuriously reject it and the unresolved call would trip RA-S959 at codegen. The name
         // is a unique builtin (no failable/non-failable overload pair), so failability is not a disambiguator.
-        // A Suflae collection counts with `Int`: its position is resolved by the `back_resolve` taking
+        // A Mielia collection counts with `Int`: its position is resolved by the `back_resolve` taking
         // `Int`, picked by the count's type.
         TypeSymbol? countType = countRoutine?.ReturnType;
         RoutineInfo? resolveRoutine = countType != null

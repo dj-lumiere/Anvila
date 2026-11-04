@@ -107,7 +107,7 @@ public static partial class NumericLiteralParser
     // (q + 6176, 14 bits), bits112..0 = the coefficient as a PLAIN binary integer. This works
     // because Pmax=34 and 10^34 < 2^113, so the whole coefficient always fits the trailing field
     // with no combination "Form 2", as Ingrid's decimal engine reads it (dec_from128 in
-    // Ingrid/tessera/decimal/dec_core.te). Specials use the combination
+    // Ingrid/lapila/decimal/dec_core.li). Specials use the combination
     // prefix (top5 = 0x1E Inf, 0x1F NaN), which the finite biased range (<= 12287) never reaches.
     // Overflow rounds to ±Inf, underflow flushes toward ±0; rounding is round-half-to-even (RNE).
     //

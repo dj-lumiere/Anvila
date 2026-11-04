@@ -40,7 +40,7 @@ public sealed class ModuleNode
 /// This is the core infrastructure for preventing Static Initialization Order Fiasco (SIOF).
 /// </summary>
 /// <remarks>
-/// RazorForge/Suflae bans circular imports at build time because:
+/// Revare/Mielia bans circular imports at build time because:
 /// <list type="bullet">
 /// <item>Presets (build-time constants) may depend on other module presets</item>
 /// <item>Initialization order becomes undefined with circular dependencies</item>

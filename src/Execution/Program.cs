@@ -16,24 +16,24 @@ using TypeModel.Enums;
 namespace Builder.Execution;
 
 /// <summary>
-/// Command-line entry point for the RazorForge builder toolchain.
+/// Command-line entry point for the Revare builder toolchain.
 /// </summary>
 internal partial class Program
 {
     private const string BuildCommand = "build";
     private const string RunCommand = "run";
     private const string BuildAndRunCommand = "buildandrun";
-    /// <summary>The language of the command that is running (<c>razorforge</c> or <c>suflae</c>). Selects
+    /// <summary>The language of the command that is running (<c>revare</c> or <c>mielia</c>). Selects
     /// the branding (version/usage) and is the DEFAULT language when a source's extension does not decide
     /// it; a registered extension always wins over this default. Set by <see cref="Run"/> from the command
     /// line that called it.</summary>
-    private static Language CliLanguage = Language.RazorForge;
+    private static Language CliLanguage = Language.Revare;
 
     /// <summary>The rules of <see cref="CliLanguage"/>.</summary>
     private static Builder.Frontends.LanguageRules CliRules => Builder.Frontends.Languages.For(language: CliLanguage);
 
     /// <summary>
-    /// Runs a command line: the shared entry of the <c>razorforge</c> and <c>suflae</c> commands, which
+    /// Runs a command line: the shared entry of the <c>revare</c> and <c>mielia</c> commands, which
     /// register their language rules first and pass their own language as <paramref name="cliLanguage"/>.
     /// Dispatches to the appropriate command handler based on the first argument.
     /// Returns 0 on success or 1 on error.
@@ -43,7 +43,7 @@ internal partial class Program
         CliLanguage = cliLanguage;
         RuntimeShadowLoader.Install();
 
-        // Make the build driver byte-faithful for UTF-8. RF child processes write UTF-8 and
+        // Make the build driver byte-faithful for UTF-8. RA child processes write UTF-8 and
         // we forward their stdout/stderr to ours; if Console encodings default to the
         // system ACP (Korean CP949, Western CP1252, ...), every non-ASCII byte gets
         // rewritten as `?` somewhere in the read/write chain. Forcing UTF-8 on both input
@@ -70,7 +70,7 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "new" or "migrate" or "parse" or "tokenize" or "codegen" or BuildCommand
-            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "rf-stubs";
+            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "ra-stubs";
 
         if (!isCommand)
         {
@@ -88,7 +88,7 @@ internal partial class Program
     /// </summary>
     private static readonly (string Variable, string Key)[] RetiredEnvironmentVariables =
     [
-        ("RF_DEADLOCK_DETECT", "deadlock-check = true under [debug]")
+        ("RA_DEADLOCK_DETECT", "deadlock-check = true under [debug]")
     ];
 
     /// <summary>Writes one warning line for each retired environment variable that is set: it is not read any more,
@@ -127,7 +127,7 @@ internal partial class Program
         // `daemon`: run the warm-compile daemon (foreground). Captures the fully-processed stdlib in RAM
         // and serves warm build/check/buildandrun requests over a per-user named pipe, so a client skips
         // the ~5 s stdlib reprocessing on every invocation. Started explicitly by the developer; clients
-        // opt in via RAZORFORGE_DAEMON=1. Ctrl-C / `daemon-stop` shuts it down.
+        // opt in via REVARE_DAEMON=1. Ctrl-C / `daemon-stop` shuts it down.
         if (command is "daemon")
         {
             return CompileDaemon.RunServer();
@@ -209,8 +209,8 @@ internal partial class Program
             case "fmt":
                 return RunFormatCommand(args: args);
 
-            case "rf-stubs":
-                return RunRfStubsCommand(args: args);
+            case "ra-stubs":
+                return RunRaStubsCommand(args: args);
 
             case "docs":
                 return RunDocsCommand(args: args);
@@ -226,7 +226,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Handles the <c>codegen</c> verb: runs the same front pipeline as <c>build</c> (build driver, Suflae
+    /// Handles the <c>codegen</c> verb: runs the same front pipeline as <c>build</c> (build driver, Mielia
     /// prelude, analysis, lowering) and writes the LLVM IR to <c>[out.ll]</c> (default: the entry file's
     /// <c>.ll</c>) without running opt, clang or the linker.
     /// </summary>
@@ -336,7 +336,7 @@ internal partial class Program
         // A sanitized program is built by the local build too: the JIT and the daemon do not instrument.
         bool dumpIr = DiagnosticFlags.DumpIr || DiagnosticFlags.Sanitize != null;
 
-        // ORC-JIT dev-loop path (RAZORFORGE_JIT=1): JIT the module in-process — no opt/clang/link,
+        // ORC-JIT dev-loop path (REVARE_JIT=1): JIT the module in-process — no opt/clang/link,
         // no exe, no spawn. IR comes warm from the daemon when it's up, else a local cold compile.
         if (!dumpIr && CompileDaemon.TryClientJitRun(resolved: resolved, exitCode: out int jrc))
         {
@@ -367,18 +367,18 @@ internal partial class Program
     /// Usage: <c>emit-prebuilt [outDir] [--all|--sf]</c>. Default outDir = the resolved stdlib root's <c>.prebuilt</c>.
     /// </summary>
     /// <summary>
-    /// Writes Ingrid's Tessera library as LLVM IR next to the executable (<see cref="IngridTessera.IrFileName"/>), and
+    /// Writes Ingrid's Lapila library as LLVM IR next to the executable (<see cref="IngridLapila.IrFileName"/>), and
     /// the same as bitcode, which every build links. A packaging step: an installed layout has no sources to compile it
     /// from, so the package ships both files. Usage: <c>emit-ingrid</c>, run from inside the workspace that holds
-    /// <c>Ingrid/tessera</c>.
+    /// <c>Ingrid/lapila</c>.
     /// </summary>
     private static int EmitIngrid()
     {
         try
         {
-            string path = IngridTessera.IrPath(exeDir: AppContext.BaseDirectory);
+            string path = IngridLapila.IrPath(exeDir: AppContext.BaseDirectory);
             Console.WriteLine(value: $"[emit-ingrid] {path}");
-            if (IngridTessera.BitcodePath(exeDir: AppContext.BaseDirectory) is not { } bitcode)
+            if (IngridLapila.BitcodePath(exeDir: AppContext.BaseDirectory) is not { } bitcode)
             {
                 Console.Error.WriteLine(value: "[emit-ingrid] llvm-link could not write the library as bitcode");
                 return 1;
@@ -408,9 +408,9 @@ internal partial class Program
             : Path.Combine(path1: StdlibLoader.GetDefaultStdlibPath(),
                 path2: Builder.Serialization.PrebuiltFormat.FolderName);
 
-        // RazorForge's library is shared by every build, so it is always emitted, then the running
+        // Revare's library is shared by every build, so it is always emitted, then the running
         // command's language (or every registered language under --all).
-        var langs = new List<Language> { Language.RazorForge };
+        var langs = new List<Language> { Language.Revare };
         IEnumerable<Language> more = args.Contains(value: "--all")
             ? Builder.Frontends.Languages.All.Select(selector: rules => rules.Language)
             : [CliLanguage];
@@ -503,7 +503,7 @@ internal partial class Program
     /// </summary>
     private sealed record Phase2Context(
         Language Language,
-        RfBuildMode BuildMode,
+        RaBuildMode BuildMode,
         bool SaTiming,
         bool ShowBuildStages,
         bool RequireStartRoutine,
@@ -529,7 +529,7 @@ internal partial class Program
         string EntryFile,
         string? OutputFile,
         TargetConfig Target,
-        RfBuildMode BuildMode,
+        RaBuildMode BuildMode,
         bool SaTiming,
         bool DumpAst,
         bool ShowBuildStages,
@@ -559,7 +559,7 @@ internal partial class Program
         public string? OutputFile { get; init; }
 
         /// <summary>The build optimization mode.</summary>
-        public RfBuildMode BuildMode { get; init; } = RfBuildMode.Debug;
+        public RaBuildMode BuildMode { get; init; } = RaBuildMode.Debug;
 
         /// <summary>Whether to dump the post-desugar AST alongside the build.</summary>
         public bool DumpAst { get; init; }
@@ -573,7 +573,7 @@ internal partial class Program
         /// <summary>Whether to print build-stage banners.</summary>
         public bool ShowBuildStages { get; init; }
 
-        /// <summary>External RF library dependency directories (import search roots).</summary>
+        /// <summary>External RA library dependency directories (import search roots).</summary>
         public IReadOnlyList<string> LibraryRoots { get; init; } = [];
 
         /// <summary>Simple name-only C libraries to link (the <c>-l</c> names).</summary>
@@ -708,6 +708,12 @@ internal partial class Program
             return new ResolvedEntry();
         }
 
+        if (Builder.Frontends.Languages.PreviousExtensionMessage(fileName: explicitEntry) is { } oldExtension)
+        {
+            Console.WriteLine(value: oldExtension);
+            return new ResolvedEntry();
+        }
+
         string entryDir =
             Path.GetDirectoryName(path: Path.GetFullPath(path: explicitEntry)) ?? ".";
         string? nearbyManifest = ManifestLoader.FindManifest(startDir: entryDir);
@@ -736,7 +742,7 @@ internal partial class Program
             ProjectManifest manifest = ManifestLoader.Load(tomlPath: nearbyManifest,
                 resolveExecutable: false);
             BuildTarget target = manifest.Target;
-            RfBuildMode buildMode = ParseBuildMode(mode: target.Mode);
+            RaBuildMode buildMode = ParseBuildMode(mode: target.Mode);
 
             if (manifest.Debug.ShowBuildStages)
             {
@@ -828,7 +834,7 @@ internal partial class Program
             ProjectManifest manifest = ManifestLoader.Load(tomlPath: manifestPath);
             BuildTarget target = manifest.Target;
 
-            RfBuildMode buildMode = ParseBuildMode(mode: target.Mode);
+            RaBuildMode buildMode = ParseBuildMode(mode: target.Mode);
 
             bool showBuildStages = manifest.Debug.ShowBuildStages;
             if (showBuildStages)
@@ -874,19 +880,19 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Maps a [target] mode string to its <see cref="RfBuildMode"/>; throws on unknown modes.
+    /// Maps a [target] mode string to its <see cref="RaBuildMode"/>; throws on unknown modes.
     /// </summary>
-    private static RfBuildMode ParseBuildMode(string mode)
+    private static RaBuildMode ParseBuildMode(string mode)
     {
         return mode.ToLowerInvariant() switch
         {
             // `debug-jit` = the in-process ORC-JIT dev loop (same -O0 codegen as `debug`, but JIT-and-run
             // instead of AOT build+run). The JIT choice is derived from the mode string separately (see
             // ModeUsesJit); the optimization level here is Debug for both.
-            "debug" or "debug-jit" => RfBuildMode.Debug,
-            "release" => RfBuildMode.Release,
-            "release-time" => RfBuildMode.ReleaseTime,
-            "release-space" => RfBuildMode.ReleaseSpace,
+            "debug" or "debug-jit" => RaBuildMode.Debug,
+            "release" => RaBuildMode.Release,
+            "release-time" => RaBuildMode.ReleaseTime,
+            "release-space" => RaBuildMode.ReleaseSpace,
             _ => throw new InvalidOperationException(
                 message: $"Unknown build mode '{mode}' in [target]. " +
                          "Valid modes are: debug-jit, debug, release, release-time, release-space.")
@@ -901,14 +907,14 @@ internal partial class Program
             comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Env kill-switch: <c>RF_NO_DAEMON=1</c> forces every build onto the cold in-process path,
+    /// <summary>Env kill-switch: <c>RA_NO_DAEMON=1</c> forces every build onto the cold in-process path,
     /// bypassing the warm daemon entirely. A safety valve for when the daemon misbehaves (e.g. a wedged
     /// pipe read in a constrained sandbox) — cold builds are slower but never depend on the daemon.
     /// The ORC-JIT dev loop still runs in-process (its daemon IR fetch is optional, with a cold branch),
     /// so <c>buildandrun</c> in <c>debug-jit</c> mode stays fast; only the daemon round-trip is skipped.</summary>
     private static bool DaemonDisabledByEnv()
     {
-        string? v = Environment.GetEnvironmentVariable(variable: "RF_NO_DAEMON");
+        string? v = Environment.GetEnvironmentVariable(variable: "RA_NO_DAEMON");
         // A build for one @test routine changes the entry file's start(), which a warm daemon's caches don't know of.
         return !string.IsNullOrEmpty(value: v) && v != "0" ||
                !string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: TestEntryVariable));
@@ -916,11 +922,11 @@ internal partial class Program
 
     /// <summary>The environment variable the <c>test</c> command sets to the name of the <c>@test</c> routine a build
     /// runs in place of the program's own <c>start()</c>.</summary>
-    private const string TestEntryVariable = "RF_TEST_ENTRY";
+    private const string TestEntryVariable = "RA_TEST_ENTRY";
 
     /// <summary>
     /// Populates the process-wide <see cref="DiagnosticFlags"/> from a manifest's <c>[debug]</c> section,
-    /// replacing the former <c>RF_*</c> / <c>RAZORFORGE_PHASE_TIMING</c> environment variables. Reset-then-set
+    /// replacing the former <c>RF_*</c> / <c>REVARE_PHASE_TIMING</c> environment variables. Reset-then-set
     /// so a prior build's flags never linger (matters for the serial compile daemon).
     /// </summary>
     private static void ApplyDiagnosticFlags(ProjectManifest manifest)
@@ -930,7 +936,7 @@ internal partial class Program
         DiagnosticFlags.PruneStats = manifest.Debug.PruneStats;
         DiagnosticFlags.JitTrace = manifest.Debug.JitTrace;
         DiagnosticFlags.DumpIr = manifest.Debug.DumpIr;
-        DiagnosticFlags.DumpTessera = manifest.Debug.DumpTessera;
+        DiagnosticFlags.DumpLapila = manifest.Debug.DumpLapila;
         DiagnosticFlags.ReachabilityDump = manifest.Debug.ReachabilityDump;
         DiagnosticFlags.MaySuspendDump = manifest.Debug.MaySuspendDump;
         DiagnosticFlags.DeadlockCheck = manifest.Debug.DeadlockCheck;
@@ -951,7 +957,7 @@ internal partial class Program
 
         Console.WriteLine(value: header);
         Console.WriteLine();
-        // The commands every Lumi language's tool shares (RazorForge, Suflae, Tessera). The others (parse,
+        // The commands every Lumi language's tool shares (Revare, Mielia, Lapila). The others (parse,
         // tokenize, codegen, validate-stdlib, daemon, ...) still work for the builder's own development, but are
         // not part of the tool's face.
         Console.WriteLine(value: "Usage:");
@@ -1121,7 +1127,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Prints the doc comment notes (RF-W305 to RF-W308) of the language's own standard library files. The library is
+    /// Prints the doc comment notes (RA-W305 to RA-W308) of the language's own standard library files. The library is
     /// held to the rule like any other library, and a build never shows these notes, so this is where they are read.
     /// A note does not fail the validation.
     /// </summary>
@@ -1203,11 +1209,11 @@ internal partial class Program
                 return 1;
             }
 
-            // A language's view of shared declarations (`@rf("...")`) must still match what it names.
-            List<string> bindingErrors = analyzer.CheckRfBindings();
+            // A language's view of shared declarations (`@ra("...")`) must still match what it names.
+            List<string> bindingErrors = analyzer.CheckRaBindings();
             if (bindingErrors.Count > 0)
             {
-                Console.WriteLine(value: $"=== @rf DECLARATIONS THAT NO LONGER MATCH RAZORFORGE ({bindingErrors.Count}) ===");
+                Console.WriteLine(value: $"=== @ra DECLARATIONS THAT NO LONGER MATCH REVARE ({bindingErrors.Count}) ===");
                 foreach (string bindingError in bindingErrors)
                 {
                     Console.WriteLine(value: $"    - {bindingError}");
@@ -1352,7 +1358,7 @@ internal partial class Program
         WarmProviders? warm = null)
     {
         string? projectRoot = config.ProjectRoot;
-        RfBuildMode buildMode = config.BuildMode;
+        RaBuildMode buildMode = config.BuildMode;
         bool dumpAst = config.DumpAst;
         bool saTiming = config.SaTiming;
         bool requireStartRoutine = config.RequireStartRoutine;
@@ -1717,7 +1723,7 @@ internal partial class Program
         string entryFile = p3.EntryFile;
         string? outputFile = p3.OutputFile;
         TargetConfig target = p3.Target;
-        RfBuildMode buildMode = p3.BuildMode;
+        RaBuildMode buildMode = p3.BuildMode;
         // OR with the process-wide PhaseTiming flag so codegen [CG] stage timings honor `[debug] timing` on
         // EVERY path (the daemon server-compile sets DiagnosticFlags.PhaseTiming from the request but does not
         // thread p3.SaTiming through) — mirrors the analyze-side merge (RunMultipleFullPipeline).
@@ -1788,15 +1794,15 @@ internal partial class Program
             // Resident-JIT base/delta: when the daemon supplies the base's defined-symbol set, this
             // emission is the DELTA — it skips defining resident symbols and extern-declares them instead.
             ResidentSymbols = p3.ResidentSymbols,
-            // An executable built ahead of time reads its crash trace from the stack where Tessera's table supports
-            // the target. The JIT and its resident base keep the shadow stack (RF_TRACE_SHADOW=1 keeps it too).
+            // An executable built ahead of time reads its crash trace from the stack where Lapila's table supports
+            // the target. The JIT and its resident base keep the shadow stack (RA_TRACE_SHADOW=1 keeps it too).
             TraceFromStack = irCallback == null && (p3.ResidentSymbols?.Count ?? 0) == 0 &&
                              Builder.Collection.TraceFrames.Enabled(mode: buildMode) &&
-                             Tessera.TraceTable.Supports(arch: target.TargetArch, os: target.TargetOS) &&
-                             Environment.GetEnvironmentVariable(variable: "RF_TRACE_SHADOW") != "1",
+                             Lapila.TraceTable.Supports(arch: target.TargetArch, os: target.TargetOS) &&
+                             Environment.GetEnvironmentVariable(variable: "RA_TRACE_SHADOW") != "1",
             Timing = saTiming,
-            SourceDumpPath = DiagnosticFlags.DumpTessera
-                ? Path.ChangeExtension(path: entryFile, extension: ".te")
+            SourceDumpPath = DiagnosticFlags.DumpLapila
+                ? Path.ChangeExtension(path: entryFile, extension: ".li")
                 : null
         };
 
@@ -1812,10 +1818,10 @@ internal partial class Program
         BackendOutput emitted = p3.Backend.Emit(input: backendInput);
         string llvmIr = emitted.LlvmIr;
 
-        // dump-tessera with another backend still writes the Tessera translation, for reading side by side.
-        if (backendInput.SourceDumpPath is { } tesseraDump && p3.Backend is not Builder.TesseraEmit.TesseraBackend)
+        // dump-lapila with another backend still writes the Lapila translation, for reading side by side.
+        if (backendInput.SourceDumpPath is { } lapilaDump && p3.Backend is not Builder.LapilaEmit.LapilaBackend)
         {
-            Builder.TesseraEmit.TesseraBackend.DumpSource(input: backendInput, path: tesseraDump);
+            Builder.LapilaEmit.LapilaBackend.DumpSource(input: backendInput, path: lapilaDump);
         }
         if (swPhase != null)
         {
@@ -1850,15 +1856,15 @@ internal partial class Program
 
     /// <summary>
     /// Writes the codegen-input AST snapshot (the exact AST LLVM codegen consumes, after all
-    /// desugaring/monomorphization + CancellationInstrumentation) to <c>&lt;entry&gt;.rf.desugared</c>.
+    /// desugaring/monomorphization + CancellationInstrumentation) to <c>&lt;entry&gt;.rr.desugared</c>.
     /// </summary>
     private static void DumpCodegenInputAst(string entryFile,
         List<(SyntaxTree.Program Program, string FilePath, string Module)> userPrograms,
         List<(SyntaxTree.Program Program, string FilePath, string Module)> stdlibPrograms,
         AnalysisResult result, bool showBuildStages)
     {
-        string astPath = Path.ChangeExtension(path: entryFile, extension: ".rf.desugared");
-        string astText = new RfSyntaxTreePrinter().PrintMultiProgram(programs: userPrograms,
+        string astPath = Path.ChangeExtension(path: entryFile, extension: ".rr.desugared");
+        string astText = new RaSyntaxTreePrinter().PrintMultiProgram(programs: userPrograms,
             synthesizedBodies: result.SynthesizedBodies,
             registry: result.Registry,
             stdlibPrograms: stdlibPrograms,
@@ -2123,15 +2129,15 @@ internal partial class Program
     }
 
     /// <summary>
-    /// The file with the same name in the other language's extension (<c>foo.sf</c> beside <c>foo.rf</c>), if there is
+    /// The file with the same name in the other language's extension (<c>foo.mi</c> beside <c>foo.rr</c>), if there is
     /// one: both would build the same executable and intermediate files.
     /// </summary>
     private static string? SameNameInOtherLanguage(string entryFile)
     {
         string other = Path.GetExtension(path: entryFile) switch
         {
-            ".rf" => ".sf",
-            ".sf" => ".rf",
+            ".rr" => ".mi",
+            ".mi" => ".rr",
             _ => ""
         };
         if (other.Length == 0)
@@ -2230,7 +2236,7 @@ internal partial class Program
     /// <see cref="BuildExecutable"/> to reduce its cognitive complexity.
     /// </summary>
     private static int LinkAndStageExecutable(string exeFile, string llFile, string optFile,
-        RfBuildMode buildMode, List<string> allCLibraries, IReadOnlyList<string> libraryPaths,
+        RaBuildMode buildMode, List<string> allCLibraries, IReadOnlyList<string> libraryPaths,
         IReadOnlyDictionary<string, CLibrary> libraryConfigs)
     {
         string exeDir;
@@ -2269,21 +2275,21 @@ internal partial class Program
         {
             Console.WriteLine(
                 value:
-                $"Failed to resolve the RazorForge native runtime: expected either a development 'Ingrid/native/build' tree near the executable, or '{NativeToolchain.RuntimeLinkLibraryFileName}' next to it (installed layout).");
+                $"Failed to resolve the Revare native runtime: expected either a development 'Ingrid/native/build' tree near the executable, or '{NativeToolchain.RuntimeLinkLibraryFileName}' next to it (installed layout).");
             return 1;
         }
 
-        // Optimize the emitted IR, then link it into a native executable. Ingrid's Tessera library goes
+        // Optimize the emitted IR, then link it into a native executable. Ingrid's Lapila library goes
         // in first (its routines are not in the runtime DLL: the allocators, the divide primitives, the
         // math), and optimized builds (anything but -O0 debug) internalize during opt, so those inline
-        // across the RF / runtime seam.
+        // across the RA / runtime seam.
         // The tools pass bitcode to each other: the module's text is parsed once, by llvm-link, and everything after
         // reads bitcode. Text stays where a reader needs it: `[debug] dump-ir` keeps `.ingrid.ll` and `.opt.ll` to read,
         // ThreadSanitizer marks routines in the text, and the crash trace table annotates the optimized text.
         bool textIntermediates = DiagnosticFlags.DumpIr || DiagnosticFlags.Sanitize != null;
-        bool traceTable = !textIntermediates && Tessera.TraceTable.Wanted(ir: File.ReadAllText(path: llFile));
+        bool traceTable = !textIntermediates && Lapila.TraceTable.Wanted(ir: File.ReadAllText(path: llFile));
         bool bitcodeOptimized = !textIntermediates && !traceTable;
-        if (!NativeToolchain.TryLinkIngridTessera(exeDir: exeDir,
+        if (!NativeToolchain.TryLinkIngridLapila(exeDir: exeDir,
                 llFile: llFile,
                 linkedFile: out string withIngrid,
                 error: out string ingridError,
@@ -2301,7 +2307,7 @@ internal partial class Program
         int optResult = NativeToolchain.OptimizeIr(llFile: withIngrid,
             optFile: optFile,
             buildMode: buildMode,
-            internalizeForLto: buildMode != RfBuildMode.Debug);
+            internalizeForLto: buildMode != RaBuildMode.Debug);
         if (optResult != 0)
         {
             return optResult;

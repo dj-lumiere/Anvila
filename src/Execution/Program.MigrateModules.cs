@@ -13,7 +13,7 @@ internal partial class Program
         pattern: @"^[ \t]*import[ \t]+(?:Core|Numerics)(?:[./][^\r\n#]*)?[ \t]*(?:#[^\r\n]*)?\r?$",
         options: RegexOptions.Compiled);
 
-    /// <summary>The module name <c>Core</c> in a qualified name (<c>Core.S64</c>, <c>RF::Core.List</c>).</summary>
+    /// <summary>The module name <c>Core</c> in a qualified name (<c>Core.S64</c>, <c>RA::Core.List</c>).</summary>
     private static readonly Regex CoreQualifier = new(pattern: @"(?<![\w.$])Core(?=\.[A-Za-z_\[]|::)|(?<=::)Core\b",
         options: RegexOptions.Compiled);
 
@@ -21,7 +21,7 @@ internal partial class Program
     /// <c>--step modules</c>: the language's base module is <c>System</c>, and every file sees it and every module
     /// under it (<c>System/Numerics</c>, <c>System/Text</c>, ...) without an import. An import of <c>Core</c> or of
     /// <c>Numerics</c> goes away (with the blank line it leaves when it was the only one), and a name qualified by
-    /// <c>Core</c> (<c>Core.S64</c>, <c>RF::Core.List</c>) is qualified by <c>System</c>. Text in strings stays.
+    /// <c>Core</c> (<c>Core.S64</c>, <c>RA::Core.List</c>) is qualified by <c>System</c>. Text in strings stays.
     /// </summary>
     private static string RewriteModules(string file, string source, Language language, int lineOffset)
     {

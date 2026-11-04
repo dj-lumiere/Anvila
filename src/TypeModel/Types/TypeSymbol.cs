@@ -61,12 +61,12 @@ public abstract class TypeSymbol
     public List<string>? Annotations { get; init; }
 
     /// <summary>
-    /// The stdlib "world-line" this type identity belongs to: <c>"RF"</c> (RazorForge realm — bare
-    /// single-owner entities, deterministic teardown) or <c>"SF"</c> (Suflae realm — <c>entity</c> lowers
+    /// The stdlib "world-line" this type identity belongs to: <c>"RA"</c> (Revare realm — bare
+    /// single-owner entities, deterministic teardown) or <c>"MI"</c> (Mielia realm — <c>entity</c> lowers
     /// to <c>Roamed</c>, cycle-collected). A structured attribute (like <c>IsFailable</c> /
     /// <c>TypeArguments</c>), never string-parsed off the name. The SAME stdlib source instantiates under
-    /// BOTH realms as DISTINCT identities: <c>RF::System.List</c> ≠ <c>SF::System.List</c>. The ambient realm
-    /// comes from the source file (.rf ⇒ RF, .sf ⇒ SF); an explicit <c>RF::</c>/<c>SF::</c> qualifier
+    /// BOTH realms as DISTINCT identities: <c>RA::System.List</c> ≠ <c>MI::System.List</c>. The ambient realm
+    /// comes from the source file (.rr ⇒ RA, .mi ⇒ MI); an explicit <c>RA::</c>/<c>MI::</c> qualifier
     /// overrides it. Both realms are rendered explicitly in <see cref="FullName"/> (and therefore in LLVM
     /// symbols) so the two world-lines never collide when they coexist in one binary.
     /// </summary>
@@ -105,8 +105,8 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// This type as a generic instance's name writes it among its type arguments: its <see cref="FullName"/>,
-    /// marked with its realm when that is not the shared one. Suflae's own <c>System.List</c> and RazorForge's
-    /// share a full name, and an instance over one (<c>Roamed[SF::System.List[Int]]</c>) is a different type
+    /// marked with its realm when that is not the shared one. Mielia's own <c>System.List</c> and Revare's
+    /// share a full name, and an instance over one (<c>Roamed[MI::System.List[Int]]</c>) is a different type
     /// from the same instance over the other, so its name, and every key and symbol made from it, differ.
     /// </summary>
     public string InstanceArgumentName => Realm == Realms.Shared
@@ -121,9 +121,9 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// <see cref="FullName"/> with the structured <see cref="Realm"/> rendered as an explicit
-    /// <c>RF::</c>/<c>SF::</c> prefix (recursively over generic args), e.g. <c>RF::System.List[RF::System.S64]</c>.
+    /// <c>RA::</c>/<c>MI::</c> prefix (recursively over generic args), e.g. <c>RA::System.List[RA::System.S64]</c>.
     /// This is the SYMMETRIC identity used for LLVM symbol mangling (both world-lines always marked) and as
-    /// the cross-realm registry key when RF and SF instances of the same type coexist in one binary.
+    /// the cross-realm registry key when RA and MI instances of the same type coexist in one binary.
     /// </summary>
     public string RealmQualifiedName
     {
@@ -139,7 +139,7 @@ public abstract class TypeSymbol
             }
 
             // An instance's name already spells its arguments, without their realms: rebuild it from the bare
-            // name so every argument carries its own (`Modifying[SF::ObjectHacker.MemberVariableInfo]`).
+            // name so every argument carries its own (`Modifying[MI::ObjectHacker.MemberVariableInfo]`).
             baseName = string.IsNullOrEmpty(value: Module)
                 ? BareName
                 : $"{Module}.{BareName}";
@@ -206,7 +206,7 @@ public abstract class TypeSymbol
     public string QualifiedTypeName => QualifiedTypeNameFor(omitBaseModule: false);
 
     /// <summary>
-    /// The module-qualified name, optionally without the auto-visible <c>System</c> module: a Suflae program
+    /// The module-qualified name, optionally without the auto-visible <c>System</c> module: a Mielia program
     /// never writes <c>System</c>, so its type names are shown as <c>List[Int]</c>.
     /// </summary>
     /// <param name="omitBaseModule">Whether a type of the <c>System</c> module is shown without it.</param>

@@ -10,7 +10,7 @@ namespace Builder.Verification;
 /// <summary>
 /// Phase 5: Error handling variant support.
 ///
-/// RazorForge/Suflae error handling model:
+/// Revare/Mielia error handling model:
 /// - Recovering forms are named by base routine and kind (try, check), never by a suffix
 /// - throw statement: signals a failure with an error value
 /// - absent statement: signals "not found" without error
@@ -316,7 +316,7 @@ public sealed partial class SemanticVerifier
     private void RecordRecoverableUserBody(RoutineDeclaration decl, string? module)
     {
         // The info registered for the declaration itself when it has one: matching by parameter types misses a
-        // Suflae routine whose entity parameter already became its Roamed handle.
+        // Mielia routine whose entity parameter already became its Roamed handle.
         if ((decl.ResolvedInfo ?? ResolveRoutineInfoForDeclaration(decl: decl, moduleName: module)) is not { } routine ||
             routine.IsFailable || routine.Annotations.Contains(item: "crash_only") ||
             DeclarationKey(routine: routine) is not { } key)
@@ -329,7 +329,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Where a routine was declared, as the key of the per-declaration sets above. A routine's info can be
-    /// re-created after its declaration was recorded (a Suflae entity parameter becomes its Roamed handle,
+    /// re-created after its declaration was recorded (a Mielia entity parameter becomes its Roamed handle,
     /// which changes the registry key), but it stays the routine declared there. A recovery variant shares its
     /// routine's declaration and is never one of them.
     /// </summary>
@@ -931,7 +931,7 @@ public sealed partial class SemanticVerifier
         // Gate-aware: only a collision if THIS type actually RECEIVES a derive of this name+arity —
         // i.e. it satisfies the template's `needs T is <kind>` gate. A name-only HasDeriveTemplate
         // check wrongly flagged a collection's own `count()` against the choice/flags-gated `count`
-        // derive (RF-S164), which no non-choice/flags type receives. count/all_cases are ChoiceType/
+        // derive (RA-S164), which no non-choice/flags type receives. count/all_cases are ChoiceType/
         // FlagsType-gated buildtime derives; represent/diagnose keep the universal (`T is TypeName`)
         // template, so they still require @override on every concrete override.
         if (_registry.GetDeriveTemplate(name: routine.Name,
@@ -1063,7 +1063,7 @@ public sealed partial class SemanticVerifier
                                                   routine.BaseName == qualifiedName))
                                             .ToList();
         // Matching by the parameters' written type names misses a type written another way than its info names it
-        // (`Roamed[SF::System.Dict[Text, Unknown]]`): the info registered for the declaration is its own then.
+        // (`Roamed[MI::System.Dict[Text, Unknown]]`): the info registered for the declaration is its own then.
         return MatchRoutineDeclaration(candidates: standaloneCandidates,
                    decl: decl,
                    moduleName: moduleName) ??
@@ -1096,7 +1096,7 @@ public sealed partial class SemanticVerifier
         // Resolve the decl's parameter types to match the creator overload. This runs at PRE-REGISTRATION
         // (Phase 3), where a param type may not yet resolve in scope (a forward-declared / not-yet-imported
         // type like `Int` in a numeric conversion `routine S64!(from: Int)`); ResolveType would
-        // otherwise EMIT an RF-S100 as a side effect. Suppress those — an unresolvable param simply means
+        // otherwise EMIT an RA-S100 as a side effect. Suppress those — an unresolvable param simply means
         // this creator can't be matched here, so it is skipped (no deferred base), not a user-facing error.
         int errorsBefore = _errors.Count;
         var argTypes = new List<TypeSymbol>(capacity: decl.Parameters.Count);
@@ -1148,10 +1148,10 @@ public sealed partial class SemanticVerifier
         // on different types: prefer the one that actually has the candidate memberRoutine.
         string bareLookupName = TypeSymbol.StripTypeArgs(name: ownerTypeName);
 
-        // Own-module + own-REALM FIRST: a member decl `routine List[T].add_last` in an SF-realm
-        // `Standard/Suflae/…` file owns the SF-realm `System.List`, not the RazorForge-realm one that
-        // shares the bare key. The decl's source-file extension (.sf → SF) gives its realm; a realm-
-        // blind lookup would type `me` as the RF list (which lacks the SF wrapper's `inner`) → RF-S450.
+        // Own-module + own-REALM FIRST: a member decl `routine List[T].add_last` in an MI-realm
+        // `Standard/Mielia/…` file owns the MI-realm `System.List`, not the Revare-realm one that
+        // shares the bare key. The decl's source-file extension (.mi → MI) gives its realm; a realm-
+        // blind lookup would type `me` as the RA list (which lacks the MI wrapper's `inner`) → RA-S450.
         string declRealm = Builder.Frontends.Languages.RealmOf(fileName: decl.Location?.FileName);
         TypeSymbol? bareOwner = LookupBareOwner(moduleName: moduleName,
             bareLookupName: bareLookupName,

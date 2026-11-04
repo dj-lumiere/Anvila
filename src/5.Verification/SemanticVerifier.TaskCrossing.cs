@@ -16,13 +16,13 @@ public sealed partial class SemanticVerifier
     public bool PrunesTaskChecks { get; set; }
 
     /// <summary>
-    /// Decides <see cref="TypeRegistry.TasksCross"/> once, before any lowering: a Suflae program whose own routines
+    /// Decides <see cref="TypeRegistry.TasksCross"/> once, before any lowering: a Mielia program whose own routines
     /// create no Work, send on no channel and use no mailbox runs on one task, so no entity is reachable from two.
     /// The standard library creates no Work of its own.
     /// </summary>
     private void DecideTasksCross()
     {
-        _registry.SharingCheck = _buildMode == RfBuildMode.Debug;
+        _registry.SharingCheck = _buildMode == RaBuildMode.Debug;
         if (!PrunesTaskChecks || !_registry.CompilationRules.EntitiesAreShared)
         {
             return;

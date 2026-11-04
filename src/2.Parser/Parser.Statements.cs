@@ -6,7 +6,7 @@ namespace Builder.Parser;
 
 /// <summary>
 /// Partial class containing statement parsing (if, while, for, when, return, using, release, danger, etc.).
-/// Handles both RazorForge and Suflae syntax via <c>_language</c> dispatch.
+/// Handles both Revare and Mielia syntax via <c>_language</c> dispatch.
 /// </summary>
 public partial class Parser
 {
@@ -137,7 +137,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a loop written with the old <c>while condition</c>, after RF-G224 is reported (or while
+    /// Parses a loop written with the old <c>while condition</c>, after RA-G224 is reported (or while
     /// <c>migrate --step until</c> reads it). An optional <c>then</c> block runs once the loop is left.
     /// </summary>
     /// <returns>A <see cref="WhileStatement"/> AST node.</returns>
@@ -497,7 +497,7 @@ public partial class Parser
     /// <remarks>
     /// Two forms of when statements:
     /// 1. Subject-based: when expr { is Type =&gt; ..., LITERAL =&gt; ..., else =&gt; ... }
-    /// 2. Condition-based (RF only): when { condition1 =&gt; ..., condition2 =&gt; ..., else =&gt; ... }
+    /// 2. Condition-based (RA only): when { condition1 =&gt; ..., condition2 =&gt; ..., else =&gt; ... }
     ///
     /// Pattern types supported:
     /// - 'else' / 'else varName' - default case (wildcard or binding)
@@ -517,10 +517,10 @@ public partial class Parser
         // ═══════════════════════════════════════════════════════════════════════════
         // PHASE 1: Determine when form (subject-based vs condition-based)
         // ═══════════════════════════════════════════════════════════════════════════
-        // Subject-based:    when value { is Type => ... }     (RF)
-        //                   when value\n    is Type => ...     (SF)
-        // Condition-based:  when { x > 0 => ... }             (RF only)
-        //                   when true { x > 0 => ... }        (RF only)
+        // Subject-based:    when value { is Type => ... }     (RA)
+        //                   when value\n    is Type => ...     (MI)
+        // Condition-based:  when { x > 0 => ... }             (RA only)
+        //                   when true { x > 0 => ... }        (RA only)
         // ═══════════════════════════════════════════════════════════════════════════
 
         Expression expression = ParseWhenStatementSubject(location: location,
@@ -661,7 +661,7 @@ public partial class Parser
             return ParseElseStatementPattern(clauseLocation: clauseLocation);
         }
 
-        // Case 2: Condition-based when (RF only) - parse full expression as pattern
+        // Case 2: Condition-based when (RA only) - parse full expression as pattern
         if (isConditionBased)
         {
             return ParseConditionBasedPattern(clauseLocation: clauseLocation);
@@ -708,7 +708,7 @@ public partial class Parser
 
     /// <summary>
     /// Parses a full expression as an <see cref="ExpressionPattern"/> inside a condition-based
-    /// <c>when</c> block (RF only), with the <c>_inWhenConditionContext</c> flag set for the duration
+    /// <c>when</c> block (RA only), with the <c>_inWhenConditionContext</c> flag set for the duration
     /// so the expression parser handles <c>=&gt;</c> correctly.
     /// </summary>
     private ExpressionPattern ParseConditionBasedPattern(SourceLocation clauseLocation)
@@ -1064,7 +1064,7 @@ public partial class Parser
         string name = CurrentToken.Text;
 
         // A bare lowercase name followed by a guard or the arrow (`n and 0 <= n => …`, `n => …`) is an untyped
-        // binding, which RazorForge and Suflae do not have: it would read as an unknown type. Type and case names
+        // binding, which Revare and Mielia do not have: it would read as an unknown type. Type and case names
         // are capitalized, so this shape is never a valid pattern.
         if (name.Length > 0 && char.IsLower(c: name[index: 0]) &&
             PeekToken(offset: 1)
@@ -1188,7 +1188,7 @@ public partial class Parser
         string name = CurrentToken.Text;
         Advance();
 
-        // A type of a named realm: `is RF::System.List[SerialValue] items` in a Suflae file.
+        // A type of a named realm: `is RA::System.List[SerialValue] items` in a Mielia file.
         string? realm = ReadRealmQualifier(name: ref name);
 
         // Check for qualified name: Type.CASE or Type.CASE.SubCase
@@ -1553,7 +1553,7 @@ public partial class Parser
         Expression expression = ParseExpression();
 
         // Whether the discarded expression is actually a routine call is a SEMANTIC check, not a
-        // grammatical one — the semantic verifier reports it (RF-S421). The parser just records the
+        // grammatical one — the semantic verifier reports it (RA-S421). The parser just records the
         // discarded expression, whatever its shape.
         ConsumeStatementTerminator();
         return new DropStatement(Expression: expression, Location: location);
@@ -1711,7 +1711,7 @@ public partial class Parser
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
-    // RF-ONLY CONSTRUCTS
+    // RA-ONLY CONSTRUCTS
     // ═══════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
@@ -1737,7 +1737,7 @@ public partial class Parser
 
     /// <summary>
     /// Parses a block body using indentation (indent/dedent delimited).
-    /// Both RazorForge and Suflae use indentation-based syntax.
+    /// Both Revare and Mielia use indentation-based syntax.
     /// </summary>
     /// <returns>A <see cref="BlockStatement"/> AST node.</returns>
     private BlockStatement ParseBody()

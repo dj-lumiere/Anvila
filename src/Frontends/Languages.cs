@@ -3,7 +3,7 @@ using TypeModel.Enums;
 namespace Builder.Frontends;
 
 /// <summary>
-/// The rules of each language, registered by its front end (the RazorForge and Suflae projects) when its
+/// The rules of each language, registered by its front end (the Revare and Mielia projects) when its
 /// command line or test host starts. The builder core reaches every language-specific decision through
 /// here, so it never depends on a particular language.
 /// </summary>
@@ -36,7 +36,7 @@ public static class Languages
     /// The language a source file is written in, by its extension. A file whose extension no registered
     /// language claims (including a missing file name) is <paramref name="fallback"/>.
     /// </summary>
-    public static Language OfFile(string? fileName, Language fallback = Language.RazorForge)
+    public static Language OfFile(string? fileName, Language fallback = Language.Revare)
     {
         if (fileName == null)
         {
@@ -55,17 +55,17 @@ public static class Languages
         return fallback;
     }
 
-    /// <summary>The registered languages' rules, RazorForge first.</summary>
+    /// <summary>The registered languages' rules, Revare first.</summary>
     public static IReadOnlyList<LanguageRules> All =>
         Registered.Select(selector: rules => rules).OfType<LanguageRules>().ToList();
 
-    /// <summary>The registered source file extensions, with their dots (<c>.rf</c>), RazorForge first.</summary>
+    /// <summary>The registered source file extensions, with their dots (<c>.rr</c>), Revare first.</summary>
     public static IEnumerable<string> FileExtensions => All.Select(selector: rules => rules.FileExtension);
 
-    /// <summary>A directory search pattern per registered source extension (<c>*.rf</c>), RazorForge first.</summary>
+    /// <summary>A directory search pattern per registered source extension (<c>*.rr</c>), Revare first.</summary>
     public static IEnumerable<string> SourceGlobs => FileExtensions.Select(selector: ext => "*" + ext);
 
-    /// <summary>The short name (<c>RF</c>) of the language <paramref name="fileName"/> is written in: the
+    /// <summary>The short name (<c>RA</c>) of the language <paramref name="fileName"/> is written in: the
     /// realm its declarations register under.</summary>
     public static string RealmOf(string? fileName)
     {
@@ -77,33 +77,58 @@ public static class Languages
 
     /// <summary>
     /// The standard library directories a <paramref name="language"/> build reads under
-    /// <paramref name="stdlibRoot"/>, each with its search pattern: RazorForge's always (every build shares
-    /// it), then the language's own when it has one: its sources, and the RazorForge-written modules kept with them.
+    /// <paramref name="stdlibRoot"/>, each with its search pattern: Revare's always (every build shares
+    /// it), then the language's own when it has one: its sources, and the Revare-written modules kept with them.
     /// </summary>
     public static List<(string Dir, string Glob)> StandardLibraryRoots(string stdlibRoot, Language language)
     {
-        LanguageRules razorForge = For(language: Language.RazorForge);
+        LanguageRules revare = For(language: Language.Revare);
         var roots = new List<(string Dir, string Glob)>
         {
-            (Path.Combine(path1: stdlibRoot, path2: razorForge.Name), "*" + razorForge.FileExtension)
+            (Path.Combine(path1: stdlibRoot, path2: revare.Name), "*" + revare.FileExtension)
         };
         LanguageRules rules = For(language: language);
         if (rules.HasOwnStandardLibrary)
         {
             string own = Path.Combine(path1: stdlibRoot, path2: rules.Name);
-            // A module of the language's own library that needs RazorForge's buildtime features (`expand`) is
-            // written in RazorForge and still belongs to the language: only its builds read this directory. It
+            // A module of the language's own library that needs Revare's buildtime features (`expand`) is
+            // written in Revare and still belongs to the language: only its builds read this directory. It
             // is shared code, read before the language's own files, so a surface routine the language writes
             // over one of its routines finds it already there.
-            if (rules.Language != Language.RazorForge)
+            if (rules.Language != Language.Revare)
             {
-                roots.Add(item: (own, "*" + razorForge.FileExtension));
+                roots.Add(item: (own, "*" + revare.FileExtension));
             }
 
             roots.Add(item: (own, "*" + rules.FileExtension));
         }
 
         return roots;
+    }
+
+    /// <summary>The language whose sources had <paramref name="fileName"/>'s extension before 0.5, or null.</summary>
+    public static LanguageRules? WithPreviousExtension(string? fileName)
+    {
+        return fileName == null
+            ? null
+            : All.FirstOrDefault(predicate: rules => rules.PreviousFileExtension is { } old &&
+                                                      fileName.EndsWith(value: old, comparisonType: StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The build error for a source file that still has its language's extension from before 0.5
+    /// (<c>hello.rf</c>), or null for any other file. It names the new extension and the <c>migrate</c> step that
+    /// renames a folder's files.</summary>
+    public static string? PreviousExtensionMessage(string? fileName)
+    {
+        if (WithPreviousExtension(fileName: fileName) is not { } rules)
+        {
+            return null;
+        }
+
+        string renamed = Path.ChangeExtension(path: Path.GetFileName(path: fileName!), extension: rules.FileExtension);
+        return $"error: {fileName} has the old extension {rules.PreviousFileExtension}: {rules.Name} sources end in " +
+               $"{rules.FileExtension} now. Rename it to {renamed} ({rules.ToolName} migrate --step extensions <folder> " +
+               "renames every file of a folder).";
     }
 
     /// <summary>True when <paramref name="fileName"/> carries the extension of a registered language.</summary>

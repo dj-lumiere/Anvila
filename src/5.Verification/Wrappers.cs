@@ -157,7 +157,7 @@ internal static class Wrappers
     /// Wrapper types that require an explicit verb at every copy site instead of being
     /// implicitly assignable. The dictionary value is the verb the user must write.
     /// `Hijacked[T]` is excluded because it is a raw pointer and copies bitwise.
-    /// See <c>RazorForge-Wiki/docs/Records.md#copy-semantics</c>.
+    /// See <c>Revare-Wiki/docs/Records.md#copy-semantics</c>.
     /// </summary>
     internal static readonly Dictionary<string, string> NonTriviallyAssignableWrappers =
         new(comparer: StringComparer.Ordinal)

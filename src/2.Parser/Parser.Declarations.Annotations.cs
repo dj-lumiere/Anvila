@@ -115,16 +115,16 @@ public partial class Parser
     [
         "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "noinline", "no_optimize",
         "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking", "hands_over",
-        RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rf",
+        RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "ra",
         "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"
     ];
 
-    /// <summary>Whether <paramref name="name"/> names an annotation a Suflae program declares: a record that obeys
+    /// <summary>Whether <paramref name="name"/> names an annotation a Mielia program declares: a record that obeys
     /// <c>Annotation</c>, named like a type (<c>@Memoize(limit: 100)</c>). The builder's own annotations are lowercase.
     /// Whether such a record exists is checked once every file is read.</summary>
     public static bool IsProgramAnnotation(string name, TypeModel.Enums.Language language)
     {
-        return language == TypeModel.Enums.Language.Suflae && name.Length > 0 && char.IsUpper(c: name[index: 0]);
+        return language == TypeModel.Enums.Language.Mielia && name.Length > 0 && char.IsUpper(c: name[index: 0]);
     }
 
     /// <summary>The arguments of a program's annotation as a call writes them (<c>limit: 100, name: "x"</c>), from the

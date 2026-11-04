@@ -93,7 +93,7 @@ public abstract record Expression(SourceLocation Location) : SyntaxTreeNode(Loca
 /// <param name="LiteralType">Token type indicating the specific literal format used</param>
 /// <param name="Location">Source location information</param>
 /// <remarks>
-/// Supports the full range of RazorForge/Suflae literal types:
+/// Supports the full range of Revare/Mielia literal types:
 /// <list type="bullet">
 /// <item>Integers: S8, S16, S32, S64, S128, U8, U16, U32, U64, U128</item>
 /// <item>Floats: B16, B32, B64, B128</item>
@@ -268,7 +268,7 @@ public record TupleLiteralExpression(List<Expression> Elements, SourceLocation L
 /// </summary>
 /// <param name="Name">The identifier name to look up in the symbol table</param>
 /// <param name="Location">Source location information</param>
-/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RF"</c>) from a <c>Realm::Name</c> prefix.</param>
+/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RA"</c>) from a <c>Realm::Name</c> prefix.</param>
 /// <remarks>
 /// Identifier resolution follows lexical scoping rules:
 /// <list type="bullet">
@@ -307,7 +307,7 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
     public RoutineInfo? RecoverRoutine { get; set; }
 
     /// <summary>
-    /// Set by semantic analysis when this identifier resolved to a Suflae module-level <c>global</c>
+    /// Set by semantic analysis when this identifier resolved to a Mielia module-level <c>global</c>
     /// (its <see cref="TypeModel.Symbols.VariableInfo.IsGlobal"/> is true). Because <c>LookupVariable</c>
     /// checks local scopes BEFORE the global table, a local that shadows a global resolves to the local
     /// and this flag stays false — so the flag is shadowing-exact. Consumed by
@@ -1051,7 +1051,7 @@ public record Parameter(
 /// <param name="GenericArguments">Optional list of type arguments for generic types</param>
 /// <param name="Location">Source location information</param>
 /// <param name="IsRvalue">True if this type was written with the `T` prefix mark (entity rvalue, return-position only). SA enforces position validity.</param>
-/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RF"</c>); null = ambient realm of the file.</param>
+/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RA"</c>); null = ambient realm of the file.</param>
 /// <param name="SpliceHandle">Buildtime type-position splice handle name (e.g. from <c>$typeof(m)</c>); null for ordinary types.</param>
 /// <param name="BuildtimeValue">Buildtime const-generic expression for a value type-arg slot; null for ordinary type-args.</param>
 /// <remarks>
@@ -1068,9 +1068,9 @@ public record TypeExpression(
     List<TypeExpression>? GenericArguments,
     SourceLocation Location,
     bool IsRvalue = false,
-    // Cross-language realm tag from a `Realm::Name` qualifier (e.g. `RF::System.List`). "RF" = the
-    // RazorForge/bare realm (the resolver skips Suflae's entity->Roamed lowering for it); null = the
-    // ambient realm of the file. Only "RF" is wired for now (Suflae wrappers holding a bare RF entity).
+    // Cross-language realm tag from a `Realm::Name` qualifier (e.g. `RA::System.List`). "RA" = the
+    // Revare/bare realm (the resolver skips Mielia's entity->Roamed lowering for it); null = the
+    // ambient realm of the file. Only "RA" is wired for now (Mielia wrappers holding a bare RA entity).
     string? Realm = null,
     // Buildtime type-position splice: when non-null this whole type IS the `${handle.type}` projection
     // of an expand handle (e.g. `${m.type}` in `Array[${m.type}, N]`). At expansion it resolves to the
@@ -1657,7 +1657,7 @@ public record ClosureValueExpression(IdentifierExpression Function, Expression B
 #region Ownership Transfer Expressions
 
 /// <summary>
-/// Expression that transfers ownership of an entity (RazorForge only).
+/// Expression that transfers ownership of an entity (Revare only).
 /// The steal keyword moves ownership from the source to the destination,
 /// invalidating the source (it becomes a deadref).
 /// </summary>

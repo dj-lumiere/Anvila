@@ -7,12 +7,12 @@ using Tomlyn.Model;
 namespace Builder;
 
 /// <summary>
-/// Loads and validates RazorForge project manifest files.
+/// Loads and validates Revare project manifest files.
 /// </summary>
 public static class ManifestLoader
 {
     /// <summary>
-    /// Gets the canonical file name for a RazorForge project manifest.
+    /// Gets the canonical file name for a Revare project manifest.
     /// </summary>
     public const string ManifestFileName = "config.toml";
 
@@ -170,7 +170,7 @@ public static class ManifestLoader
             }
         }
 
-        // [debug] — internal builder diagnostics (formerly the RF_* / RAZORFORGE_JIT_TRACE env vars).
+        // [debug] — internal builder diagnostics (formerly the RF_* / REVARE_JIT_TRACE env vars).
         // All optional; niche developer tooling.
         if (root.TryGetValue(key: "debug", value: out object? debugObj) &&
             debugObj is TomlTable debugTable)
@@ -217,9 +217,9 @@ public static class ManifestLoader
             d.DumpIr = di is true;
         }
 
-        if (debugTable.TryGetValue(key: "dump-tessera", value: out object? dt))
+        if (debugTable.TryGetValue(key: "dump-lapila", value: out object? dt))
         {
-            d.DumpTessera = dt is true;
+            d.DumpLapila = dt is true;
         }
 
         if (debugTable.TryGetValue(key: "reachability-dump", value: out object? rd) &&
@@ -363,14 +363,26 @@ public static class ManifestLoader
             pkg.Repository = repository?.ToString();
         }
 
-        if (table.TryGetValue(key: "razorforge-version", value: out object? rfVersion))
+        // The language version keys from before 0.5 are named for the renamed languages.
+        foreach ((string old, string renamed) in (ReadOnlySpan<(string, string)>)
+                 [("razorforge-version", "revare-version"), ("suflae-version", "mielia-version")])
         {
-            pkg.RazorForgeVersion = rfVersion?.ToString();
+            if (table.ContainsKey(key: old))
+            {
+                throw new InvalidOperationException(
+                    message: $"{ManifestFileName}: [package] {old} is named {renamed} now (migrate --step extensions " +
+                             "renames it).");
+            }
         }
 
-        if (table.TryGetValue(key: "suflae-version", value: out object? sfVersion))
+        if (table.TryGetValue(key: "revare-version", value: out object? raVersion))
         {
-            pkg.SuflaeVersion = sfVersion?.ToString();
+            pkg.RevareVersion = raVersion?.ToString();
+        }
+
+        if (table.TryGetValue(key: "mielia-version", value: out object? miVersion))
+        {
+            pkg.MieliaVersion = miVersion?.ToString();
         }
 
         return pkg;
@@ -401,7 +413,7 @@ public static class ManifestLoader
             target.Mode = mode.ToString()!;
         }
 
-        // Dev-loop daemon routing (formerly the RAZORFORGE_DAEMON env var). The JIT dev loop is now the
+        // Dev-loop daemon routing (formerly the REVARE_DAEMON env var). The JIT dev loop is now the
         // `mode = "debug-jit"` build mode; all other diagnostics live in [debug].
         if (table.TryGetValue(key: "use-daemon", value: out object? useDaemon))
         {
@@ -516,7 +528,14 @@ public static class ManifestLoader
     private static void ResolveExecutableFile(BuildTarget target,
         Dictionary<string, string> moduleIndex, string manifestDir)
     {
-        // File-based executable (the standard): `executable = "foo.rf"` / a path to an rf/sf file runs
+        // A file named with its language's extension from before 0.5 (`main.rf`) is not read: the message names the
+        // new extension and the migrate step.
+        if (Builder.Frontends.Languages.PreviousExtensionMessage(fileName: target.Executable) is { } oldExtension)
+        {
+            throw new InvalidOperationException(message: $"{ManifestFileName}: executable: {oldExtension}");
+        }
+
+        // File-based executable (the standard): `executable = "foo.rr"` / a path to a source file runs
         // that single file directly (module inferred from its path — no `module` declaration needed).
         if (LooksLikeSourceFile(name: target.Executable))
         {
@@ -549,7 +568,7 @@ public static class ManifestLoader
         target.Executable = resolvedFile;
     }
 
-    /// <summary>True when the manifest <c>executable</c> value names a source FILE (.rf/.sf) rather
+    /// <summary>True when the manifest <c>executable</c> value names a source FILE (.rr/.mi) rather
     /// than a module — file-based single-file execution is the standard entry form.</summary>
     private static bool LooksLikeSourceFile(string name)
     {
@@ -575,7 +594,7 @@ public static class ManifestLoader
     }
 
     /// <summary>
-    /// Scans all .rf and .sf files under <paramref name="projectDir"/> and builds a
+    /// Scans all .rr and .mi files under <paramref name="projectDir"/> and builds a
     /// map of module name -> file path by reading module declarations.
     /// </summary>
     /// <remarks>
@@ -619,14 +638,14 @@ public static class ManifestLoader
         Dictionary<string, string> index, HashSet<string> entryModules)
     {
         // Skip debug AST dump files — they share the module name with the real source
-        if (filePath.EndsWith(value: ".rf.desugared",
+        if (filePath.EndsWith(value: ".rr.desugared",
                 comparisonType: StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        // File-granularity conditional compilation: skip a `.rf` file whose leading
-        // `#@target(...)` directive doesn't match the build target (RazorForge-only).
+        // File-granularity conditional compilation: skip a `.rr` file whose leading
+        // `#@target(...)` directive doesn't match the build target (Revare-only).
         if (!Builder.Targeting.TargetGate.ShouldCompile(filePath: filePath))
         {
             return;
@@ -687,7 +706,7 @@ public static class ManifestLoader
     /// <summary>
     /// True if the file writes its own <c>routine start()</c>. Unlike <see cref="FileDeclaresEntryPoint"/>, top-level
     /// statements do not count: whether a file is a script is the parser's call, and the build reports a script that
-    /// is not an entry file (RF-S443) instead of leaving it out.
+    /// is not an entry file (RA-S443) instead of leaving it out.
     /// </summary>
     internal static bool FileDeclaresExplicitStart(string filePath)
     {

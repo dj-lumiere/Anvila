@@ -23,7 +23,7 @@ public abstract record Declaration(SourceLocation Location) : SyntaxTreeNode(Loc
 {
     /// <summary>
     /// The annotations written above a type declaration whose node has no annotation list of its own (entity,
-    /// choice, flags, crashable, variant, protocol). Only the standard library's <c>@rf("...")</c> binding is
+    /// choice, flags, crashable, variant, protocol). Only the standard library's <c>@ra("...")</c> binding is
     /// allowed there; the parser rejects any other as having no effect.
     /// </summary>
     public List<string>? LeadingAnnotations { get; init; }
@@ -109,11 +109,11 @@ public record AssociatedTypeDeclaration(
 /// <param name="Location">Source location information</param>
 /// <param name="Annotations">Optional annotation markers applied to the declaration.</param>
 /// <param name="IsLateInit">Whether the variable is initialized lazily after declaration.</param>
-/// <param name="IsGlobal">Whether this is a module-level mutable global (Suflae only; rejected in RazorForge).</param>
+/// <param name="IsGlobal">Whether this is a module-level mutable global (Mielia only; rejected in Revare).</param>
 /// <remarks>
 /// Variable declarations support various patterns:
 /// <list type="bullet">
-/// <item>Type inference: var x = 42 (infers s64 for RazorForge/Int for Suflae)</item>
+/// <item>Type inference: var x = 42 (infers s64 for Revare/Int for Mielia)</item>
 /// <item>Explicit typing: var x: s64 = 42</item>
 /// <item>Uninitialized (requires type): var x: s32</item>
 /// <item>Published: published var x = 42 (public read, private write)</item>
@@ -273,7 +273,7 @@ public record ExpandMemberDeclaration(
 
 /// <summary>
 /// FreeRoutine/routine declaration that defines executable code blocks.
-/// Represents both traditional functions and RazorForge "routines".
+/// Represents both traditional functions and Revare "routines".
 /// </summary>
 /// <param name="Name">FreeRoutine identifier name</param>
 /// <param name="Parameters">List of parameter definitions</param>
@@ -367,7 +367,7 @@ public record RoutineDeclaration(
     public bool IsBuilderWritten { get; init; }
 
     /// <summary>
-    /// True for a routine with a parameter written without a type (Suflae's `routine twice(x)`): each such
+    /// True for a routine with a parameter written without a type (Mielia's `routine twice(x)`): each such
     /// parameter is a hidden type parameter, and the body is checked once per set of types it is used with, in
     /// that use, instead of once as written.
     /// </summary>
@@ -918,7 +918,7 @@ public record DefineDeclaration(
 
 /// <summary>
 /// Preset declaration that defines a build-time constant value.
-/// Similar to const in other languages but with RazorForge naming convention.
+/// Similar to const in other languages but with Revare naming convention.
 /// </summary>
 /// <param name="Name">Constant identifier name</param>
 /// <param name="Type">Type of the constant value</param>
@@ -963,7 +963,7 @@ public record PresetDeclaration(
 /// <param name="Annotations">Optional annotations attached to the external routine.</param>
 /// <param name="IsDangerous">Whether the external routine is marked dangerous.</param>
 /// <remarks>
-/// External declarations link RazorForge to native runtime:
+/// External declarations link Revare to native runtime:
 /// <list type="bullet">
 /// <item>external("C") routine malloc(size: U64) -> Addr</item>
 /// <item>external("C") routine free(ptr: Addr)</item>

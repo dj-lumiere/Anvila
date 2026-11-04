@@ -3,7 +3,7 @@ using TypeModel.Enums;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Unified grammar diagnostic codes for both RazorForge (RF-G) and Suflae (SF-G).
+/// Unified grammar diagnostic codes for both Revare (RA-G) and Mielia (MI-G).
 /// Covers lexer, parser, and indentation errors.
 /// </summary>
 public enum GrammarDiagnosticCode
@@ -161,8 +161,8 @@ public enum GrammarDiagnosticCode
     /// <summary>The number of variables in a tuple destructuring assignment does not match the tuple's member variable count.</summary>
     TupleDependencyCountMismatch = 207,
 
-    /// <summary>A RazorForge-only language construct was used in a Suflae source file.</summary>
-    RfOnlyConstruct = 210,
+    /// <summary>A Revare-only language construct was used in a Mielia source file.</summary>
+    RaOnlyConstruct = 210,
 
     /// <summary>A call site wrote the failable <c>!</c> (<c>foo!(x)</c>); the <c>!</c> belongs on the declaration only.</summary>
     BangAtCallSite = 211,
@@ -267,7 +267,7 @@ public enum GrammarDiagnosticCode
 public static class GrammarDiagnosticCodeExtensions
 {
     /// <summary>
-    /// Formats code as RF-Gnnn or SF-Gnnn depending on language.
+    /// Formats code as RA-Gnnn or MI-Gnnn depending on language.
     /// </summary>
     public static string ToCodeString(this GrammarDiagnosticCode code, Language language)
     {

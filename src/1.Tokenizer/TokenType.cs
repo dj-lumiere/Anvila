@@ -252,7 +252,7 @@ public enum TokenType
 
     /// <summary>
     /// The word <c>bundle</c>: not a declaration keyword (a named type is a <c>record</c> or an <c>entity</c>). It
-    /// stays a token so the parser can say so (RF-G228) and <c>migrate --step bundle</c> can find it.
+    /// stays a token so the parser can say so (RA-G228) and <c>migrate --step bundle</c> can find it.
     /// </summary>
     Bundle,
 
@@ -405,7 +405,7 @@ public enum TokenType
     For,
 
     /// <summary>The word <c>each</c>: reserved, it cannot name anything. A loop over a range or a collection is written
-    /// <c>for</c> (RF-G229).</summary>
+    /// <c>for</c> (RA-G229).</summary>
     Each,
 
     /// <summary>Buildtime member-expansion loop keyword (`expand m in allmemvarof(T)`)</summary>
@@ -429,7 +429,7 @@ public enum TokenType
     Everywhere,
 
     /// <summary>A word reserved for a keyword this release does not use yet (<c>until</c>, <c>becomes</c>,
-    /// <c>agent</c>, and <c>inject</c> in RazorForge): it cannot name anything.</summary>
+    /// <c>agent</c>, and <c>inject</c> in Revare): it cannot name anything.</summary>
     ReservedWord,
 
     /// <summary>Break statement keyword</summary>
@@ -479,10 +479,10 @@ public enum TokenType
     /// <summary>Using statement keyword for resource management (using db.open() as conn)</summary>
     Using,
 
-    /// <summary>Opens read access for a block (<c>viewing rates as r</c>), RazorForge only.</summary>
+    /// <summary>Opens read access for a block (<c>viewing rates as r</c>), Revare only.</summary>
     Viewing,
 
-    /// <summary>Opens write access for a block (<c>modifying payer, payee</c>), RazorForge only.</summary>
+    /// <summary>Opens write access for a block (<c>modifying payer, payee</c>), Revare only.</summary>
     Modifying,
 
     /// <summary>Type alias/Resource management as keyword (type Foo as Bar, or 'as' in scoped access blocks)</summary>
@@ -502,7 +502,7 @@ public enum TokenType
     Given,
 
     /// <summary>
-    /// Ownership transfer keyword (RazorForge only).
+    /// Ownership transfer keyword (Revare only).
     /// Transfers ownership and invalidates the source (becomes deadref).
     /// Used for: single entity transfer (steal node), container push (list.push(steal node)),
     /// and consuming iteration (for item in steal list).
@@ -860,8 +860,8 @@ public enum TokenType
     /// <summary>Type annotation colon (:)</summary>
     Colon,
 
-    /// <summary>Realm-qualifier separator (::) — e.g. <c>RF::System.List</c> references the RazorForge
-    /// (RF-mode, bare) realm from a Suflae file. Only meaningful immediately after a realm tag (RF/SF).</summary>
+    /// <summary>Realm-qualifier separator (::) — e.g. <c>RA::System.List</c> references the Revare
+    /// (RA-mode, bare) realm from a Mielia file. Only meaningful immediately after a realm tag (RA/MI).</summary>
     DoubleColon,
 
     /// <summary>Vararg declaration operator (...) (ex, routine foo(values...: S32) -> S32</summary>

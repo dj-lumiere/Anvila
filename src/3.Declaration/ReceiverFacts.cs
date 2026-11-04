@@ -12,7 +12,7 @@ namespace Builder.Declaration;
 internal static class ReceiverFacts
 {
     /// <summary>
-    /// The type the local <c>me</c> holds: a Suflae entity member routine receives <c>me</c> as the
+    /// The type the local <c>me</c> holds: a Mielia entity member routine receives <c>me</c> as the
     /// <c>Roamed[E]</c> handle (its <c>MeType</c>), every other routine its owner type.
     /// </summary>
     public static TypeSymbol MeLocalType(RoutineInfo routine)

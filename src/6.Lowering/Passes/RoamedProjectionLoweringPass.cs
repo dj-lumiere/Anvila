@@ -6,7 +6,7 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Suflae <c>Roamed[E]</c> receiver-transparency lowering. A Suflae local promoted to
+/// Mielia <c>Roamed[E]</c> receiver-transparency lowering. A Mielia local promoted to
 /// <c>Roamed[E]</c> (post-SA) reaches its inner value's memberRoutines through the wrapper handle:
 /// operator-lowered calls (<c>x in d</c> -> <c>d.contains(x)</c>, <c>d[i]</c> -> <c>d.getitem(i)</c>,
 /// <c>==</c>/<c>&lt;</c>) and f-string <c>represent</c>/<c>diagnose</c> arrive holding the

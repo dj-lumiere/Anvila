@@ -5,7 +5,7 @@ namespace Builder.Lowering.Passes;
 
 /// <summary>
 /// Puts the arguments of every call bound to a routine in the order of that routine's parameters. Named
-/// arguments may be written in any order, and RazorForge evaluates arguments in parameter-declaration order,
+/// arguments may be written in any order, and Revare evaluates arguments in parameter-declaration order,
 /// so after this pass a backend binds the n-th argument to the n-th parameter and evaluates them as listed.
 /// A named argument keeps its name, so a backend can check the binding. Semantic analysis has already written
 /// every left-out default into the call, so a call names each parameter once. Runs at Phase 9 over every body

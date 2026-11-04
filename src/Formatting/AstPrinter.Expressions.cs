@@ -888,7 +888,7 @@ internal sealed partial class AstPrinter
     private static string NameText(string name)
     {
         bool plain = PlainNames.GetOrAdd(key: name, valueFactory: static n =>
-            new[] { TypeModel.Enums.Language.RazorForge, TypeModel.Enums.Language.Suflae }.All(predicate: language =>
+            new[] { TypeModel.Enums.Language.Revare, TypeModel.Enums.Language.Mielia }.All(predicate: language =>
             {
                 try
                 {

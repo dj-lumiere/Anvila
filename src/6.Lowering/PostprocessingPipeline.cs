@@ -56,7 +56,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // reached the emitter unlowered — the rewriters do not descend into a lambda expression.
         new LambdaLiftingPass(ctx: ctx).Run(program: program);
         new AccessLoweringPass(registry: ctx.Registry).Run(program: program);
-        // Route Suflae module-level `global`s through the hidden __ModuleGlobals entity FIRST, so every
+        // Route Mielia module-level `global`s through the hidden __ModuleGlobals entity FIRST, so every
         // subsequent pass (f-string, operator, Roamed projection/lock-bracket) sees the field accesses
         // and the globals inherit the entity's thread-safe access-lock brackets.
         ctx.Registry.CompilationRules.LowerFirst(ctx: ctx, program: program);
@@ -105,7 +105,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // Opens a shape use of a container around a `for` loop over it and around a statement that reaches
         // one of its entity elements through a token, so a change that could move the elements crashes
         // (require_shape_free at every @reshaping routine). After OperatorLoweringPass, which builds the tokens.
-        // Only where the language checks shapes at run time: RazorForge rejects those changes at build
+        // Only where the language checks shapes at run time: Revare rejects those changes at build
         // time (SemanticVerifier.CheckShapeEffects).
         ctx.Registry.Rules.LowerShapeUse(ctx: ctx, program: program);
         new RecordCopyLoweringPass(ctx: ctx).Run(program: program);

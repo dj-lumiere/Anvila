@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Anvila: the builder core shared by the RazorForge and Suflae front ends (syntax tree, type model,
+  <!-- Anvila: the builder core shared by the Revare and Mielia front ends (syntax tree, type model,
        declaration/verification/lowering/instantiation/collection passes, the LLVM emitter, the build
        driver, daemon, JIT and language server). Each language's lexer and command line live in its own
-       project (..\RazorForge, ..\Suflae), which registers its language rules here at startup. -->
+       project (..\Revare, ..\Mielia), which registers its language rules here at startup. -->
   <PropertyGroup>
     <SonarQubeTestProject>false</SonarQubeTestProject>
     <OutputType>Library</OutputType>
@@ -13,7 +13,7 @@
     <Version>0.5.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Description>Anvila, the builder core shared by RazorForge and Suflae.</Description>
+    <Description>Anvila, the builder core shared by Revare and Mielia.</Description>
     <!-- The builder runs optimized in every configuration: bin/Debug is what daily builds, the test suites and
          the editors' language servers run. Build with -p:Optimize=false to step through it in a debugger. -->
     <Optimize>true</Optimize>
@@ -27,10 +27,10 @@
 
   <!-- The front ends and the tests use the builder's internal members. -->
   <ItemGroup>
-    <InternalsVisibleTo Include="RazorForge"/>
-    <InternalsVisibleTo Include="Suflae"/>
-    <InternalsVisibleTo Include="RazorForge.Tests"/>
-    <InternalsVisibleTo Include="Suflae.Tests"/>
+    <InternalsVisibleTo Include="Revare"/>
+    <InternalsVisibleTo Include="Mielia"/>
+    <InternalsVisibleTo Include="Revare.Tests"/>
+    <InternalsVisibleTo Include="Mielia.Tests"/>
   </ItemGroup>
 
   <!-- Kill any lingering resident daemon BEFORE the build. A daemon (spawned by a non-jit build/buildandrun)
@@ -44,17 +44,17 @@
           ContinueOnError="true"/>
   </Target>
 
-  <!-- Build Ingrid's native libraries before the builder compiles, once the Tessera builder is built: the runtime
-       library has code written in Tessera (Ingrid/runtime-tessera), which CMake compiles with it (TESSERA_DLL). -->
+  <!-- Build Ingrid's native libraries before the builder compiles, once the Lapila builder is built: the runtime
+       library has code written in Lapila (Ingrid/runtime-lapila), which CMake compiles with it (LAPILA_DLL). -->
   <PropertyGroup>
-    <TesseraBuilderDll>$(MSBuildProjectDirectory)\..\Tessera\bin\$(Configuration)\net10.0\tessera.dll</TesseraBuilderDll>
+    <LapilaBuilderDll>$(MSBuildProjectDirectory)\..\Lapila\bin\$(Configuration)\net10.0\lapila.dll</LapilaBuilderDll>
   </PropertyGroup>
   <Target Name="BuildNativeLibraries" AfterTargets="ResolveProjectReferences" BeforeTargets="CoreCompile"
           Condition="'$(SkipNative)' != 'true'">
     <Exec Command="&quot;$(IngridNativeDir)\build.bat&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' == 'Windows_NT'"
-          EnvironmentVariables="TESSERA_DLL=$(TesseraBuilderDll)"/>
+          EnvironmentVariables="LAPILA_DLL=$(LapilaBuilderDll)"/>
     <Exec Command="bash &quot;$(IngridNativeDir)/build.sh&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' != 'Windows_NT'"
-          EnvironmentVariables="TESSERA_DLL=$(TesseraBuilderDll)"/>
+          EnvironmentVariables="LAPILA_DLL=$(LapilaBuilderDll)"/>
   </Target>
 
   <ItemGroup>
@@ -76,13 +76,13 @@
     <PackageReference Include="Tomlyn" Version="0.17.0"/>
   </ItemGroup>
 
-  <!-- The Tessera backend (src/9.TesseraEmit) builds through the Tessera builder and ships its standard
-       library next to the builder, where TesseraBackend looks for it (tessera-stdlib/). The reference does not flow
-       on to the executables (PrivateAssets): Tessera is an executable project, and a second, runtime-specific build
+  <!-- The Lapila backend (src/9.LapilaEmit) builds through the Lapila builder and ships its standard
+       library next to the builder, where LapilaBackend looks for it (lapila-stdlib/). The reference does not flow
+       on to the executables (PrivateAssets): Lapila is an executable project, and a second, runtime-specific build
        of it through a self-contained publish would put two copies of its apphost, deps.json and runtimeconfig.json
-       in the package (NETSDK1152). tessera.dll still reaches the executables as Anvila's dependency. -->
+       in the package (NETSDK1152). lapila.dll still reaches the executables as Anvila's dependency. -->
   <ItemGroup>
-    <ProjectReference Include="..\Tessera\Tessera.csproj" PrivateAssets="all"/>
-    <Content Include="..\Tessera\Standard\**\*.te" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
+    <ProjectReference Include="..\Lapila\Lapila.csproj" PrivateAssets="all"/>
+    <Content Include="..\Lapila\Standard\**\*.li" LinkBase="lapila-stdlib" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 </Project>

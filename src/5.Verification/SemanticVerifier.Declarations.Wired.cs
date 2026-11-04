@@ -139,15 +139,15 @@ public sealed partial class SemanticVerifier
         // A program in a language without unsafe code declares no foreign routine of its own.
         if (UnsafeSurfaceIsBarredIn(filePath: external.Location.FileName))
         {
-            ReportError(code: SemanticDiagnosticCode.SuflaeNoCInterop,
+            ReportError(code: SemanticDiagnosticCode.MieliaNoCInterop,
                 message:
                 $"You declare the foreign routine '{external.Name}' here, but a {_registry.Rules.Name} program " +
-                "cannot reach C directly. Declare it in a `.rf` module and import that module from this program.",
+                "cannot reach C directly. Declare it in a `.rr` module and import that module from this program.",
                 location: external.Location);
         }
 
         // Resolve the parameter + return types — WITHOUT this the routine registers with zero
-        // parameters, so every `C::foo(arg)` call fails RF-S501 "expects at most 0 arguments" (the
+        // parameters, so every `C::foo(arg)` call fails RA-S501 "expects at most 0 arguments" (the
         // stdlib load path already does this in RegisterExternalDeclaration; the user-file path had
         // silently dropped them). A generic-param context stub lets ResolveType recognize the
         // external's own `[T]` params; ordinary FFI param types (S32/U64/CStr/Hijacked[T]/a choice)
@@ -174,7 +174,7 @@ public sealed partial class SemanticVerifier
 
         _currentRoutine = prevRoutine;
 
-        // C reads a C string through a `char*`: the C string RazorForge made goes there as its view.
+        // C reads a C string through a `char*`: the C string Revare made goes there as its view.
         for (int i = 0; i < parameters.Count; i++)
         {
             if (Declaration.RuntimeContract.CString.ViewOf.TryGetValue(key: parameters[index: i].Type.Name,
@@ -196,7 +196,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.OwnedCStringAtCBoundary,
                 message:
                 $"You declare C routine '{external.Name}' as returning a '{returnType.Name}', but C returns a " +
-                $"pointer, which RazorForge never frees. Declare it as returning '{returnView}'.",
+                $"pointer, which Revare never frees. Declare it as returning '{returnView}'.",
                 location: external.ReturnType!.Location);
         }
 

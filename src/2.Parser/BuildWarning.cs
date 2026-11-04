@@ -59,6 +59,6 @@ public static class WarningCodes
     /// <summary>Unnecessary braces in a context where indentation delimiters are expected (CK001).</summary>
     public const string UnnecessaryBraces = "CK001";
 
-    /// <summary>C-style syntax used in a context where RazorForge/Suflae idioms are expected (ST001).</summary>
+    /// <summary>C-style syntax used in a context where Revare/Mielia idioms are expected (ST001).</summary>
     public const string CStyleSyntax = "ST001";
 }

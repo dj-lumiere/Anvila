@@ -386,8 +386,8 @@ internal partial class Program
         }
     }
 
-    /// <summary>The type a bare number takes with nothing around it: <c>S64</c> and <c>B64</c> in RazorForge,
-    /// <c>Int</c> and <c>Decimal</c> in Suflae, and <c>B64</c> for a hex float in both.</summary>
+    /// <summary>The type a bare number takes with nothing around it: <c>S64</c> and <c>B64</c> in Revare,
+    /// <c>Int</c> and <c>Decimal</c> in Mielia, and <c>B64</c> for a hex float in both.</summary>
     private static string BareNumberType(SuffixSource source, SuffixedNumber number)
     {
         if (number.Decimal && !number.BaseTen)
@@ -395,10 +395,10 @@ internal partial class Program
             return "B64";
         }
 
-        bool suflae = source.Language == Language.Suflae;
+        bool mielia = source.Language == Language.Mielia;
         return number.Decimal
-            ? suflae ? "Decimal" : "B64"
-            : suflae ? "Int" : "S64";
+            ? mielia ? "Decimal" : "B64"
+            : mielia ? "Int" : "S64";
     }
 
     /// <summary>The offset in the file as written of <paramref name="candidateOffset"/> in the file with every
@@ -496,7 +496,7 @@ internal partial class Program
         DirectoryInfo? directory = new FileInfo(fileName: file).Directory;
         while (directory?.Parent != null)
         {
-            if (directory.Name == "Standard" && directory.Parent.Name is "RazorForge" or "Suflae")
+            if (directory.Name == "Standard" && directory.Parent.Name is "Revare" or "Mielia")
             {
                 return directory.FullName;
             }
@@ -536,12 +536,12 @@ internal partial class Program
             List<string> roots = files.Select(selector: s => s.StandardRoot).OfType<string>().Distinct().ToList();
             if (roots.Count > 0)
             {
-                // Both libraries sit side by side under the workspace: <workspace>/RazorForge/Standard and
-                // <workspace>/Suflae/Standard. The builder reads them as Standard/RazorForge and Standard/Suflae.
+                // Both libraries sit side by side under the workspace: <workspace>/Revare/Standard and
+                // <workspace>/Mielia/Standard. The builder reads them as Standard/Revare and Standard/Mielia.
                 string workspace = Path.GetDirectoryName(path: Path.GetDirectoryName(path: roots[index: 0])!)!;
                 standard = Path.Combine(path1: work, path2: "Standard");
                 Directory.CreateDirectory(path: standard);
-                foreach (string name in new[] { "RazorForge", "Suflae" })
+                foreach (string name in new[] { "Revare", "Mielia" })
                 {
                     string target = Path.Combine(path1: workspace, path2: name, path3: "Standard");
                     if (Directory.Exists(path: target))
@@ -575,7 +575,7 @@ internal partial class Program
                 start.Environment[key: "FORGE_STDLIB"] = standard;
             }
 
-            start.Environment[key: "RF_NO_DAEMON"] = "1";
+            start.Environment[key: "RA_NO_DAEMON"] = "1";
             using Process child = Process.Start(startInfo: start)!;
             child.WaitForExit();
             if (!File.Exists(path: output))
@@ -673,7 +673,7 @@ internal partial class Program
         string MapBack(string file)
         {
             string full = Path.GetFullPath(path: file);
-            foreach (string name in new[] { "RazorForge", "Suflae" })
+            foreach (string name in new[] { "Revare", "Mielia" })
             {
                 string linked = Path.Combine(path1: stdlibPath, path2: name) + Path.DirectorySeparatorChar;
                 if (full.StartsWith(value: linked, comparisonType: StringComparison.Ordinal))
@@ -716,7 +716,7 @@ internal partial class Program
 
         using var writer = new StreamWriter(path: output);
         foreach (Language language in stdlibFiles.Values
-                    .Select(selector: r => Path.GetFileName(path: Path.GetDirectoryName(path: r)) == "Suflae" ? Language.Suflae : Language.RazorForge)
+                    .Select(selector: r => Path.GetFileName(path: Path.GetDirectoryName(path: r)) == "Mielia" ? Language.Mielia : Language.Revare)
                     .Distinct())
         {
             try

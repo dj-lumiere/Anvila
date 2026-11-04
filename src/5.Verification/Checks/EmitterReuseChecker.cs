@@ -7,7 +7,7 @@ using TypeModel.Types;
 namespace Builder.Verification;
 
 /// <summary>
-/// The rule for an emitter that ran out (RF-S517). <c>for x in it</c> takes items from the emitter <c>it</c> until its
+/// The rule for an emitter that ran out (RA-S517). <c>for x in it</c> takes items from the emitter <c>it</c> until its
 /// <c>emit</c> fails, so after a <c>for</c> that wasn't left with <c>break</c>, <c>it</c> has nothing left: a second
 /// <c>for</c> over it runs zero times, silently. The rule follows each name a routine walks with <c>for</c> through
 /// the routine's own lines and reports a <c>for</c> over a name that has certainly run out there:
@@ -54,7 +54,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
     /// <c>emit</c>, so walking it uses them up.</summary>
     private bool IsEmitter(TypeSymbol? type)
     {
-        // A Suflae emitter is held by its shared handle (`Roamed[MemoryEmitter[S64]]`): the handle walks the emitter.
+        // A Mielia emitter is held by its shared handle (`Roamed[MemoryEmitter[S64]]`): the handle walks the emitter.
         if (type is RecordTypeSymbol { TypeArguments: [var inner, ..] } handle &&
             TypeRegistry.GetRcWrapperBaseName(type: handle) != null)
         {

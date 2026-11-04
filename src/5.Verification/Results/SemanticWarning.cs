@@ -29,7 +29,7 @@ public sealed record SemanticWarning(
 
     /// <summary>
     /// The code as the user sees it, spelled in the language of the file the warning points at
-    /// (RF-W### for a .rf file, SF-W### for a .sf file).
+    /// (RA-W### for a .rr file, MI-W### for a .mi file).
     /// </summary>
     public string CodeString => Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
 
@@ -39,7 +39,7 @@ public sealed record SemanticWarning(
 
     /// <summary>
     /// Gets the formatted warning message including diagnostic code and location.
-    /// Format: warning[RF-W###]: filename:line:column: message (SF-W### for a Suflae file)
+    /// Format: warning[RA-W###]: filename:line:column: message (MI-W### for a Mielia file)
     /// </summary>
     public string FormattedMessage =>
         $"{(IsNotice ? "note" : "warning")}[{CodeString}]: {Location.FileName}:{Location.Line}:{Location.Column}: {SurfaceMessage}";

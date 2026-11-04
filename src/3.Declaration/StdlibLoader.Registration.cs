@@ -51,14 +51,14 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// The realm a registration runs under when no stdlib pass names one (a user program's conformance
-    /// re-resolution, a single stdlib file loaded on its own): the RazorForge realm. Every registration
+    /// re-resolution, a single stdlib file loaded on its own): the Revare realm. Every registration
     /// helper takes its realm as a parameter, stamped onto the type-definition shells it builds and used to
-    /// scope its lookups, so an RF program's lookups never reach a coexisting SF wrapper's shell.
+    /// scope its lookups, so an RA program's lookups never reach a coexisting MI wrapper's shell.
     /// </summary>
     internal const string UnstampedRealm = TypeModel.Realms.Shared;
 
     /// <summary>The realm a stdlib file belongs to: the short name of the language it is written in
-    /// (<c>"SF"</c> for a Suflae source, <c>"RF"</c> for a RazorForge one).</summary>
+    /// (<c>"MI"</c> for a Mielia source, <c>"RA"</c> for a Revare one).</summary>
     internal static string RealmOf(string filePath)
     {
         return Builder.Frontends.Languages.RealmOf(fileName: filePath);
@@ -258,9 +258,9 @@ public sealed partial class StdlibLoader
         // Resolve type lookups MODULE-QUALIFIED. `LookupType(bareName)` resolves via the first-wins
         // short-name index, so with two modules each declaring `record Point` it would attach one
         // module's `obeys` to the OTHER module's type (cross-module protocol contamination →
-        // spurious RF-S702). The program's own module scopes the lookup to its own declaration.
-        // Scope the lookup to the program's realm (`realm`, passed by the caller): with an RF `.rf` type and
-        // its SF `.sf` wrapper both bearing the same module-qualified name, a realm-blind lookup would attach
+        // spurious RA-S702). The program's own module scopes the lookup to its own declaration.
+        // Scope the lookup to the program's realm (`realm`, passed by the caller): with an RA `.rr` type and
+        // its MI `.mi` wrapper both bearing the same module-qualified name, a realm-blind lookup would attach
         // this program's `obeys` to the OTHER realm's shell.
         string? module = program.Declarations
                                 .OfType<ModuleDeclaration>()
@@ -397,7 +397,7 @@ public sealed partial class StdlibLoader
     /// <summary>
     /// BuilderQuery per-type routines whose stdlib decls return
     /// <c>List[FieldInfo|ProtocolInfo|RoutineInfo]</c> or <c>Dict[Text, Data]</c>.
-    /// Registering these as universal <c>T.x()</c> routines from BuilderQuery.rf forces GMP to
+    /// Registering these as universal <c>T.x()</c> routines from BuilderQuery.rr forces GMP to
     /// monomorphize the heavy carrier closure (BTreeListNode/Array/ArrayIterator) for every
     /// type even when the user program never imports BuilderQuery.
     /// AutoWiredRegistrationPass re-registers these per-type when (and only when) the user actually
@@ -438,8 +438,8 @@ public sealed partial class StdlibLoader
     private static void RegisterProgramRoutines(TypeRegistry registry, Program program,
         string moduleName, string realm)
     {
-        // Owner and signature names prefer the file's realm: `NegativeIndexError.crash_message` in a Suflae
-        // file belongs to Suflae's `NegativeIndexError`, which RazorForge does not declare.
+        // Owner and signature names prefer the file's realm: `NegativeIndexError.crash_message` in a Mielia
+        // file belongs to Mielia's `NegativeIndexError`, which Revare does not declare.
         string savedRealm = registry.ResolutionRealm;
         registry.ResolutionRealm = realm;
         try
@@ -530,7 +530,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Registers an external("C") declaration from stdlib (e.g., NativeDeclarations.rf).
+    /// Registers an external("C") declaration from stdlib (e.g., NativeDeclarations.rr).
     /// </summary>
     private static void RegisterExternalDeclaration(TypeRegistry registry,
         ExternalDeclaration external, string moduleName, string realm)
@@ -747,14 +747,14 @@ public sealed partial class StdlibLoader
         // construction resolves the creator. The trailing `!` (failable) is carried structurally
         // on routine.IsFailable.
         string bareName = TypeSymbol.StripTypeArgs(name: routineName);
-        // Own-module FIRST: a constructor `routine List(...)` in `module Suflae` owns `Suflae.List`,
+        // Own-module FIRST: a constructor `routine List(...)` in `module Mielia` owns `Mielia.List`,
         // NOT the first-registered context-free `List` (System.List, loaded earlier). Resolving bare
-        // first bound the Suflae overlay's `List()` creator to System.List → same RegistryKey as
-        // System's own `List()` → a spurious divergent-duplicate-constructor error (RF-S406). This
+        // first bound the Mielia overlay's `List()` creator to System.List → same RegistryKey as
+        // System's own `List()` → a spurious divergent-duplicate-constructor error (RA-S406). This
         // mirrors LookupTypeWithImports's own-module-shadows rule for the stdlib registration path.
-        // Own-REALM-first: SF-realm `System.List`'s `List()` constructor must own the SF-realm List, not
-        // the RazorForge-realm `System.List` (same bare key, both `module System`) — else both `List()`
-        // creators share one RegistryKey and trip the divergent-duplicate-constructor check (RF-S406).
+        // Own-REALM-first: MI-realm `System.List`'s `List()` constructor must own the MI-realm List, not
+        // the Revare-realm `System.List` (same bare key, both `module System`) — else both `List()`
+        // creators share one RegistryKey and trip the divergent-duplicate-constructor check (RA-S406).
         TypeSymbol? ctorOwner =
             registry.LookupType(name: $"{moduleName}.{bareName}",
                 realm: realm) ??
@@ -787,12 +787,12 @@ public sealed partial class StdlibLoader
         string bracketContent = typeName[(bracketIndex + 1)..]
            .TrimEnd(trimChar: ']');
         string baseName = typeName[..bracketIndex];
-        // Own-module FIRST: `routine List[T].add_last` in `module Suflae` owns `Suflae.List`,
-        // not the earlier-registered context-free `System.List`. Bare-first bound the Suflae
-        // overlay's List memberRoutines to System.List, so dispatch on `Roamed[Suflae.List]` found no
-        // such memberRoutine (RF-S458). Falls back to bare for a System type used from another module.
-        // Own-REALM-first (like the non-bracketed owner path): an SF-realm `System.List[T]` member
-        // owns the SF-realm List, not the RazorForge-realm one that shares the bare key.
+        // Own-module FIRST: `routine List[T].add_last` in `module Mielia` owns `Mielia.List`,
+        // not the earlier-registered context-free `System.List`. Bare-first bound the Mielia
+        // overlay's List memberRoutines to System.List, so dispatch on `Roamed[Mielia.List]` found no
+        // such memberRoutine (RA-S458). Falls back to bare for a System type used from another module.
+        // Own-REALM-first (like the non-bracketed owner path): an MI-realm `System.List[T]` member
+        // owns the MI-realm List, not the Revare-realm one that shares the bare key.
         TypeSymbol? baseDef =
             registry.LookupType(name: $"{moduleName}.{baseName}",
                 realm: realm) ??
@@ -849,11 +849,11 @@ public sealed partial class StdlibLoader
         string moduleName, string realm)
     {
         // Own-module FIRST (mirrors the constructor path + LookupTypeWithImports): a member
-        // `routine List[T].add_last` in `module Suflae` owns `Suflae.List`, not the earlier-
+        // `routine List[T].add_last` in `module Mielia` owns `Mielia.List`, not the earlier-
         // registered context-free `System.List`. Falls back to the bare context-free type for a
         // System type referenced from another module (e.g. `Collections` memberRoutines on `System.List`).
-        // Own-REALM-first too: SF-realm `System.List`'s members must own the SF-realm List, not the
-        // RazorForge-realm `System.List` that shares the bare key (both are `module System`).
+        // Own-REALM-first too: MI-realm `System.List`'s members must own the MI-realm List, not the
+        // Revare-realm `System.List` that shares the bare key (both are `module System`).
         TypeSymbol? ownerType =
             registry.LookupType(name: $"{moduleName}.{typeName}",
                 realm: realm) ??
@@ -906,7 +906,7 @@ public sealed partial class StdlibLoader
         List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
             receiverLeaves: receiverLeaves,
             resolve: name => registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name),
-            // A bracket entry with type arguments (`to[SF::System.List[T]]`) resolves as the written type, the
+            // A bracket entry with type arguments (`to[MI::System.List[T]]`) resolves as the written type, the
             // receiver's own parameters (`T`) and those the routine declares (`N` of `needs U64 N`) in scope.
             resolveExpression: (typeExpr, inScope) => ResolveSimpleType(registry: registry, typeExpr: typeExpr,
                 genericParams: inScope.ToList(), moduleName: moduleName));
@@ -968,7 +968,7 @@ public sealed partial class StdlibLoader
             Kind = routineKind,
             OwnerType = ownerType,
             // A member routine a non-shared realm's library writes on a type it does not own is that realm's
-            // surface: `Text.count() -> Int` in a Suflae file is what Suflae programs call. So is a free
+            // surface: `Text.count() -> Int` in a Mielia file is what Mielia programs call. So is a free
             // routine of a name the shared library already declares in the module (`ask_lines`). A free routine
             // only the realm has (`position_of`) is an ordinary one.
             // So is a derive template (`@overridable routine T.all_cases()`) a non-shared realm writes for its own
@@ -1005,7 +1005,7 @@ public sealed partial class StdlibLoader
             // StdlibLoader is a PARALLEL routine-registration path to SignatureResolver; it derives the
             // mutation category from @readonly/@reshaping through the SAME shared helper so the two paths
             // stay in lockstep. (Omitting it silently left every stdlib member routine at the RoutineInfo
-            // default — e.g. a plainly-@readonly `List.count` looked Reshaping and tripped the RF-S625
+            // default — e.g. a plainly-@readonly `List.count` looked Reshaping and tripped the RA-S625
             // iteration ban.)
             MutationCategory =
                 Verification.Enums.MutationCategoryExtensions.FromAnnotations(
@@ -1308,9 +1308,9 @@ public sealed partial class StdlibLoader
         }
 
         // `ResolveSimpleType` is realm-blind and yields the ambient-realm receiver; keep `me`
-        // in the OWNER's realm so an SF-realm `System.List` method's `me` isn't the RF-realm List
-        // (which lacks the SF wrapper's `inner` field → spurious RF-S450).
-        // The receiver's elements are slots like any other (`List[Work[T]]` in Suflae is a list of Work
+        // in the OWNER's realm so an MI-realm `System.List` method's `me` isn't the RA-realm List
+        // (which lacks the MI wrapper's `inner` field → spurious RA-S450).
+        // The receiver's elements are slots like any other (`List[Work[T]]` in Mielia is a list of Work
         // handles); `me` itself stays the bare value.
         resolvedRecv = registry.RoamEntityArgumentsIn(filePath: routine.Location.FileName, resolved: resolvedRecv);
         return ownerType != null && resolvedRecv.Realm != ownerType.Realm
@@ -1407,7 +1407,7 @@ public sealed partial class StdlibLoader
     /// </summary>
     private static bool IsEntityTypeSpecialization(RecordDeclaration record)
     {
-        // In stdlib .rf files, `needs T is EntityType` is parsed as a ConstGeneric constraint
+        // In stdlib .rr files, `needs T is EntityType` is parsed as a ConstGeneric constraint
         // with ConstraintTypes[0].Name == "EntityType". These create a second layout specialization
         // (e.g. Optional[Text] uses { Hijacked[T] } instead of { Bool, T }) and must be stored
         // separately so GetOrCreateResolution can select the right definition.
@@ -1719,10 +1719,10 @@ public sealed partial class StdlibLoader
         string moduleName, string realm)
     {
         // Skip if THIS module's type is already registered (idempotency). The check must be
-        // module-qualified: a bare-name check would skip a Suflae-realm overlay `entity List` merely
-        // because the RazorForge-realm `System.List` (loaded earlier) shares the bare name, leaving
-        // `Suflae.List` unregistered — its constructor/memberRoutines then mis-bind to `System.List` (spurious
-        // RF-S406). Different modules own distinct same-named types.
+        // module-qualified: a bare-name check would skip a Mielia-realm overlay `entity List` merely
+        // because the Revare-realm `System.List` (loaded earlier) shares the bare name, leaving
+        // `Mielia.List` unregistered — its constructor/memberRoutines then mis-bind to `System.List` (spurious
+        // RA-S406). Different modules own distinct same-named types.
         string qualifiedName = string.IsNullOrEmpty(value: moduleName)
             ? entity.Name
             : $"{moduleName}.{entity.Name}";
@@ -1909,7 +1909,7 @@ public sealed partial class StdlibLoader
             if (concrete != null)
             {
                 // An associated type is a slot like any other: an entity bound there is held as the code of
-                // its file holds entities (`relates SetEmittable[T] as Iter` is the iterator's handle in Suflae).
+                // its file holds entities (`relates SetEmittable[T] as Iter` is the iterator's handle in Mielia).
                 bindings[key: binding.Name] = registry.RoamEntitySlotIn(written: binding.Binding,
                     filePath: binding.Binding.Location.FileName,
                     resolved: concrete);

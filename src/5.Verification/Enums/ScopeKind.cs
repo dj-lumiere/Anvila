@@ -23,7 +23,7 @@ public enum ScopeKind
     /// <summary>Loop scope (while, for, until).</summary>
     Loop,
 
-    /// <summary>Danger block scope (RazorForge only).</summary>
+    /// <summary>Danger block scope (Revare only).</summary>
     Danger,
 
     /// <summary>Iteration scope - tracks active iterators for reshaping checking.</summary>

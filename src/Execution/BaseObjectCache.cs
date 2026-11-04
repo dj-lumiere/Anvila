@@ -62,11 +62,11 @@ public sealed class BaseObjectCache
         "    return\n";
 
     /// <summary>
-    /// The seed program for Suflae. Suflae spells the integer type <c>Int</c> and its collections are shared handles
-    /// the builder wraps, so the RazorForge seed would warm the wrong instances (and its sized integer types are not
-    /// Suflae words). Same shape as <see cref="SeedProgramSource"/>, valid and warning free in Suflae.
+    /// The seed program for Mielia. Mielia spells the integer type <c>Int</c> and its collections are shared handles
+    /// the builder wraps, so the Revare seed would warm the wrong instances (and its sized integer types are not
+    /// Mielia words). Same shape as <see cref="SeedProgramSource"/>, valid and warning free in Mielia.
     /// </summary>
-    public const string SuflaeSeedProgramSource =
+    public const string MieliaSeedProgramSource =
         "module Base\n" +
         "import IO/Console\n" +
         "routine start()\n" +
@@ -101,9 +101,9 @@ public sealed class BaseObjectCache
     /// <summary>The seed program (and the file name it is analyzed under) for <paramref name="language"/>.</summary>
     public static (string Source, string FileName) SeedFor(TypeModel.Enums.Language language)
     {
-        return language == TypeModel.Enums.Language.Suflae
-            ? (SuflaeSeedProgramSource, "base.sf")
-            : (SeedProgramSource, "base.rf");
+        return language == TypeModel.Enums.Language.Mielia
+            ? (MieliaSeedProgramSource, "base.mi")
+            : (SeedProgramSource, "base.rr");
     }
 
     private readonly string _dir;
@@ -136,7 +136,7 @@ public sealed class BaseObjectCache
     /// (opt → <c>clang -c</c>). Returns null if the AOT compile fails. Sets <paramref name="wasCached"/> to
     /// whether the object already existed — a hit skips all compilation.
     /// </summary>
-    public string? GetOrBuild(string fingerprint, string baseIr, RfBuildMode buildMode,
+    public string? GetOrBuild(string fingerprint, string baseIr, RaBuildMode buildMode,
         out bool wasCached)
     {
         string objPath = ObjectPath(fingerprint: fingerprint);

@@ -32,7 +32,7 @@ namespace Builder.Lowering.Passes;
 /// <c>.retain()</c>/<c>.track()</c>) is not torn down at any exit: what it held left the binding. A local moved by
 /// the value of a <c>return</c> or a <c>throw</c> is moved on that path only, and the other exits still tear it
 /// down. A move by any other statement counts for the whole routine: a binding taken on some paths that go on past
-/// the join and kept on others is a build error (RF-S616), so no path reaches a join with the binding in doubt and
+/// the join and kept on others is a build error (RA-S616), so no path reaches a join with the binding in doubt and
 /// no flag is kept at run time.</para>
 /// </summary>
 internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
@@ -162,7 +162,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// variable, a variable, a constructed value), drops it or returns it. Only a read of its members, a call of one
     /// of its routines that is not dangerous and gives back no entity or handle, or an argument to a parameter that
     /// does not take it (a token, a value) leaves it with the routine. From the first statement that keeps it on (a
-    /// loop that keeps it counts from the loop's start), no exit tears it down. Shared entities (Suflae) are handles
+    /// loop that keeps it counts from the loop's start), no exit tears it down. Shared entities (Mielia) are handles
     /// and are left alone.
     /// </summary>
     public void RunOnGenericEntityParameters(Dictionary<string, Instantiation.MonomorphizedBody> bodies)
@@ -530,17 +530,17 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // ownership in — a bare ENTITY the caller relinquished) OR handing over a borrow. A RECORD param
         // (value record / Text / RC wrapper / access token) is always a BORROW — the caller retains
         // ownership and tears it down at ITS scope exit, so the callee must NOT destroy it. Only a bare
-        // `EntityTypeSymbol` param is consuming (RF-S413 forces `steal` at the call site), owned by the
+        // `EntityTypeSymbol` param is consuming (RA-S413 forces `steal` at the call site), owned by the
         // routine and torn down at every exit exactly like a top-level local. The retain that used to
         // balance a callee-owned record param at the arg boundary is gone (RecordCopyLoweringPass no
         // longer stores at the boundary); retain now lives at the DESTINATION (store primitive / field
         // write), and a fresh rvalue record arg is torn down at the CALLER (TemporaryTeardownPass).
         //
-        // Suflae exception: an SF entity parameter is ALSO a borrowed handle — the caller keeps
+        // Mielia exception: an MI entity parameter is ALSO a borrowed handle — the caller keeps
         // ownership, so destroying it here double-frees the caller's live entity. After representation
-        // unification (SignatureResolver.MaybeRoamSuflaeEntity) an SF entity param resolves to `Roamed[E]`
+        // unification (SignatureResolver.MaybeRoamMieliaEntity) an MI entity param resolves to `Roamed[E]`
         // (a RecordTypeSymbol) which is a record → borrow by the rule above anyway; a bare `EntityTypeSymbol`
-        // param in SF is skipped here (it would otherwise be consuming per the RF rule).
+        // param in MI is skipped here (it would otherwise be consuming per the RA rule).
         bool entitiesAreShared = ctx.Registry.EntitiesAreSharedIn(filePath: r.Location.FileName);
         var paramLive = new List<Owned>();
         // The late run tracks no parameter: the first run already tore the owned ones down.
@@ -693,8 +693,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             // Roamed[T] entity-FIELD reassignment (`me.f = EXPR`). Unlike a local, a field is torn down
             // by its CONTAINER's teardown, not scope exit, so overwriting it orphans the old co-owned
             // handle — it must be released HERE or it leaks. (This is the one job of the deleted
-            // RcRetainLoweringPass.ReassignRelease; the retain-NEW on the RHS is SF's implicit `.share()`
-            // from SuflaeEntityLoweringPass, which runs before this pass, so `rhs` already carries it.)
+            // RcRetainLoweringPass.ReassignRelease; the retain-NEW on the RHS is MI's implicit `.share()`
+            // from MieliaEntityLoweringPass, which runs before this pass, so `rhs` already carries it.)
             case AssignmentStatement a when !_late && !a.KeepsReplacedValue && a.Target is MemberExpression mt:
                 return LowerRoamedFieldReassign(original: a,
                     target: mt,
@@ -838,7 +838,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         return block with { Statements = stmts };
     }
 
-    // A global's init assignment (Suflae's one singleton `__globals__ = __ModuleGlobals(...)`, or each RazorForge
+    // A global's init assignment (Mielia's one singleton `__globals__ = __ModuleGlobals(...)`, or each Revare
     // global) is at the top of start(). The global lives in a module-level cell so every routine can reach it, but its
     // lifetime is start()'s scope: it is made there and released at every exit of start(), like a local declared at
     // that point. Registered AFTER its init assignment, so the init itself is not lowered as a reassign
@@ -1156,7 +1156,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         return new BlockStatement(Statements: stmts, Location: original.Location);
     }
 
-    /// <summary>Whether <paramref name="type"/> is a Suflae entity handle (<c>Roamed[E]</c>) or an optional one
+    /// <summary>Whether <paramref name="type"/> is a Mielia entity handle (<c>Roamed[E]</c>) or an optional one
     /// (<c>E?</c>, <c>Optional[Roamed[E]]</c>): writing over a member variable of it drops the old handle's count.</summary>
     private static bool IsHandleOrOptionalHandle(TypeSymbol type)
     {
@@ -1261,7 +1261,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ResolvedRoutine = owned.Destroy,
             ResolvedType = _blankType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: owned.Destroy),
-            // Builder-injected teardown: exempt from the RF-S609 dangerous-call gate. `destruct` is a
+            // Builder-injected teardown: exempt from the RA-S609 dangerous-call gate. `destruct` is a
             // dangerous routine, but this call is the builder's own scope-exit teardown, not a user
             // calling it outside a `danger` block. Under the demand pipeline this destroy is injected
             // (Phase 7) BEFORE the stdlib body is SA'd on reach, so the dangerous-call check would see it
@@ -1287,7 +1287,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ResolvedRoutine = destroy,
             ResolvedType = _blankType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: destroy),
-            // Builder-injected teardown — exempt from the RF-S609 dangerous-call gate (see MakeDestroyStmt).
+            // Builder-injected teardown — exempt from the RA-S609 dangerous-call gate (see MakeDestroyStmt).
             IsSynthesizedLowering = true
         };
         return new ExpressionStatement(Expression: call, Location: loc);
@@ -1457,7 +1457,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// parameters (<c>var walk = me.emitter()</c> in <c>List[T].represent</c>, <c>var buffer = List[T]()</c>), made by a
     /// call or a construction, and any value a routine value hands back (<c>var key = me.key(item)</c>). A token, a view
     /// and a value read in place (a library routine that gives back a bare <c>T</c>) are not owned, so they are left
-    /// alone. Shared entities (Suflae) are handles and are left alone.
+    /// alone. Shared entities (Mielia) are handles and are left alone.
     /// </summary>
     private bool DefersToInstance(VariableDeclaration v)
     {
@@ -1931,7 +1931,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// of teardown like other moved names: it stays tracked, and its teardown at a scope exit or before a new value
     /// runs only when the slot holds a value. The emitter empties the slot where <c>steal</c> hands the value over
     /// (<see cref="StealGuardLoweringPass"/>), so the value that left is not torn down again and the new one is torn
-    /// down once. Shared entities (Suflae) are handles and move nothing. A body analyzed after this pass (a library
+    /// down once. Shared entities (Mielia) are handles and move nothing. A body analyzed after this pass (a library
     /// body lowered ahead of its analysis) has no record of its steals yet and keeps the plain rule.
     /// </summary>
     private void CollectRefillable(RoutineDeclaration r)
@@ -2056,10 +2056,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             } entityAssign when !ctx.Registry.EntitiesAreSharedIn(filePath: entityAssign.Location?.FileName):
                 _movedNames.Add(item: movedEntity.Name);
                 break;
-            // `me.storage = moved` into a counted-handle field in Suflae: the write takes no extra hold
+            // `me.storage = moved` into a counted-handle field in Mielia: the write takes no extra hold
             // (RecordCopyLoweringPass leaves an RC field's right-hand side as it is there, the entity lowering already
             // wrote the hold), so the local's hold moves into the field and the local is not torn down again at scope
-            // exit. In RazorForge `=` copies the handle (the field gains its own holder), so the local stays.
+            // exit. In Revare `=` copies the handle (the field gains its own holder), so the local stays.
             case BinaryExpression
             {
                 Operator: BinaryOperator.Assign,

@@ -80,7 +80,7 @@ public sealed class InstantiationContext
     /// <summary>
     /// Build mode used when generic expansion depends on buildtime configuration.
     /// </summary>
-    public RfBuildMode BuildMode { get; }
+    public RaBuildMode BuildMode { get; }
 
     /// <summary>
     /// Canonical keys for reachable concrete generic types discovered during collection.
@@ -142,7 +142,7 @@ public sealed class InstantiationContext
 
     /// <summary>
     /// Demand hook for a derive-template body materialized on reach (a scalar's <c>lt</c>/<c>le</c>/
-    /// <c>gt</c>/<c>ge</c>, or a plain type's <c>represent</c>/<c>compare</c>/… cloned from the DeriveText.rf
+    /// <c>gt</c>/<c>ge</c>, or a plain type's <c>represent</c>/<c>compare</c>/… cloned from the DeriveText.rr
     /// <c>T.&lt;name&gt;</c> template): the stored template body is RAW source AST, so after the collector
     /// substitutes <c>T</c> → the concrete owner it must be semantically analyzed (types/calls resolved) in
     /// the owner's context BEFORE the fresh-body lowering sweep — otherwise operators (<c>me.type_name() +
@@ -232,7 +232,7 @@ public sealed class InstantiationContext
                               new HashSet<string>(comparer: StringComparer.Ordinal);
         InstantiatedGenericBodies = options?.InstantiatedGenericBodies ?? [];
         Target = options?.Target ?? TargetConfig.ForCurrentHost();
-        BuildMode = options?.BuildMode ?? RfBuildMode.Debug;
+        BuildMode = options?.BuildMode ?? RaBuildMode.Debug;
         BodyScanCache = options?.BodyScanCache;
         if (options?.ResidentInstanceKeys is { Count: > 0 } rik)
         {
@@ -269,7 +269,7 @@ public sealed class InstantiationOptions
     public TargetConfig? Target { get; init; }
 
     /// <summary>Build mode used when generic expansion depends on buildtime configuration.</summary>
-    public RfBuildMode BuildMode { get; init; } = RfBuildMode.Debug;
+    public RaBuildMode BuildMode { get; init; } = RaBuildMode.Debug;
 
     /// <summary>Daemon-lifetime per-body reachability scan cache; null disables caching.</summary>
     public Dictionary<RoutineDeclaration, RoutineBodyScan>? BodyScanCache { get; init; }

@@ -13,8 +13,8 @@ internal static class StandardModules
     /// <summary>The language's base module.</summary>
     public const string Base = "System";
 
-    /// <summary>The folder of a language's library that holds the files bound from RazorForge's library. Its own
-    /// folders mirror RazorForge's, so a file there is the module of its folder below it.</summary>
+    /// <summary>The folder of a language's library that holds the files bound from Revare's library. Its own
+    /// folders mirror Revare's, so a file there is the module of its folder below it.</summary>
     public const string SharedFolder = "Shared";
 
     /// <summary>Whether <paramref name="module"/> is <c>System</c> or a module under it, written with <c>/</c> or

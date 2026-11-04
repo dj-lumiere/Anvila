@@ -60,7 +60,7 @@ public partial class LlvmEmitter
                                   message: $"Call to '{functionName}' reached the LLVM emitter without a resolved " +
                                            $"routine in [{_currentRoutineDiagName}].");
 
-        // RazorForge evaluates arguments in PARAMETER-DECLARATION order regardless of the call-site writing
+        // Revare evaluates arguments in PARAMETER-DECLARATION order regardless of the call-site writing
         // order: each written argument binds to its declared slot (by name, else positionally) and the slots
         // are emitted in declaration order.
         var argValues = new List<string>();
@@ -244,7 +244,7 @@ public partial class LlvmEmitter
                 message: $"Member conversion '.{member.MemberName}()' reached codegen unlowered.");
         }
 
-        // Suflae `Roamed[E]` receiver transparency is now lowered to real AST nodes by
+        // Mielia `Roamed[E]` receiver transparency is now lowered to real AST nodes by
         // RoamedProjectionLoweringPass (Phase 8): a bare-`me` inner memberRoutine's receiver is rewritten to
         // `receiver.raw_inner()` and a wrapper-shadowed represent/diagnose is re-resolved to the
         // inner's routine (stamped on CallExpression.ResolvedRoutine). Codegen emits that call verbatim
@@ -254,7 +254,7 @@ public partial class LlvmEmitter
         // TypeConstructor intercept using the SA-stamped `create`. Any DirectMemberRoutine that
         // still reaches here with no resolved memberRoutine is a semantic-verifier contract violation.
         // SA contract: a member call either resolves to a concrete routine (stamped on the call)
-        // or is rejected (RF-S458 for `.field()` typos, the dynamic-field `ptr` closure call is
+        // or is rejected (RA-S458 for `.field()` typos, the dynamic-field `ptr` closure call is
         // classified DynamicCall and handled above). A non-null resolvedRoutine that codegen can't
         // re-find is a registry bug, not a fallback to paper over. The former zero-arg field-read
         // fallback ("`obj.field()` means read the field") was removed: `.field` (access) and
@@ -287,7 +287,7 @@ public partial class LlvmEmitter
         // concrete argument types are known, resolve the exact overload here so failable operators
         // like add!/sub! do not degrade to undecorated placeholder symbols (System.S32.add). This
         // is resolution for SA-bypassing bodies, NOT intent-rediscovery on user calls — every
-        // SA-analyzed member call is already stamped or rejected (RF-S458). The former bare
+        // SA-analyzed member call is already stamped or rejected (RA-S458). The former bare
         // `LookupMemberRoutine(name)` that resolved a non-failable name to its failable variant was
         // removed: that failability-masking is now an SA error (`obj.foo()` when only `foo!`
         // exists), so codegen no longer needs to paper over it (task #23).
@@ -1337,7 +1337,7 @@ public partial class LlvmEmitter
 
         if (!_localVariables.ContainsKey(key: id.Name))
         {
-            // Suflae module-level `global`: its storage IS the `@global` symbol, so that is its address.
+            // Mielia module-level `global`: its storage IS the `@global` symbol, so that is its address.
             if (TryGetModuleGlobal(name: id.Name, variable: id.ResolvedVariable,
                     slot: out (TypeSymbol Type, string Symbol) gslot))
             {
@@ -1514,7 +1514,7 @@ public partial class LlvmEmitter
         // Failable routines return T directly -> they crash on failure, no carrier needed
 
         // Struct returns classified Indirect by the ABI come back through a hidden sret pointer:
-        // external("C") returning structs > 8 bytes (Win-x64 MSVC), or an RF routine whose return
+        // external("C") returning structs > 8 bytes (Win-x64 MSVC), or an RA routine whose return
         // is ABI-Indirect. The declaration, definition, and every return already agree (see
         // ReturnsViaSret); the call must pass the result slot as the first argument and load it back.
         // Coerced (Phase 2) struct return: the callee returns the ABI integer form; call it as that,

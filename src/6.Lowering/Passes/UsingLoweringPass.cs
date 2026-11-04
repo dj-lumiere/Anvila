@@ -44,7 +44,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
 
     /// <summary>
     /// Lowers every <c>using</c> of one routine body to its <c>enter</c>/<c>exit</c> calls ahead of the Phase-8 pass:
-    /// Suflae does it before its entity lowering, so the scope's bindings are plain locals that lowering turns into
+    /// Mielia does it before its entity lowering, so the scope's bindings are plain locals that lowering turns into
     /// shared handles like any other.
     /// </summary>
     public static Statement LowerBody(Statement body, TypeRegistry registry)

@@ -648,19 +648,19 @@ public partial class LlvmEmitter
     private void EmitStructRecordMemberVariableWrite(StringBuilder sb, MemberExpression member,
         string value, RecordTypeSymbol structRecord)
     {
-        int sfIndex = -1;
-        MemberVariableInfo? sfInfo = null;
+        int miIndex = -1;
+        MemberVariableInfo? miInfo = null;
         for (int i = 0; i < structRecord.MemberVariables.Count; i++)
         {
             if (structRecord.MemberVariables[index: i].Name == member.MemberName)
             {
-                sfIndex = i;
-                sfInfo = structRecord.MemberVariables[index: i];
+                miIndex = i;
+                miInfo = structRecord.MemberVariables[index: i];
                 break;
             }
         }
 
-        if (sfIndex < 0 || sfInfo == null)
+        if (miIndex < 0 || miInfo == null)
         {
             throw new InvalidOperationException(
                 message:
@@ -679,9 +679,9 @@ public partial class LlvmEmitter
         string sFieldPtr = NextTemp();
         EmitLine(sb: sb,
             line:
-            $"  {sFieldPtr} = getelementptr {structTypeName}, ptr {structAddr}, i32 0, i32 {sfIndex}");
+            $"  {sFieldPtr} = getelementptr {structTypeName}, ptr {structAddr}, i32 0, i32 {miIndex}");
         EmitLine(sb: sb,
-            line: $"  store {GetLlvmType(type: sfInfo.Type)} {value}, ptr {sFieldPtr}");
+            line: $"  store {GetLlvmType(type: miInfo.Type)} {value}, ptr {sFieldPtr}");
     }
 
     /// <summary>

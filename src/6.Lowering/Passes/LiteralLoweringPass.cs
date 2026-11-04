@@ -135,7 +135,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
             {
                 // Complex literals FIRST: an imaginary `4i`, or a bare int/float literal SA promoted to
                 // a complex type (the `3` in `3 + 4i`). Must precede the arbitrary-precision case so an
-                // SF bare `3` promoted to complex builds `C(3, 0)` instead of an `Int`.
+                // MI bare `3` promoted to complex builds `C(3, 0)` instead of an `Int`.
                 CreatorExpression? complex = TryLowerComplexLiteral(literal: literal);
                 if (complex != null)
                 {
@@ -176,7 +176,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
         // `back_resolve(count: coll.count(), offset: n)`. Retag an untyped/signed integer-literal
         // offset to U64 (the `^n` position is U64) BEFORE lowering, so it stays a scalar i64 and
         // is not lowered to an arbitrary-precision Int (which is heap/Text-backed). A position the
-        // analysis typed `Int` (a Suflae collection's) stays one.
+        // analysis typed `Int` (a Mielia collection's) stays one.
         Expression operand = e.Operand is LiteralExpression
         {
             LiteralType: TokenType.UndecidedInteger or TokenType.IntegerLiteral
@@ -242,7 +242,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
             return null;
         }
 
-        // Suflae: an integer literal that SA resolved to `Int` (the SF default, RF defaults to S64) is still
+        // Mielia: an integer literal that SA resolved to `Int` (the MI default, RA defaults to S64) is still
         // `UndecidedInteger` at this pass, since ExpressionLoweringPass only rewrites the token to IntegerLiteral
         // later. So match the resolved type too.
         bool integer = literal.LiteralType == TokenType.IntegerLiteral ||

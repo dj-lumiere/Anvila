@@ -15,9 +15,9 @@ internal static class TraceFrames
 {
     /// <summary>True when a build of <paramref name="mode"/> keeps a crash trace (debug and release; the size and
     /// time builds leave it out).</summary>
-    public static bool Enabled(RfBuildMode mode)
+    public static bool Enabled(RaBuildMode mode)
     {
-        return mode is RfBuildMode.Debug or RfBuildMode.Release;
+        return mode is RaBuildMode.Debug or RaBuildMode.Release;
     }
 
     /// <summary>
@@ -105,22 +105,22 @@ internal static class TraceFrames
 
 /// <summary>
 /// With <c>[debug] trace-stdlib = true</c> (the only build where library routines push frames, see
-/// <see cref="TraceFrames.Pushes"/>), where entities are shared (Suflae), which standard library routines push a
+/// <see cref="TraceFrames.Pushes"/>), where entities are shared (Mielia), which standard library routines push a
 /// frame: the ones a program can name. A
-/// routine of Suflae's library is one when neither it nor its type is <c>secret</c>, and a routine of RazorForge's
-/// library when an open <c>@rf</c> declaration binds it and its type. The library's own helpers push none, so a crash
+/// routine of Mielia's library is one when neither it nor its type is <c>secret</c>, and a routine of Revare's
+/// library when an open <c>@ra</c> declaration binds it and its type. The library's own helpers push none, so a crash
 /// trace shows the program's routines and the library routines it called, never what those called inside the library.
 /// </summary>
 internal sealed class LibraryFrames(TypeRegistry registry)
 {
-    private readonly HashSet<string> _open = RfBindingCheck.BoundNames(registry: registry, openOnly: true);
+    private readonly HashSet<string> _open = RaBindingCheck.BoundNames(registry: registry, openOnly: true);
 
     /// <summary>True when <paramref name="routine"/> is a library routine no program can name.</summary>
     public bool Hides(RoutineInfo routine)
     {
         RoutineInfo definition = routine.GenericDefinition ?? routine;
         string? file = definition.Location?.FileName;
-        if (registry.IsLanguageLibraryFile(filePath: file, language: Language.Suflae))
+        if (registry.IsLanguageLibraryFile(filePath: file, language: Language.Mielia))
         {
             return definition.Visibility == VisibilityModifier.Secret ||
                    definition.OwnerType is { } own && !Open(type: own);
@@ -131,16 +131,16 @@ internal sealed class LibraryFrames(TypeRegistry registry)
             return false;
         }
 
-        bool bound = _open.Contains(item: RfBindingCheck.ShapeOf(routine: routine)) ||
+        bool bound = _open.Contains(item: RaBindingCheck.ShapeOf(routine: routine)) ||
                      definition.OwnerType is { } owner &&
                      Verification.SemanticVerifier.ProtocolsOf(type: owner)
                                  .Any(predicate: p => _open.Contains(
-                                      item: RfBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)));
+                                      item: RaBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)));
         return !bound || definition.OwnerType is { } type && !Open(type: type);
     }
 
-    /// <summary>Whether a program can name <paramref name="type"/>: a type of Suflae's library that is not
-    /// <c>secret</c>, a RazorForge library type an open <c>@rf</c> declaration binds, or a type of the
+    /// <summary>Whether a program can name <paramref name="type"/>: a type of Mielia's library that is not
+    /// <c>secret</c>, a Revare library type an open <c>@ra</c> declaration binds, or a type of the
     /// program.</summary>
     private bool Open(TypeModel.Types.TypeSymbol type)
     {
@@ -157,14 +157,14 @@ internal sealed class LibraryFrames(TypeRegistry registry)
             TypeModel.Types.ProtocolTypeSymbol { GenericDefinition: { } protocol } => protocol,
             _ => type
         };
-        // A Suflae library type of the same name (Suflae's own `List`) is stamped with Suflae's realm.
+        // A Mielia library type of the same name (Mielia's own `List`) is stamped with Mielia's realm.
         if (definition.Realm == Realms.Shared &&
-            registry.RazorForgeLibraryTypes.Contains(item: $"{definition.Module}.{definition.BareName}"))
+            registry.RevareLibraryTypes.Contains(item: $"{definition.Module}.{definition.BareName}"))
         {
             return _open.Contains(item: definition.BareName);
         }
 
         return definition.Visibility != VisibilityModifier.Secret ||
-               !registry.IsLanguageLibraryFile(filePath: definition.Location?.FileName, language: Language.Suflae);
+               !registry.IsLanguageLibraryFile(filePath: definition.Location?.FileName, language: Language.Mielia);
     }
 }

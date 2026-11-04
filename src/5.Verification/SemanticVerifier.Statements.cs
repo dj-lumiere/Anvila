@@ -56,7 +56,7 @@ public sealed partial class SemanticVerifier
             }
 
             case VariableDeclaration { IsGlobal: true } globalDecl:
-                // Suflae module-level global: registered in Phase 3; here we type-check the initializer
+                // Mielia module-level global: registered in Phase 3; here we type-check the initializer
                 // against the declared type so codegen has a resolved repr for the stored value.
                 if (globalDecl.Initializer != null)
                 {
@@ -309,7 +309,7 @@ public sealed partial class SemanticVerifier
             }
 
             // An entity the program stamps ends its slot right after the hollow check: every stamp of it fails from
-            // there on (the derived destruct does the same, Derivation.rf). Every entity type of the program gets the
+            // there on (the derived destruct does the same, Derivation.rr). Every entity type of the program gets the
             // call: whether it keeps a slot is known only once every body is analyzed (a `stamp()` whose type is
             // inferred gives one), and `release_stamp` asks `keeps_stamp()`, which the builder answers after that.
             if (routineInfo is { Name: "destruct", OwnerType: EntityTypeSymbol { Location.FileName: { } entityFile } } &&
@@ -331,10 +331,10 @@ public sealed partial class SemanticVerifier
 
         if (routine.IsDangerous && UnsafeSurfaceIsBarred())
         {
-            ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
+            ReportError(code: SemanticDiagnosticCode.FeatureNotInMielia,
                 message:
                 $"You mark '{routine.Name}' `dangerous`, but a {_registry.Rules.Name} program has no memory-unsafe " +
-                "routines. Remove `dangerous`, or move the routine into a `.rf` module this program imports.",
+                "routines. Remove `dangerous`, or move the routine into a `.rr` module this program imports.",
                 location: routine.Location);
         }
 
@@ -388,8 +388,8 @@ public sealed partial class SemanticVerifier
             return pinned;
         }
 
-        // A routine of the other realm's same-named type (Suflae's own `System.List` next to RazorForge's), or a
-        // realm's surface routine on a shared type (Suflae's `Array.count() -> Int`), shares its name with
+        // A routine of the other realm's same-named type (Mielia's own `System.List` next to Revare's), or a
+        // realm's surface routine on a shared type (Mielia's `Array.count() -> Int`), shares its name with
         // the ambient one, and the name lookups below find the ambient one. The info pinned at registration is
         // its own.
         // A specialization (`routine S64.to[U8]()`) shares its name and parameters with its siblings: only the info
@@ -1222,7 +1222,7 @@ public sealed partial class SemanticVerifier
             // Explicit type annotation
             varType = ResolveType(typeExpr: varDecl.Type);
 
-            // Suflae: an entity-reference annotation (`x: E` / `x: E?`) stores a `Roamed[E]` handle.
+            // Mielia: an entity-reference annotation (`x: E` / `x: E?`) stores a `Roamed[E]` handle.
             varType = SharedEntities.ResolveAnnotation(annotated: varType, typeExpr: varDecl.Type);
         }
         else if (varDecl.Initializer != null)
@@ -1588,11 +1588,11 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Registers post-declaration side-effects for variables with special tracking needs:
-    /// Guarded/Witnessed handle identity (RF-S630) and Check dismantlement tracking (#161).
+    /// Guarded/Witnessed handle identity (RA-S630) and Check dismantlement tracking (#161).
     /// </summary>
     private void TrackSpecialVariableRegistrations(VariableDeclaration varDecl, TypeSymbol varType)
     {
-        // RF-S630: track the controller identity of a Guarded/Witnessed handle so the
+        // RA-S630: track the controller identity of a Guarded/Witnessed handle so the
         // readers-XOR-writer check keys on the shared DATA, not the variable name — a clone
         // (`var s2 = s.share()`) inherits `s`'s identity and so conflicts with it.
         if (ChecksOwnershipHere &&
@@ -1612,15 +1612,15 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckVariableCopyRestrictions(VariableDeclaration varDecl, TypeSymbol varType)
     {
-        // RazorForge: keeping a value with NO STORE. The dividing line for an implicit bind is whether
+        // Revare: keeping a value with NO STORE. The dividing line for an implicit bind is whether
         // the value can be STORED — i.e. whether its type obeys `Assignable` (every value type does: a
         // trivial record via the auto-derived bitwise store, a managed leaf like Text via its retaining
         // store). A single-owner `entity` deliberately obeys no `Assignable`, so it has no copy of its own.
         // A bind whose initializer is a VIEW of a value someone else owns — a bare reference (`var x = a`)
         // or a scalar element read (`var x = a[i]`) — would make TWO owners of that one entity, so it is
         // rejected. A fresh owned producer (creator / in-flight call) and an explicit `steal` are MOVES,
-        // not views, and are allowed. (SF entity elements are `Roamed`, which DOES obey Assignable via its
-        // refcount retain — so this never fires in Suflae.)
+        // not views, and are allowed. (MI entity elements are `Roamed`, which DOES obey Assignable via its
+        // refcount retain — so this never fires in Mielia.)
         // EXCEPTION: a RANGE slice (`var sub = a[i til j]`) is NOT a view — it binds the `getitem(range)`
         // overload, which returns a FRESH owned sub-collection (a copy, gated on the element being
         // Copyable), exactly like a call. So a range-indexed `IndexExpression` is a move, not a two-owner
@@ -1628,7 +1628,7 @@ public sealed partial class SemanticVerifier
         // The store-less set is EXACTLY the entities: every value category (records, tuples, routines,
         // SIMD vectors, generic records) is copyable via an auto-derived bitwise or field-wise store, so
         // `obeys Assignable` under-reports them — `EntityTypeSymbol` is the precise predicate for "has no
-        // store of its own". (SF entity elements are `Roamed`, a record wrapper, not an `EntityTypeSymbol`.)
+        // store of its own". (MI entity elements are `Roamed`, a record wrapper, not an `EntityTypeSymbol`.)
         // A tuple element access (`_t.item0`) is how `var (a, b) = expr` destructuring lowers: the tuple
         // is a CONSUMED temporary, so each element MOVES out — not a view of a persisting owner. Exclude it
         // (Object is a TupleTypeSymbol) so channel/pair destructuring of entity elements stays a legal move.
@@ -1646,7 +1646,7 @@ public sealed partial class SemanticVerifier
         // Duplicate-handle prohibition is enforced at copy sites (the block above).
 
         // A variant is copied like the values it holds: one holding only values copies (decided 2026-10-14), one that
-        // may hold an entity is the kept-entity case above (RF-S413).
+        // may hold an entity is the kept-entity case above (RA-S413).
 
         // #81: Check cannot be copied from variable to variable
         // `var r = check parse(data)` then `when r` is allowed (call result)
@@ -1661,8 +1661,8 @@ public sealed partial class SemanticVerifier
         }
 
         // A token (`var v = a.view()`, `var m = a.modify()`, `var b = boxes[0]`) is a variable like any other:
-        // RazorForge's TokenLifetimeChecker follows where it came from and rejects a use after that object changed.
-        // A Guarded's `view()` / `modify()` is held for one call, so it goes only where an argument does (RF-S652,
+        // Revare's TokenLifetimeChecker follows where it came from and rejects a use after that object changed.
+        // A Guarded's `view()` / `modify()` is held for one call, so it goes only where an argument does (RA-S652,
         // GuardAccessArgumentChecker).
         if (!(_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType)))
         {
@@ -1716,7 +1716,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Reports a binding from outside a loop that a turn of the loop takes with <c>steal</c> and goes on without: the
-    /// next turn would find it gone (RF-S616). A take followed by leaving the loop (`return`, `break`) is fine: the
+    /// next turn would find it gone (RA-S616). A take followed by leaving the loop (`return`, `break`) is fine: the
     /// branch that leaves does not reach the loop's next turn.
     /// </summary>
     private void ReportTakenInLoop(LoopStatement loop, HashSet<string> before, HashSet<string> atContinue)
@@ -1810,7 +1810,7 @@ public sealed partial class SemanticVerifier
             }
             else
             {
-                // Suflae has no `drop`: the line builds as written, and a notice asks whether the result was meant.
+                // Mielia has no `drop`: the line builds as written, and a notice asks whether the result was meant.
                 ReportNotice(code: SemanticWarningCode.UnusedRoutineReturnValue,
                     message: $"You call '{routineName}()' for its result ({exprType.Name}) and leave the result " +
                              "unused. To keep it, put it in a variable (`var x = ...`). If you call it only for what " +
@@ -2146,7 +2146,7 @@ public sealed partial class SemanticVerifier
 
         ReportWriteIntoReadOnlyBinding(member: member, location: assign.Location);
 
-        // Check if we're in a @readonly memberRoutine trying to mutate 'me' (RazorForge-only; Suflae
+        // Check if we're in a @readonly memberRoutine trying to mutate 'me' (Revare-only; Mielia
         // hides @readonly/@reshaping).
         if (_registry.CompilationRules.ChecksReadonly &&
             _currentRoutine is { IsReadOnly: true } &&
@@ -2178,7 +2178,7 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
-        // A realm qualifier (`SF::System.List[T]`) is the expression's realm, not part of its name.
+        // A realm qualifier (`MI::System.List[T]`) is the expression's realm, not part of its name.
         string? realm = null;
         int realmIdx = text.IndexOf(value: "::", comparisonType: StringComparison.Ordinal);
         if (realmIdx > 0 && (text.IndexOf(value: '[') < 0 || realmIdx < text.IndexOf(value: '[')))
@@ -2369,7 +2369,7 @@ public sealed partial class SemanticVerifier
         return new ExpressionStatement(Expression: invalidate, Location: location);
     }
 
-    /// <summary>The statement <c>me.release_stamp()</c> (Stamped.rf).</summary>
+    /// <summary>The statement <c>me.release_stamp()</c> (Stamped.rr).</summary>
     private static ExpressionStatement StampRelease(SourceLocation location)
     {
         var me = new IdentifierExpression(Name: "me", Location: location);

@@ -15,7 +15,7 @@ partial class TypeRegistry
     /// </summary>
     public sealed class StdlibSnapshot
     {
-        /// <summary>The language (RazorForge or Suflae) this snapshot was built for.</summary>
+        /// <summary>The language (Revare or Mielia) this snapshot was built for.</summary>
         public Language Language { get; init; }
 
         // Type storage
@@ -86,15 +86,15 @@ partial class TypeRegistry
         public Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
             pessimistic)> DeferredVariantBases { get; init; } = null!;
 
-        /// <summary>The loader's <c>@rf</c> declarations and RazorForge library types: a restored registry's loader
+        /// <summary>The loader's <c>@ra</c> declarations and Revare library types: a restored registry's loader
         /// does not parse the restored modules again, so it starts from these.</summary>
-        public List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings
+        public List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RaBindings
         {
             get;
             init;
         } = [];
 
-        public HashSet<string> RazorForgeLibraryTypes { get; init; } = [];
+        public HashSet<string> RevareLibraryTypes { get; init; } = [];
     }
 
     /// <summary>
@@ -166,8 +166,8 @@ partial class TypeRegistry
             DeferredVariantBases =
                 new Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
                     pessimistic)>(dictionary: DeferredVariantBases),
-            RfBindings = [..RfBindings],
-            RazorForgeLibraryTypes = [..RazorForgeLibraryTypes]
+            RaBindings = [..RaBindings],
+            RevareLibraryTypes = [..RevareLibraryTypes]
         };
     }
 
@@ -334,8 +334,8 @@ partial class TypeRegistry
                     // are NOT reported as freshly-loaded (they'd be re-lowered and crash — the D128 ternary bug).
                     CoreResident = true
                 };
-            _stdlibLoader.SeedParsedFacts(bindings: snapshot.RfBindings,
-                razorForgeLibraryTypes: snapshot.RazorForgeLibraryTypes);
+            _stdlibLoader.SeedParsedFacts(bindings: snapshot.RaBindings,
+                revareLibraryTypes: snapshot.RevareLibraryTypes);
         }
 
         _coreModuleLoaded = true;

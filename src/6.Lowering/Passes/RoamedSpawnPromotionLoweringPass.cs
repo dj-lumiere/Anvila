@@ -111,7 +111,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
             rewritten.AddRange(collection: CollectPromotes(stmt: stmt));
             rewritten.Add(item: stmt);
 
-            // A Suflae `global` whose storage (transitively) owns a Roamed[T] handle is reachable from
+            // A Mielia `global` whose storage (transitively) owns a Roamed[T] handle is reachable from
             // every task, so it must be ESCAPED (armed lock) for the per-statement access-lock brackets
             // to serialize concurrent mutation. Promote it right AFTER its init assignment — descending
             // into a record/tuple global the same way spawn args do. Idempotent + void.

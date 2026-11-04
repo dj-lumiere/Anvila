@@ -156,7 +156,7 @@ public partial class LlvmEmitter
     {
         // Struct returns classified Indirect by the target ABI go through a hidden sret pointer.
         // For external C routines this matches the platform C ABI (Win-x64 MSVC: structs > 8 bytes).
-        // For RF routines it is the ABI boundary-coercion return form. The declaration, definition,
+        // For RA routines it is the ABI boundary-coercion return form. The declaration, definition,
         // every return, and every call site must agree — see ReturnsViaSret / _currentReturnViaSret.
         bool needsSret = isCExtern
             ? NeedsCExternSret(routine: routine)
@@ -487,8 +487,8 @@ public partial class LlvmEmitter
         // function-pointer (already internal when builder-generated), so nothing needs external linkage in
         // a whole-program executable. Debug keeps the prior linkage (builder-generated internal only) for
         // stable breakpoints; base mode keeps external for the resident base/delta split.
-        bool optimizing = _buildMode is RfBuildMode.Release or RfBuildMode.ReleaseTime
-            or RfBuildMode.ReleaseSpace;
+        bool optimizing = _buildMode is RaBuildMode.Release or RaBuildMode.ReleaseTime
+            or RaBuildMode.ReleaseSpace;
         // A per-routine on-demand JIT module must expose its routine EXTERNALLY so sibling modules can call it
         // (internal is module-local, invisible across the multi-module dylib) — same reason base mode does.
         bool internalize = !_baseMode && !_forExternalJitModule && (isCompilerGenerated || optimizing);
@@ -528,12 +528,12 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Debug aid: when <c>RF_DUMP_ROUTINE</c> names part of a routine's diagnostic name, prints the body
+    /// Debug aid: when <c>RA_DUMP_ROUTINE</c> names part of a routine's diagnostic name, prints the body
     /// the emitter receives (its statements, then every expression with its resolved type) to stderr.
     /// </summary>
     private void DumpRoutineBodyIfRequested(RoutineInfo info, Statement body)
     {
-        string? wanted = Environment.GetEnvironmentVariable(variable: "RF_DUMP_ROUTINE");
+        string? wanted = Environment.GetEnvironmentVariable(variable: "RA_DUMP_ROUTINE");
         string shown = $"{info.OwnerType?.FullName}.{info.Name}";
         if (string.IsNullOrEmpty(value: wanted) ||
             !shown.Contains(value: wanted, comparisonType: StringComparison.Ordinal))
@@ -543,7 +543,7 @@ public partial class LlvmEmitter
 
         var dump = new StringBuilder();
         dump.AppendLine(value: $"=== {shown} ({info.RegistryKey}) ===");
-        dump.AppendLine(value: body.Accept(visitor: new Builder.RfSyntaxTreePrinter()));
+        dump.AppendLine(value: body.Accept(visitor: new Builder.RaSyntaxTreePrinter()));
         AstWalker.WalkExpressions(root: body,
             visit: e => dump.AppendLine(
                 value: $"  {e.Location.Line}:{e.Location.Column} {e.GetType().Name}" +
@@ -841,7 +841,7 @@ public partial class LlvmEmitter
         }
 
         // Labeled parameter list — `(label: System.Type, …)` — the label participates in overload
-        // identity (RazorForge dispatches on named args), so it belongs in the mangled symbol.
+        // identity (Revare dispatches on named args), so it belongs in the mangled symbol.
         static string LabeledParams(RoutineInfo r)
         {
             return "(" + string.Join(separator: ", ",
@@ -870,7 +870,7 @@ public partial class LlvmEmitter
 
         // External("C") functions use the raw C symbol name — no module prefix, so that LLVM IR symbols
         // match the actual C linker symbols. `@link(..., symbol: "x")` overrides the linked symbol when the
-        // RF-side name differs (versioned symbols, stat→stat64, decorated names). Declaration and call site
+        // RA-side name differs (versioned symbols, stat→stat64, decorated names). Declaration and call site
         // both mangle from the same RoutineInfo, so they agree on the override.
         if (routine.CallingConvention == "C")
         {

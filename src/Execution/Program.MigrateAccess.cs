@@ -43,7 +43,7 @@ internal partial class Program
     /// </summary>
     private static string RewriteAccess(string file, string source, Language language, int lineOffset)
     {
-        if (language != Language.RazorForge)
+        if (language != Language.Revare)
         {
             return source;
         }

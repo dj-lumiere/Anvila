@@ -5,7 +5,7 @@ using TypeModel.Types;
 
 namespace Builder.Verification;
 
-// `Stamped[E]` (Standard/System/Memory/Stamped.rf): an entity type the program stamps keeps its slot of the runtime's
+// `Stamped[E]` (Standard/System/Memory/Stamped.rr): an entity type the program stamps keeps its slot of the runtime's
 // stamp table in four bytes after its member variables. Only the user entity types named as `Stamped[...]`'s argument
 // in the program's own files get them: every other entity keeps its layout.
 public sealed partial class SemanticVerifier
@@ -15,7 +15,7 @@ public sealed partial class SemanticVerifier
     /// in a declaration, a signature or a body), after their declarations are collected, and marks them
     /// <see cref="EntityTypeSymbol.KeepsStamp"/>. The mark is on each analysis's own symbols, so builds running side by
     /// side in one process (the daemon, the test harness) never see each other's. An analysis of standard library files
-    /// alone marks nothing. Suflae has no stamps.
+    /// alone marks nothing. Mielia has no stamps.
     /// </summary>
     private void NoteStampedTypes(IEnumerable<(Program Program, string FilePath)> files)
     {
@@ -28,7 +28,7 @@ public sealed partial class SemanticVerifier
         var user = new HashSet<string>(collection: userFiles.Select(selector: f => f.FilePath),
             comparer: StringComparer.OrdinalIgnoreCase);
         var names = new HashSet<string>(comparer: StringComparer.Ordinal);
-        if (_registry.Language != Language.Suflae)
+        if (_registry.Language != Language.Mielia)
         {
             foreach ((Program program, string _) in userFiles)
             {

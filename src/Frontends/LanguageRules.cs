@@ -9,8 +9,8 @@ namespace Builder.Frontends;
 /// <summary>
 /// Everything the builder core needs to know about one language: its name, file extension and lexer,
 /// the surface it offers, the checks it enforces, and the passes only it runs. Each language's front end
-/// (the RazorForge and Suflae projects) supplies one and registers it with <see cref="Languages"/> at
-/// startup, so the core asks "does this language have module globals?" instead of "is this Suflae?".
+/// (the Revare and Mielia projects) supplies one and registers it with <see cref="Languages"/> at
+/// startup, so the core asks "does this language have module globals?" instead of "is this Mielia?".
 /// </summary>
 public abstract class LanguageRules
 {
@@ -21,19 +21,23 @@ public abstract class LanguageRules
     /// <summary>The language these rules describe.</summary>
     public abstract Language Language { get; }
 
-    /// <summary>The language's display name (<c>RazorForge</c>).</summary>
+    /// <summary>The language's display name (<c>Revare</c>).</summary>
     public abstract string Name { get; }
 
-    /// <summary>The command name of the language's tool (<c>razorforge</c>).</summary>
+    /// <summary>The command name of the language's tool (<c>revare</c>).</summary>
     public abstract string ToolName { get; }
 
     /// <summary>The version line the tool reports.</summary>
     public abstract string Version { get; }
 
-    /// <summary>The source file extension, with its dot (<c>.rf</c>).</summary>
+    /// <summary>The source file extension, with its dot (<c>.rr</c>).</summary>
     public abstract string FileExtension { get; }
 
-    /// <summary>The language's short name (<c>RF</c>): the prefix its diagnostic codes are spelled with,
+    /// <summary>The extension the language's sources had before 0.5 (<c>.rf</c>), or null. A file that still has it
+    /// is a build error that names the new extension and the <c>migrate</c> step that renames it.</summary>
+    public virtual string? PreviousFileExtension => null;
+
+    /// <summary>The language's short name (<c>RA</c>): the prefix its diagnostic codes are spelled with,
     /// and the realm its standard library types are registered under.</summary>
     public abstract string ShortName { get; }
 
@@ -51,7 +55,7 @@ public abstract class LanguageRules
     public abstract LanguageServerProfile LanguageServer { get; }
 
     /// <summary>True when the language reads standard library sources of its own (under
-    /// <c>Standard/&lt;Name&gt;</c>) on top of the RazorForge standard library every build reads.</summary>
+    /// <c>Standard/&lt;Name&gt;</c>) on top of the Revare standard library every build reads.</summary>
     public virtual bool HasOwnStandardLibrary => false;
 
     /// <summary>The imports every user file of the language gets without writing them: (module, the
@@ -171,7 +175,7 @@ public abstract class LanguageRules
     // PASSES ONLY THIS LANGUAGE RUNS
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Synthesizes declarations the language adds to its programs before analysis (Suflae:
+    /// <summary>Synthesizes declarations the language adds to its programs before analysis (Mielia:
     /// the module-globals entity). Returns false when a reported error stops the build.</summary>
     public virtual bool SynthesizeBeforeAnalysis(List<(Program Program, string FilePath)> files,
         Action<Diagnostics.SemanticDiagnosticCode, string, SourceLocation> report)
@@ -180,7 +184,7 @@ public abstract class LanguageRules
     }
 
     /// <summary>Adds the standard library declarations the language needs on top of the scanned
-    /// <paramref name="programs"/> (program, file path, module) before they register (Suflae: forwarders
+    /// <paramref name="programs"/> (program, file path, module) before they register (Mielia: forwarders
     /// onto its wrapper types).</summary>
     public virtual void SynthesizeStandardLibrary(
         IReadOnlyList<(Program Program, string FilePath, string Module)> programs)
@@ -212,7 +216,7 @@ public abstract class LanguageRules
     }
 
     /// <summary>Lowers the language's own constructs first in the type-aware lowering of
-    /// <paramref name="program"/> (Suflae: global reads and writes become singleton field accesses).</summary>
+    /// <paramref name="program"/> (Mielia: global reads and writes become singleton field accesses).</summary>
     public virtual void LowerFirst(PostprocessingContext ctx, Program program)
     {
     }
@@ -227,7 +231,7 @@ public abstract class LanguageRules
     {
     }
 
-    /// <summary>Makes the language's own check over analyzed user bodies (RazorForge: token lifetimes), or null
+    /// <summary>Makes the language's own check over analyzed user bodies (Revare: token lifetimes), or null
     /// for a language without one. Called once per build.</summary>
     internal virtual Verification.IUserBodyCheck? CreateUserBodyCheck(Verification.DiagnosticReporter report)
     {

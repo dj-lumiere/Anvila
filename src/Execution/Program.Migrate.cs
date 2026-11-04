@@ -122,7 +122,7 @@ internal partial class Program
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteBytes);
         }
 
-        // `--step work`: a piece of handed-off work is a `Work` (`f.to[Work](...)`, `Work[T]`), and a Suflae Work starts
+        // `--step work`: a piece of handed-off work is a `Work` (`f.to[Work](...)`, `Work[T]`), and a Mielia Work starts
         // with `start_now()` only.
         if (step == "work")
         {
@@ -187,6 +187,13 @@ internal partial class Program
             return RunBundleStep(paths: paths, check: check);
         }
 
+        // `--step extensions`: a source from before 0.5 gets its language's new extension (`.rf` is `.rr`, `.sf` is `.mi`),
+        // with `RF::` as `RA::`, `@rf` as `@ra`, and old diagnostic codes in comments renamed in it.
+        if (step == "extensions")
+        {
+            return RunExtensionsStep(paths: paths, check: check);
+        }
+
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
         if (step == "suffix")
         {
@@ -199,7 +206,9 @@ internal partial class Program
             return 2;
         }
 
-        int changedFiles = 0;
+        // A source still named with its language's old extension (`main.rf`) is renamed first, so the rewrites below
+        // find it.
+        int changedFiles = RenameOldExtensions(paths: paths, check: check);
         int namesToRename = 0;
         // A manifest still named for the previous release (`razorforge.toml`, `suflae.toml`) is `config.toml` now: it
         // is renamed first, so the version it says is read and marked like any other.
@@ -291,12 +300,12 @@ internal partial class Program
                 namesToRename++;
             }
 
-            // A dict's pairs are `items()`, `(key, value)` tuples, in place of `entries()` and its `DictEntry` (Suflae's
+            // A dict's pairs are `items()`, `(key, value)` tuples, in place of `entries()` and its `DictEntry` (Mielia's
             // `items()` gave `DictEntry` too): the loop that reads `.key` / `.value` takes the pair apart instead.
             for (int i = 1; i + 1 < tokens.Count; i++)
             {
                 string pairs = tokens[index: i].Text;
-                bool old = language == Language.Suflae ? pairs == "items" : pairs == "entries";
+                bool old = language == Language.Mielia ? pairs == "items" : pairs == "entries";
                 if (old && tokens[index: i - 1].Text == "." && tokens[index: i + 1].Text == "(")
                 {
                     Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: a dict's '{pairs}()' is 'items()' now, " +
@@ -306,9 +315,9 @@ internal partial class Program
                 }
             }
 
-            // A Suflae channel (`make_channel` and its sender and receiver) is one `Mailbox[T]` now: the pair a call
+            // A Mielia channel (`make_channel` and its sender and receiver) is one `Mailbox[T]` now: the pair a call
             // gave back and its uses change shape, so they are listed for a hand rewrite.
-            if (language == Language.Suflae)
+            if (language == Language.Mielia)
             {
                 foreach (Token channel in tokens.Where(predicate: t =>
                              t.Text is "make_channel" or "make_shared_channel"))
@@ -319,7 +328,7 @@ internal partial class Program
                     namesToRename++;
                 }
 
-                // A Suflae program has no memory-unsafe code of its own: C goes through a `.rf` module it imports.
+                // A Mielia program has no memory-unsafe code of its own: C goes through a `.rr` module it imports.
                 for (int i = 0; i + 1 < tokens.Count; i++)
                 {
                     bool unsafeWord = tokens[index: i].Text is "danger" or "dangerous";
@@ -330,7 +339,7 @@ internal partial class Program
                             ? $"{tokens[index: i].Text}::"
                             : tokens[index: i].Text;
                         Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: '{what}' is not available in a " +
-                                                 "Suflae program, move this code into a .rf module the program " +
+                                                 "Mielia program, move this code into a .rr module the program " +
                                                  "imports by hand");
                         namesToRename++;
                     }
@@ -404,9 +413,9 @@ internal partial class Program
     private static readonly Version MigrationRelease = new(major: 0, minor: 5);
 
     /// <summary>The manifest key that says which release a program's sources are written for.</summary>
-    private static string VersionKey(Language language) => language == Language.Suflae
-        ? "suflae-version"
-        : "razorforge-version";
+    private static string VersionKey(Language language) => language == Language.Mielia
+        ? "mielia-version"
+        : "revare-version";
 
     /// <summary>The nearest <c>config.toml</c> in the file's folder or above it, or null. A folder with a manifest
     /// still named for the previous release (and no <c>config.toml</c>) gives that one.</summary>
@@ -547,7 +556,7 @@ internal partial class Program
     [
         "indent", "have", "suffix", "failable", "names", "modules", "access", "cpu-events", "addr", "files", "until",
         "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random", "for",
-        "emitter-tools"
+        "emitter-tools", "extensions"
     ];
 
     /// <summary>The named steps as a list for a message: <c>indent, have, ... or random</c>.</summary>
@@ -580,7 +589,7 @@ internal partial class Program
         }
     }
 
-    /// <summary>The release a manifest says its sources are written for (<c>razorforge-version = "0.5.0"</c> under
+    /// <summary>The release a manifest says its sources are written for (<c>revare-version = "0.5.0"</c> under
     /// <c>[package]</c>), or null when it says none.</summary>
     private static Version? MigrationLanguageVersion(string manifest, Language language)
     {
@@ -994,7 +1003,7 @@ internal partial class Program
     /// <summary>
     /// The rewrites for one file. A retired keyword reads as a plain name now, so each rule recognizes it by its
     /// spelling and its place: <c>grab</c> in front of an expression is <c>check</c>, and <c>discard</c> at the start of
-    /// a statement is <c>drop</c> in RazorForge and goes away in Suflae (a result is dropped without a marker there).
+    /// a statement is <c>drop</c> in Revare and goes away in Mielia (a result is dropped without a marker there).
     /// A <c>.share()</c> call goes too, because <c>=</c> does what it did.
     /// </summary>
     private static List<MigrationEdit> MigrationEdits(List<Token> tokens, string file, Language language,
@@ -1137,8 +1146,8 @@ internal partial class Program
                 continue;
             }
 
-            // A Suflae Work starts one way: `start_here()` / `start_apart()` is `start_now()`.
-            if (language == Language.Suflae && token.Text is "start_here" or "start_apart" && i > 0 &&
+            // A Mielia Work starts one way: `start_here()` / `start_apart()` is `start_now()`.
+            if (language == Language.Mielia && token.Text is "start_here" or "start_apart" && i > 0 &&
                 tokens[index: i - 1].Type == TokenType.Dot && next.Type == TokenType.LeftParen && i + 2 < tokens.Count &&
                 tokens[index: i + 2].Type == TokenType.RightParen)
             {
@@ -1230,9 +1239,9 @@ internal partial class Program
                 continue;
             }
 
-            // Suflae's row of places under every collection, `Buffer[T]`, is `Memory[T]`. A range of one, `mem[a til b]`,
+            // Mielia's row of places under every collection, `Buffer[T]`, is `Memory[T]`. A range of one, `mem[a til b]`,
             // is a `Span[T]`: where a name or a routine's result written `Buffer[T]` holds a range, the build names it.
-            if (language == Language.Suflae && token.Text == "Buffer")
+            if (language == Language.Mielia && token.Text == "Buffer")
             {
                 edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length,
                     Replacement: "Memory", Line: token.Line, What: "Buffer → Memory"));
@@ -1282,7 +1291,7 @@ internal partial class Program
             }
             else if (token.Text == "discard" && StartsStatement(tokens: tokens, index: i) && !IsDictAddStatement(tokens: tokens, word: i))
             {
-                if (language == Language.Suflae)
+                if (language == Language.Mielia)
                 {
                     // The space after the word goes too, so the call keeps its place.
                     int length = next.Position > token.Position ? next.Position - token.Position : token.Text.Length;
@@ -1390,7 +1399,7 @@ internal partial class Program
 
     /// <summary>
     /// The name a pattern binds the old way, written straight after the type of <c>is</c> (<c>is Weapon w</c>,
-    /// <c>is RF::System.List[S64] xs</c>, <c>is $typeof(m) v</c>) or straight after <c>else</c> (<c>else p =></c>), or
+    /// <c>is RA::System.List[S64] xs</c>, <c>is $typeof(m) v</c>) or straight after <c>else</c> (<c>else p =></c>), or
     /// null. The type is skipped over: names joined by <c>.</c> or <c>::</c>, a <c>$</c> splice with its
     /// parentheses, and a bracketed argument list.
     /// </summary>
@@ -1854,7 +1863,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// The containment step: every <c>have</c>/<c>lack</c> in the .rf/.sf files and in the razorforge/suflae code
+    /// The containment step: every <c>have</c>/<c>lack</c> in the .rr/.mi files and in the revare/mielia code
     /// blocks of the .md pages under <paramref name="paths"/> is rewritten as a call.
     /// </summary>
     private static int RunHaveStep(List<string> paths, bool check)
@@ -1865,8 +1874,8 @@ internal partial class Program
     /// <summary>A rewrite of one source, its lines numbered from <c>lineOffset</c> in what it reports.</summary>
     private delegate string SourceRewrite(string file, string source, Language language, int lineOffset);
 
-    /// <summary>Runs <paramref name="rewrite"/> over every .rf and .sf file of <paramref name="paths"/>, and over the
-    /// razorforge and suflae code blocks of their .md pages.</summary>
+    /// <summary>Runs <paramref name="rewrite"/> over every .rr and .mi file of <paramref name="paths"/>, and over the
+    /// revare and mielia code blocks of their .md pages.</summary>
     private static int RunRewriteStep(List<string> paths, bool check, SourceRewrite rewrite)
     {
         int changedFiles = 0;
@@ -1880,8 +1889,8 @@ internal partial class Program
             else if (Directory.Exists(path: path))
             {
                 files.AddRange(collection: Directory.EnumerateFiles(path: path, searchPattern: "*", searchOption: SearchOption.AllDirectories)
-                    .Where(predicate: f => f.EndsWith(value: ".rf", comparisonType: StringComparison.Ordinal) ||
-                                           f.EndsWith(value: ".sf", comparisonType: StringComparison.Ordinal) ||
+                    .Where(predicate: f => f.EndsWith(value: ".rr", comparisonType: StringComparison.Ordinal) ||
+                                           f.EndsWith(value: ".mi", comparisonType: StringComparison.Ordinal) ||
                                            f.EndsWith(value: ".md", comparisonType: StringComparison.Ordinal))
                     .Where(predicate: f => !f.Contains(value: $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
                                            !f.Contains(value: $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
@@ -1919,7 +1928,7 @@ internal partial class Program
         return check && changedFiles > 0 ? 1 : 0;
     }
 
-    /// <summary>The razorforge and suflae code blocks of a page, each rewritten as a source of its language.</summary>
+    /// <summary>The revare and mielia code blocks of a page, each rewritten as a source of its language.</summary>
     private static string RewriteInMarkdown(string file, string text, SourceRewrite rewrite)
     {
         string[] lines = text.Split(separator: '\n');
@@ -1930,8 +1939,8 @@ internal partial class Program
             string line = lines[i];
             Language? language = line.TrimEnd() switch
             {
-                "```razorforge" => Language.RazorForge,
-                "```suflae" => Language.Suflae,
+                "```revare" => Language.Revare,
+                "```mielia" => Language.Mielia,
                 _ => null
             };
             if (language is null)

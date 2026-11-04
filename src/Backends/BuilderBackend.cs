@@ -26,7 +26,7 @@ public sealed record BackendInput
     public required TargetConfig Target { get; init; }
 
     /// <summary>The optimization mode.</summary>
-    public required RfBuildMode BuildMode { get; init; }
+    public required RaBuildMode BuildMode { get; init; }
 
     /// <summary>Bodies the builder wrote (derived operators, wired routines), keyed by routine.</summary>
     public IReadOnlyDictionary<string, Statement>? SynthesizedBodies { get; init; }
@@ -50,13 +50,13 @@ public sealed record BackendInput
     /// <summary>Whether to print the backend's phase timings.</summary>
     public bool Timing { get; init; }
 
-    /// <summary>Whether a traced build reads its crash trace from the stack (Tessera's <c>TraceTable</c>): no shadow
+    /// <summary>Whether a traced build reads its crash trace from the stack (Lapila's <c>TraceTable</c>): no shadow
     /// stack is kept, and the native toolchain writes the table. Set for an executable built ahead of time on a
     /// target the table supports, never for the JIT.</summary>
     public bool TraceFromStack { get; init; }
 
-    /// <summary>Where a backend that writes source of its own (Tessera) keeps a copy of it, or null
-    /// (<c>[debug] dump-tessera</c>).</summary>
+    /// <summary>Where a backend that writes source of its own (Lapila) keeps a copy of it, or null
+    /// (<c>[debug] dump-lapila</c>).</summary>
     public string? SourceDumpPath { get; init; }
 }
 
@@ -78,7 +78,7 @@ public sealed record ResidentBase(string LlvmIr, IReadOnlyCollection<string> Sym
     IReadOnlySet<string> InstanceKeys);
 
 /// <summary>
-/// A backend: translates the Phase 9 program into a module. The LLVM emitter is one; Tessera is the other.
+/// A backend: translates the Phase 9 program into a module. The LLVM emitter is one; Lapila is the other.
 /// </summary>
 public interface IBuilderBackend
 {
@@ -109,7 +109,7 @@ public interface IBuilderBackend
 }
 
 /// <summary>
-/// The backends this builder can use, by name: the LLVM emitter and Tessera are built in, and another backend
+/// The backends this builder can use, by name: the LLVM emitter and Lapila are built in, and another backend
 /// registers when its project starts, the way front ends register their language rules.
 /// </summary>
 public static class BuilderBackends
@@ -162,11 +162,11 @@ public static class BuilderBackends
                          $"{string.Join(separator: ", ", values: Names)}.");
     }
 
-    /// <summary>Registers the backends built into the builder (the LLVM emitter and Tessera) unless a
+    /// <summary>Registers the backends built into the builder (the LLVM emitter and Lapila) unless a
     /// registration under their name already replaced them.</summary>
     private static void EnsureDefault()
     {
         Registered.TryAdd(key: DefaultName, value: new LlvmEmit.LlvmBackend());
-        Registered.TryAdd(key: TesseraEmit.TesseraBackend.BackendName, value: new TesseraEmit.TesseraBackend());
+        Registered.TryAdd(key: LapilaEmit.LapilaBackend.BackendName, value: new LapilaEmit.LapilaBackend());
     }
 }

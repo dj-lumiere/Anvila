@@ -27,9 +27,9 @@ public sealed class VariableInfo
     /// the file that declares it, unlike a public preset which is part of the global prelude.</summary>
     public bool IsSecret { get; init; }
 
-    /// <summary>Whether this is a Suflae module-level <c>global</c> (`global counter: S64 = 0`). Unlike a
+    /// <summary>Whether this is a Mielia module-level <c>global</c> (`global counter: S64 = 0`). Unlike a
     /// preset it is MUTABLE (IsModifiable=true) and NOT inlined — codegen emits one module-level LLVM
-    /// <c>@global</c> with storage, and reads/writes load/store it. Suflae-only (RazorForge bans
+    /// <c>@global</c> with storage, and reads/writes load/store it. Mielia-only (Revare bans
     /// module-level mutable state).</summary>
     public bool IsGlobal { get; init; }
 

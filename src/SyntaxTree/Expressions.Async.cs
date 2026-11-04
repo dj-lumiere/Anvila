@@ -27,7 +27,7 @@ public record WorkExpression(Expression Inner, SourceLocation Location) : Expres
     /// <summary>
     /// Why this Work may only run on the thread that made it: an argument that only one thread may use (a token,
     /// a <c>Retained</c>), described for a message. Such a Work is started with <c>start_here()</c> and stays in
-    /// the routine that made it (RF-S632 otherwise). Null when any verb may start it.
+    /// the routine that made it (RA-S632 otherwise). Null when any verb may start it.
     /// </summary>
     public string? OneThreadArgument { get; set; }
 }

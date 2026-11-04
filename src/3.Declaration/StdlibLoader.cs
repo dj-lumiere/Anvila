@@ -9,14 +9,14 @@ namespace Builder.Declaration;
 /// Loads the standard library based on module declarations.
 /// Files declaring "module System" are loaded eagerly (auto-imported).
 /// Other modules are loaded on-demand when imported.
-/// Supports both RazorForge (.rf) and Suflae (.sf) stdlib files.
+/// Supports both Revare (.rr) and Mielia (.mi) stdlib files.
 /// </summary>
 public sealed partial class StdlibLoader
 {
     /// <summary>
-    /// The stdlib scan roots — each a (directory, glob) pair scanned in order. RazorForge is always
-    /// present (the RF-realm System, and — for a Suflae compile — the bridged delegation backend reached via
-    /// <c>RF::</c>). A Suflae compile ALSO scans <c>Standard/Suflae/*.sf</c> (the SF-realm System surface).
+    /// The stdlib scan roots — each a (directory, glob) pair scanned in order. Revare is always
+    /// present (the RA-realm System, and — for a Mielia compile — the bridged delegation backend reached via
+    /// <c>RA::</c>). A Mielia compile ALSO scans <c>Standard/Mielia/*.mi</c> (the MI-realm System surface).
     /// Realm is stamped per file from its extension at registration (see StdlibLoader.Registration).
     /// </summary>
     private readonly List<(string Dir, string Glob)> _scanRoots;
@@ -66,9 +66,9 @@ public sealed partial class StdlibLoader
 
     private readonly List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> _rfBindings = [];
 
-    /// <summary>The <c>@rf("...")</c> declarations taken out of the parsed files, with the file and module of
-    /// each: Suflae's view of shared declarations, checked by <see cref="RfBindingCheck"/>.</summary>
-    public IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings => _rfBindings;
+    /// <summary>The <c>@ra("...")</c> declarations taken out of the parsed files, with the file and module of
+    /// each: Mielia's view of shared declarations, checked by <see cref="RaBindingCheck"/>.</summary>
+    public IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RaBindings => _rfBindings;
 
     private readonly List<string> _parseErrors = [];
 
@@ -76,20 +76,20 @@ public sealed partial class StdlibLoader
     /// still loads what parsed, so validate-stdlib reads this list to fail loudly.</summary>
     public IReadOnlyList<string> ParseErrors => _parseErrors;
 
-    private readonly HashSet<string> _razorForgeLibraryTypes = new(comparer: StringComparer.Ordinal);
+    private readonly HashSet<string> _revareLibraryTypes = new(comparer: StringComparer.Ordinal);
 
-    /// <summary>The <c>Module.Name</c> of every type a parsed file of RazorForge's library declares (Suflae's library
-    /// has RazorForge files of its own, which do not count).</summary>
-    public IReadOnlySet<string> RazorForgeLibraryTypes => _razorForgeLibraryTypes;
+    /// <summary>The <c>Module.Name</c> of every type a parsed file of Revare's library declares (Mielia's library
+    /// has Revare files of its own, which do not count).</summary>
+    public IReadOnlySet<string> RevareLibraryTypes => _revareLibraryTypes;
 
-    /// <summary>Carries the bindings and RazorForge library types of a captured registry into the fresh loader of a
+    /// <summary>Carries the bindings and Revare library types of a captured registry into the fresh loader of a
     /// restored one, whose modules are not parsed again.</summary>
     internal void SeedParsedFacts(
         IEnumerable<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> bindings,
-        IEnumerable<string> razorForgeLibraryTypes)
+        IEnumerable<string> revareLibraryTypes)
     {
         _rfBindings.AddRange(collection: bindings);
-        _razorForgeLibraryTypes.UnionWith(other: razorForgeLibraryTypes);
+        _revareLibraryTypes.UnionWith(other: revareLibraryTypes);
     }
 
     /// <summary>Gets all parsed programs (core + loaded modules) for codegen.</summary>
@@ -119,28 +119,28 @@ public sealed partial class StdlibLoader
     /// <summary>
     /// Creates a new stdlib loader for a specific language.
     /// </summary>
-    /// <param name="stdlibRoot">Path to the stdlib root directory (containing razorforge/ and suflae/ subdirectories).</param>
+    /// <param name="stdlibRoot">Path to the stdlib root directory (containing revare/ and mielia/ subdirectories).</param>
     /// <param name="language">The language being built.</param>
     /// <param name="parsedStdlib">Files the build driver already parsed, taken in place of parsing them again.</param>
     public StdlibLoader(string stdlibRoot, Language language, ParsedStdlibFiles? parsedStdlib = null)
     {
         _language = language;
         _parsedStdlib = parsedStdlib;
-        // RazorForge is always scanned: it is the RF-realm System, and — under a Suflae compile — the bridged
-        // delegation backend an SF wrapper reaches via `RF::System.X`. A Suflae compile ALSO scans
-        // Standard/Suflae/*.sf, the SF-realm System surface (types there declare `module System` too; they are
-        // stamped Realm="SF" at registration, so they key distinctly from the RF-realm `System.*`). Each file's
-        // realm is derived from its extension (`.sf`→SF, `.rf`→RF) — see StdlibLoader.Registration.RealmOf.
+        // Revare is always scanned: it is the RA-realm System, and — under a Mielia compile — the bridged
+        // delegation backend an MI wrapper reaches via `RA::System.X`. A Mielia compile ALSO scans
+        // Standard/Mielia/*.mi, the MI-realm System surface (types there declare `module System` too; they are
+        // stamped Realm="MI" at registration, so they key distinctly from the RA-realm `System.*`). Each file's
+        // realm is derived from its extension (`.mi`→MI, `.rr`→RA) — see StdlibLoader.Registration.RealmOf.
         _scanRoots = Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: stdlibRoot, language: language);
-        _razorForgeRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),
-            path2: Builder.Frontends.Languages.For(language: Language.RazorForge).Name) + Path.DirectorySeparatorChar;
+        _revareRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),
+            path2: Builder.Frontends.Languages.For(language: Language.Revare).Name) + Path.DirectorySeparatorChar;
     }
 
     /// <summary>Files the build driver parsed for the import index, taken by <see cref="ScanStdlibFiles"/>.</summary>
     private ParsedStdlibFiles? _parsedStdlib;
 
-    /// <summary>The folder of RazorForge's own library, with a trailing separator.</summary>
-    private readonly string _razorForgeRoot;
+    /// <summary>The folder of Revare's own library, with a trailing separator.</summary>
+    private readonly string _revareRoot;
 
     /// <summary>
     /// Loads the System module types into the type registry.
@@ -152,7 +152,7 @@ public sealed partial class StdlibLoader
         // Scan all stdlib files and categorize by module
         ScanStdlibFiles();
 
-        // Suflae wrapper stdlib: append transparent inner-forwarders to each SF `entity X { inner: RF::Y }`
+        // Mielia wrapper stdlib: append transparent inner-forwarders to each MI `entity X { inner: RA::Y }`
         // so the wrapper presents Y's COMPLETE surface. Must run before registration so the synthesized
         // forwarders flow through the ordinary register/analyze/monomorph/codegen path as authored source.
         Builder.Frontends.Languages.For(language: _language).SynthesizeStandardLibrary(
@@ -211,7 +211,7 @@ public sealed partial class StdlibLoader
     private static void RunCoreDeferredResolutionPasses(TypeRegistry registry,
         List<(Program Program, string FilePath, string Module)> corePrograms)
     {
-        // Each file's imports are in scope while its signatures resolve: Suflae's own `System` types name
+        // Each file's imports are in scope while its signatures resolve: Mielia's own `System` types name
         // `Int` from the imported `Numerics`, loaded by now.
         IReadOnlyCollection<string>? savedImports = registry.ActiveRegistrationImports;
         string savedRealm = registry.ResolutionRealm;
@@ -348,15 +348,16 @@ public sealed partial class StdlibLoader
         }
     }
 
-    /// <summary>The standard library files this target builds, in ordinal path order.</summary>
+    /// <summary>The standard library files this target builds: root by root in the order of the scan roots (the shared
+    /// library first), each root's files in ordinal path order.</summary>
     private IEnumerable<string> StdlibFilePaths()
     {
         return _scanRoots
               .Where(predicate: r => Directory.Exists(path: r.Dir))
               .SelectMany(selector: r => Directory.GetFiles(path: r.Dir,
-                   searchPattern: r.Glob,
-                   searchOption: SearchOption.AllDirectories))
-              .OrderBy(keySelector: p => p, comparer: StringComparer.Ordinal)
+                                                       searchPattern: r.Glob,
+                                                       searchOption: SearchOption.AllDirectories)
+                                                  .OrderBy(keySelector: p => p, comparer: StringComparer.Ordinal))
                // File-granularity conditional compilation applies to the stdlib too: a platform-specific stdlib
                // file (e.g. the LP64/LLP64 C-type width files) carries a `#@target(...)` directive and only the
                // matching one is loaded.
@@ -377,18 +378,18 @@ public sealed partial class StdlibLoader
 
         _stdlibScanned = true;
 
-        // Scan every root (RazorForge always; Suflae too under an SF compile). Recursively find files
-        // matching each root's glob. Sort by ordinal path so the scan/registration order is identical on
-        // every OS (Directory.GetFiles order is OS-dependent) — otherwise memberRoutine resolution becomes
-        // order-dependent across platforms. RazorForge sorts before Suflae so the RF-realm System registers
-        // first (the SF-realm System keys distinctly by realm, so order does not cause collision either way).
+        // Scan every root (Revare always; Mielia too under an MI compile). Recursively find files
+        // matching each root's glob. Each root's files are sorted by ordinal path so the scan/registration order is
+        // identical on every OS (Directory.GetFiles order is OS-dependent) — otherwise memberRoutine resolution
+        // becomes order-dependent across platforms. The roots keep their order, so the RA-realm System registers
+        // first (the MI-realm System keys distinctly by realm, so order does not cause collision either way).
         foreach (string filePath in StdlibFilePaths())
         {
             try
             {
                 // Parse stdlib files by their own extension, not the user language: the stdlib is
-                // RazorForge source (`.rf`, uses `danger`/`extern`), so a Suflae compile must still
-                // parse it with the RazorForge grammar (else SF-G112 on the `danger` bang). The build
+                // Revare source (`.rr`, uses `danger`/`extern`), so a Mielia compile must still
+                // parse it with the Revare grammar (else MI-G112 on the `danger` bang). The build
                 // driver may have parsed the file already for the import index.
                 Program ast = _parsedStdlib?.Take(filePath: filePath) is { } parsed
                     ? TakeParsedFacts(program: parsed, filePath: filePath)
@@ -431,7 +432,7 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// Parses a file using the tokenizer/parser determined by file extension.
-    /// Used for cross-language imports where a Suflae file imports a RazorForge module.
+    /// Used for cross-language imports where a Mielia file imports a Revare module.
     /// </summary>
     /// <param name="code">The source code to parse.</param>
     /// <param name="filePath">The file path (extension determines parser choice).</param>
@@ -492,19 +493,19 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// What the loader does to a standard library file right after it is parsed: the module from its folder, the
-    /// <c>@rf("...")</c> declarations taken out, the RazorForge library types noted, and a loose top-level
+    /// <c>@ra("...")</c> declarations taken out, the Revare library types noted, and a loose top-level
     /// statement rejected.
     /// </summary>
     private Program TakeParsedFacts(Program program, string filePath)
     {
         TakeModuleFromFolder(program: program, filePath: filePath);
 
-        // An `@rf("...")` declaration shows a shared RazorForge declaration in the file's language and creates
+        // An `@ra("...")` declaration shows a shared Revare declaration in the file's language and creates
         // nothing: it leaves the program here, before any pass sees it, and is checked against its target by
-        // validate-stdlib (RfBindingCheck). The documentation and the editor read it from the file itself.
+        // validate-stdlib (RaBindingCheck). The documentation and the editor read it from the file itself.
         string module = GetDeclaredModule(program: program) ?? DeriveModuleFromPath(filePath: filePath);
         foreach (SyntaxTree.Declaration binding in program.Declarations.OfType<SyntaxTree.Declaration>()
-                                               .Where(predicate: RfBindingCheck.IsBinding)
+                                               .Where(predicate: RaBindingCheck.IsBinding)
                                                .ToList())
         {
             _rfBindings.Add(item: (binding, filePath, module));
@@ -513,7 +514,7 @@ public sealed partial class StdlibLoader
 
         LayOutOptionalCarrier(program: program, module: module);
 
-        if (Path.GetFullPath(path: filePath).StartsWith(value: _razorForgeRoot,
+        if (Path.GetFullPath(path: filePath).StartsWith(value: _revareRoot,
                 comparisonType: StringComparison.OrdinalIgnoreCase))
         {
             foreach (string name in program.Declarations.Select(selector: d => d switch
@@ -528,7 +529,7 @@ public sealed partial class StdlibLoader
                          _ => null
                      }).OfType<string>())
             {
-                _razorForgeLibraryTypes.Add(item: $"{module}.{name}");
+                _revareLibraryTypes.Add(item: $"{module}.{name}");
             }
         }
 
@@ -592,15 +593,15 @@ public sealed partial class StdlibLoader
     /// <summary>
     /// The module a standard library file is in: its folder relative to the library's root (the <c>Shared</c>
     /// folder of a language's library left out), registered under its namespace (<see cref="StandardModules.Identity"/>).
-    /// Example: Standard/RazorForge/Collections/SortedDict.rf is in Collections, and
-    /// Standard/RazorForge/System/Numerics/S64.rf in System.
+    /// Example: Standard/Revare/Collections/SortedDict.rr is in Collections, and
+    /// Standard/Revare/System/Numerics/S64.rr in System.
     /// </summary>
     private string DeriveModuleFromPath(string filePath) =>
         StandardModules.Identity(module: FolderModuleOf(filePath: filePath) ?? StandardModules.Base);
 
     /// <summary>
     /// The folder of a standard library file relative to the library's root, written as a module path: each folder
-    /// below the root joined by <c>/</c> (Standard/RazorForge/IO/Console/Console.rf is IO/Console). A file of a
+    /// below the root joined by <c>/</c> (Standard/Revare/IO/Console/Console.rr is IO/Console). A file of a
     /// language's <c>Shared</c> folder is the module of its folder below <c>Shared</c>. A file directly in the root is
     /// in System. Null for a file outside the library (a module of the program that an import reached).
     /// </summary>
@@ -613,7 +614,7 @@ public sealed partial class StdlibLoader
         }
 
         string normalizedFileDir = Path.GetFullPath(path: fileDir);
-        // The file may live under any scan root (RazorForge or, in an SF compile, Suflae). Find the
+        // The file may live under any scan root (Revare or, in an MI compile, Mielia). Find the
         // root that contains it and derive the module path relative to THAT root.
         string? root = _scanRoots
                       .Select(selector: r => Path.GetFullPath(path: r.Dir))
@@ -707,9 +708,9 @@ public sealed partial class StdlibLoader
     /// <param name="moduleId">The module identifier (e.g., "Collections.List").</param>
     /// <returns>The effective module of the loaded module, or null on failure.</returns>
     /// <summary>
-    /// The files of the language's own library (not RazorForge source) that declare <paramref name="module"/> besides
-    /// <paramref name="loaded"/>. A language's own library can add to a shared module (Suflae's `IO/File` surface next
-    /// to RazorForge's `IO/File`), and an import resolves to one file, so these come through here. Other RazorForge
+    /// The files of the language's own library (not Revare source) that declare <paramref name="module"/> besides
+    /// <paramref name="loaded"/>. A language's own library can add to a shared module (Mielia's `IO/File` surface next
+    /// to Revare's `IO/File`), and an import resolves to one file, so these come through here. Other Revare
     /// files of the module still load only when something imports them.
     /// </summary>
     internal List<string> CompanionFiles(string module, string loaded)
@@ -933,8 +934,8 @@ public sealed partial class StdlibLoader
     private static void InstallProgramImports(TypeRegistry registry, Program program)
     {
         registry.ActiveRegistrationImports = ImportScopeOf(program: program);
-        // Names in the program prefer the types of its own realm: `DictEmittable` in Suflae's `Dict.sf` is
-        // Suflae's iterator, not RazorForge's.
+        // Names in the program prefer the types of its own realm: `DictEmittable` in Mielia's `Dict.mi` is
+        // Mielia's iterator, not Revare's.
         if (Builder.Frontends.Languages.HasSourceExtension(fileName: program.Location.FileName))
         {
             registry.ResolutionRealm = RealmOf(filePath: program.Location.FileName);
@@ -1003,8 +1004,8 @@ public sealed partial class StdlibLoader
             return spliced;
         }
 
-        // A name prefers the types of the realm it was written in: `List` in a Suflae library file is Suflae's
-        // list, `RF::System.List` there is RazorForge's. A type written without a source file keeps the realm
+        // A name prefers the types of the realm it was written in: `List` in a Mielia library file is Mielia's
+        // list, `RA::System.List` there is Revare's. A type written without a source file keeps the realm
         // in effect.
         string realm = typeExpr.Realm ??
                        (Builder.Frontends.Languages.HasSourceExtension(fileName: typeExpr.Location.FileName)
@@ -1087,7 +1088,7 @@ public sealed partial class StdlibLoader
         }
 
         // Own-module FIRST, then the bare (auto-import/System-prefix) lookup — see the generic-def branch
-        // above for why the overlay's same-named types must not collapse to the RazorForge realm.
+        // above for why the overlay's same-named types must not collapse to the Revare realm.
         TypeSymbol? resolved = (moduleName != null
             ? registry.LookupType(name: $"{moduleName}.{typeName}")
             : null) ?? registry.LookupType(name: typeName) ??
@@ -1308,10 +1309,10 @@ public sealed partial class StdlibLoader
                 moduleName: moduleName);
         }
 
-        // Own-module FIRST: a bare `List` in `module Suflae` (e.g. the overlay constructor's
-        // `-> List[T]` return) must resolve to `Suflae.List`, not the auto-imported `System.List`
-        // (LookupType's System-prefix fast path). A dotted/RF::-qualified `System.List` misses the
-        // `Suflae.System.List` probe and correctly falls back to the RazorForge `System.List`.
+        // Own-module FIRST: a bare `List` in `module Mielia` (e.g. the overlay constructor's
+        // `-> List[T]` return) must resolve to `Mielia.List`, not the auto-imported `System.List`
+        // (LookupType's System-prefix fast path). A dotted/RA::-qualified `System.List` misses the
+        // `Mielia.System.List` probe and correctly falls back to the Revare `System.List`.
         TypeSymbol? genericDef = (moduleName != null
             ? registry.LookupType(name: $"{moduleName}.{typeName}")
             : null) ?? registry.LookupType(name: typeName) ??

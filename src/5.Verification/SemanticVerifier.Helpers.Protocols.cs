@@ -70,7 +70,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports RF-S150 for each <c>needs &lt;param&gt; obeys P</c> constraint on a generic ROUTINE that the
+    /// Reports RA-S150 for each <c>needs &lt;param&gt; obeys P</c> constraint on a generic ROUTINE that the
     /// resolved explicit type arguments violate — the clean call-site diagnostic that replaces the
     /// over-prune codegen crash (the body's <c>x.duplicate()</c> etc. would otherwise be pruned when the
     /// arg fails the bound, surfacing as an "undefined symbol"). Uses the when-aware
@@ -138,7 +138,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports RF-S150 when a type argument obeys a constraint's protocol with other type arguments than the
+    /// Reports RA-S150 when a type argument obeys a constraint's protocol with other type arguments than the
     /// constraint names: <c>you: Iterable[S64]</c> (a hidden <c>__T0 obeys Iterable[S64]</c>) given a
     /// <c>List[Text]</c>, which obeys <c>Iterable[Text]</c>. The protocol's name alone matches, and the body
     /// built for it would read every <c>Text</c> as an <c>S64</c>. A constraint argument naming a type parameter
@@ -349,7 +349,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports RF-S150 when a resolved MEMBER routine's owner-level <c>needs &lt;param&gt; obeys P</c>
+    /// Reports RA-S150 when a resolved MEMBER routine's owner-level <c>needs &lt;param&gt; obeys P</c>
     /// constraints are violated by the concrete receiver's bound type args — e.g.
     /// <c>List[Widget].duplicate()</c> where <c>List.duplicate</c> carries <c>needs T obeys Copyable</c> but
     /// <c>Widget</c> is not Copyable. Without this the call resolves, a body-less concrete instance is
@@ -400,7 +400,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// A value aggregate that holds an entity (a bundle instance, a tuple, an Array of entities) is duplicated
-    /// member by member, so it has a <c>duplicate</c> only when every member is Copyable (RF-S150 otherwise). Its
+    /// member by member, so it has a <c>duplicate</c> only when every member is Copyable (RA-S150 otherwise). Its
     /// derive's <c>needs T obeys Copyable</c> is about the receiver itself, which the owner-argument check above
     /// does not see.
     /// </summary>
@@ -519,7 +519,7 @@ public sealed partial class SemanticVerifier
         // DECLARED conformance (own ImplementedProtocols + their parent chain, gated by `when`, plus the
         // reflexive marker-protocol rule) is decided by the single registry authority — no duplicate walk
         // here. A positive result covers e.g. `List[NonCopyable]` NOT satisfying `T obeys Copyable`
-        // (RF-S150), and Viewing/Modifying/value types satisfying Accessing/Controlling.
+        // (RA-S150), and Viewing/Modifying/value types satisfying Accessing/Controlling.
         if (_registry.TypeObeysProtocol(type: type, protocolName: protocolName, resolvedProtocol: protocol))
         {
             return true;
@@ -915,7 +915,7 @@ public sealed partial class SemanticVerifier
             TypeSymbol actualType = typeMemberRoutine.Parameters[index: startIndex + i].Type;
 
             // `Viewing[Me]` (a parameter the routine only reads): `Viewing[Owner]` or the bare owner both fit.
-            // Which one an entity must spell is the signature check's call (RF-S703).
+            // Which one an entity must spell is the signature check's call (RA-S703).
             if (expectedType is { TypeArguments: [ProtocolSelfTypeSymbol] } readsMe &&
                 readsMe.BareName == Declaration.RuntimeContract.Viewing &&
                 typeMemberRoutine.OwnerType is { } readOwner)

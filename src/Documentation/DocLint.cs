@@ -11,10 +11,10 @@ namespace Builder.Documentation;
 public sealed record DocNote(SemanticWarningCode Code, string Message, SourceLocation Location);
 
 /// <summary>
-/// The notes about doc comments (<c>note[RF-W305]</c> to <c>note[RF-W308]</c>). Every routine of a library or
+/// The notes about doc comments (<c>note[RA-W305]</c> to <c>note[RA-W308]</c>). Every routine of a library or
 /// example file carries a <c>###</c> doc comment right above it: what it does, a <c>:param name:</c> line for each
-/// parameter but <c>me</c>, and a <c>:returns:</c> line when it gives a result. RazorForge holds every routine to
-/// all four notes. Suflae asks for the comment only on a routine of a module another file imports, and for its
+/// parameter but <c>me</c>, and a <c>:returns:</c> line when it gives a result. Revare holds every routine to
+/// all four notes. Mielia asks for the comment only on a routine of a module another file imports, and for its
 /// <c>:param</c> lines wherever a comment exists (it has no <c>:returns:</c> note).
 /// <para>A file under a folder named <c>tests</c>, <c>playground</c>, <c>scratch</c> or <c>generated</c> (below its
 /// project folder) is not held to the rule: golden tests, throwaway programs and a generator's output are not
@@ -65,7 +65,7 @@ public static class DocLint
 
     /// <summary>
     /// The notes for the routines of <paramref name="program"/> (a file of <paramref name="language"/>).
-    /// <paramref name="isImported"/> says whether another file imports the file's module, which is what makes Suflae
+    /// <paramref name="isImported"/> says whether another file imports the file's module, which is what makes Mielia
     /// ask for a doc comment at all.
     /// </summary>
     public static List<DocNote> Check(Program program, string file, Language language, bool isImported)
@@ -76,12 +76,12 @@ public static class DocLint
             return notes;
         }
 
-        bool razorForge = language == Language.RazorForge;
+        bool revare = language == Language.Revare;
         foreach (ISyntaxTreeNode node in program.Declarations)
         {
             if (node is RoutineDeclaration { IsScriptEntry: false, IsBuilderWritten: false } routine)
             {
-                CheckRoutine(routine: routine, razorForge: razorForge, requireDoc: razorForge || isImported,
+                CheckRoutine(routine: routine, revare: revare, requireDoc: revare || isImported,
                     notes: notes);
             }
         }
@@ -89,14 +89,14 @@ public static class DocLint
         return notes;
     }
 
-    private static void CheckRoutine(RoutineDeclaration routine, bool razorForge, bool requireDoc, List<DocNote> notes)
+    private static void CheckRoutine(RoutineDeclaration routine, bool revare, bool requireDoc, List<DocNote> notes)
     {
         string name = routine.Name;
         if (string.IsNullOrWhiteSpace(value: routine.Documentation))
         {
             if (requireDoc)
             {
-                string tail = razorForge
+                string tail = revare
                     ? "a `:param` line for each parameter and a `:returns:` line when it gives a result"
                     : "a `:param` line for each parameter";
                 notes.Add(item: new DocNote(Code: SemanticWarningCode.RoutineHasNoDocComment,
@@ -130,7 +130,7 @@ public static class DocLint
                 Location: routine.Location));
         }
 
-        if (razorForge && routine.ReturnType is { Name: not "None" } returned && doc.Returns == null)
+        if (revare && routine.ReturnType is { Name: not "None" } returned && doc.Returns == null)
         {
             notes.Add(item: new DocNote(Code: SemanticWarningCode.DocCommentLacksReturns,
                 Message: $"The doc comment of '{name}' has no `:returns:` line, and '{name}' returns " +

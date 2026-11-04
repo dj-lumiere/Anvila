@@ -3,24 +3,24 @@ using TypeModel.Enums;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Semantic warning codes for RazorForge (RF-W prefix) and Suflae (SF-W prefix, same numbers).
+/// Semantic warning codes for Revare (RA-W prefix) and Mielia (MI-W prefix, same numbers).
 /// Covers non-fatal issues that may indicate problems but allow building.
 ///
 /// Code ranges:
-/// - RF-W001-RF-W049: Unused Code Warnings
-/// - RF-W050-RF-W099: Unreachable Code Warnings
-/// - RF-W100-RF-W149: Deprecated Feature Warnings
-/// - RF-W150-RF-W199: Redundant Code Warnings
-/// - RF-W200-RF-W249: Mutation Warnings
-/// - RF-W250-RF-W299: Pattern Matching Warnings
-/// - RF-W300-RF-W349: Style Warnings
-/// - RF-W350-RF-W399: Performance Warnings
-/// - RF-W400-RF-W449: Internal/Debug Warnings
+/// - RA-W001-RA-W049: Unused Code Warnings
+/// - RA-W050-RA-W099: Unreachable Code Warnings
+/// - RA-W100-RA-W149: Deprecated Feature Warnings
+/// - RA-W150-RA-W199: Redundant Code Warnings
+/// - RA-W200-RA-W249: Mutation Warnings
+/// - RA-W250-RA-W299: Pattern Matching Warnings
+/// - RA-W300-RA-W349: Style Warnings
+/// - RA-W350-RA-W399: Performance Warnings
+/// - RA-W400-RA-W449: Internal/Debug Warnings
 /// </summary>
 public enum SemanticWarningCode
 {
     // ═══════════════════════════════════════════════════════════════════════════
-    // UNUSED CODE WARNINGS (RF-W001 - RF-W049)
+    // UNUSED CODE WARNINGS (RA-W001 - RA-W049)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Variable is declared but never used.</summary>
@@ -56,7 +56,7 @@ public enum SemanticWarningCode
     WorkNeverCollected = 9,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // UNREACHABLE CODE WARNINGS (RF-W050 - RF-W099)
+    // UNREACHABLE CODE WARNINGS (RA-W050 - RA-W099)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Code after return statement is unreachable.</summary>
@@ -84,7 +84,7 @@ public enum SemanticWarningCode
     UnreachableLoopBody = 57,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // DEPRECATED FEATURE WARNINGS (RF-W100 - RF-W149)
+    // DEPRECATED FEATURE WARNINGS (RA-W100 - RA-W149)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Using a deprecated type.</summary>
@@ -104,7 +104,7 @@ public enum SemanticWarningCode
     CreateIsNotConstructor = 104,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // REDUNDANT CODE WARNINGS (RF-W150 - RF-W199)
+    // REDUNDANT CODE WARNINGS (RA-W150 - RA-W199)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Redundant type annotation matches inferred type.</summary>
@@ -123,7 +123,7 @@ public enum SemanticWarningCode
     UnusedExpressionResult = 155,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MODIFICATION WARNINGS (RF-W200 - RF-W249)
+    // MODIFICATION WARNINGS (RA-W200 - RA-W249)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Variable marked modifiable but never modified.</summary>
@@ -136,7 +136,7 @@ public enum SemanticWarningCode
     HijackOnInitOnly = 210,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PATTERN MATCHING WARNINGS (RF-W250 - RF-W299)
+    // PATTERN MATCHING WARNINGS (RA-W250 - RA-W299)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>When expression may not cover all cases.</summary>
@@ -168,7 +168,7 @@ public enum SemanticWarningCode
     StealInReturn = 259,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // STYLE WARNINGS (RF-W300 - RF-W349)
+    // STYLE WARNINGS (RA-W300 - RA-W349)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Type name does not follow PascalCase convention.</summary>
@@ -186,7 +186,7 @@ public enum SemanticWarningCode
     /// <summary>`until false`: a loop that ends only at a `break`, `return` or `throw`, which `loop` says.</summary>
     EndlessUntil = 304,
 
-    /// <summary>A routine has no <c>###</c> doc comment (a note: RazorForge asks for one on every routine, Suflae on the
+    /// <summary>A routine has no <c>###</c> doc comment (a note: Revare asks for one on every routine, Mielia on the
     /// routines of a module another file imports).</summary>
     RoutineHasNoDocComment = 305,
 
@@ -196,11 +196,11 @@ public enum SemanticWarningCode
     /// <summary>A doc comment has a <c>:param</c> line for a name that is not a parameter of the routine (a note).</summary>
     DocCommentNamesUnknownParam = 307,
 
-    /// <summary>A RazorForge doc comment has no <c>:returns:</c> line, and the routine gives a result (a note).</summary>
+    /// <summary>A Revare doc comment has no <c>:returns:</c> line, and the routine gives a result (a note).</summary>
     DocCommentLacksReturns = 308,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PERFORMANCE WARNINGS (RF-W350 - RF-W399)
+    // PERFORMANCE WARNINGS (RA-W350 - RA-W399)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Large struct being passed by value; consider using a reference.</summary>
@@ -220,7 +220,7 @@ public enum SemanticWarningCode
     ImplicitWrapperCopy = 361,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // INTERNAL/DEBUG WARNINGS (RF-W400 - RF-W449)
+    // INTERNAL/DEBUG WARNINGS (RA-W400 - RA-W449)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Unknown statement type encountered during analysis.</summary>
@@ -241,7 +241,7 @@ public static class SemanticWarningCodeExtensions
     extension(SemanticWarningCode code)
     {
         /// <summary>
-        /// Formats code as RF-Wnnn or SF-Wnnn depending on language (e.g., RF-W007, SF-W007),
+        /// Formats code as RA-Wnnn or MI-Wnnn depending on language (e.g., RA-W007, MI-W007),
         /// matching the S and G code families.
         /// </summary>
         public string ToCodeString(Language language)

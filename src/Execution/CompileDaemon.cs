@@ -129,7 +129,7 @@ internal partial class Program
             public long CompileMs { get; set; }
 
             /// <summary>Ingrid's up-to-date object for the client's JIT (see
-            /// <see cref="Builder.IngridTessera.WatchedObjectPath"/>), so the client doesn't check the library's
+            /// <see cref="Builder.IngridLapila.WatchedObjectPath"/>), so the client doesn't check the library's
             /// sources itself. Null when the daemon couldn't tell: the client then checks.</summary>
             public string? IngridObjectPath { get; set; }
 
@@ -200,16 +200,16 @@ internal partial class Program
 
         // ---- pipe naming / opt-in ------------------------------------------------------------------
 
-        /// <summary>The daemon's name for the running language's tool (<c>razorforge-daemon</c>,
-        /// <c>suflae-daemon</c>). Each language runs its own daemon: the daemon builds with the language of the
-        /// executable that started it, so RazorForge and Suflae must never connect to each other's.</summary>
+        /// <summary>The daemon's name for the running language's tool (<c>revare-daemon</c>,
+        /// <c>mielia-daemon</c>). Each language runs its own daemon: the daemon builds with the language of the
+        /// executable that started it, so Revare and Mielia must never connect to each other's.</summary>
         private static string DaemonName()
         {
             return $"{Builder.Frontends.Languages.For(language: CliLanguage).ToolName}-daemon";
         }
 
         /// <summary>Per-language, per-user pipe name so two users on one machine don't collide. Overridable
-        /// via <c>RAZORFORGE_DAEMON_PIPE</c> / <c>SUFLAE_DAEMON_PIPE</c> (e.g. to run more than one daemon).</summary>
+        /// via <c>REVARE_DAEMON_PIPE</c> / <c>MIELIA_DAEMON_PIPE</c> (e.g. to run more than one daemon).</summary>
         private static string PipeName()
         {
             string? overridden = Environment.GetEnvironmentVariable(
@@ -228,7 +228,7 @@ internal partial class Program
         /// <summary>Set by the builder on a daemon it AUTO-SPAWNS (value = log-file path). The spawned daemon
         /// redirects its own console to that file so it is fully detached from the short-lived client that
         /// started it. Absent for a daemon a developer starts by hand (keeps writing to its own terminal).</summary>
-        private const string DaemonLogEnvVar = "RAZORFORGE_DAEMON_LOG";
+        private const string DaemonLogEnvVar = "REVARE_DAEMON_LOG";
 
         /// <summary><c>[debug] timing</c> gates the per-phase <c>[timing]</c> diagnostics used while profiling
         /// the dev loop; off by default so normal runs are quiet.</summary>
@@ -310,7 +310,7 @@ internal partial class Program
         /// </summary>
         private static (string ObjPath, IReadOnlyCollection<string> Syms,
             IReadOnlySet<string> InstanceKeys)? EnsureBaseArtifact(
-            Language language, RfBuildMode buildMode, Builder.Backends.IBuilderBackend backend,
+            Language language, RaBuildMode buildMode, Builder.Backends.IBuilderBackend backend,
             int crashablesRoom = SemanticVerifier.CrashableRoomBytes)
         {
             // The room of `Crashables` is part of the base's layout (a `Check`, the failure molds): a base is built
@@ -339,7 +339,7 @@ internal partial class Program
                 // speculative Hijacked[…] explosion — and we feed the FULL set to the base. A program's own
                 // uncommon instances fall to the per-run DELTA (base∪delta coverage stays complete).
                 // The seed is built by the same driver as a program, from a file of the language's own extension:
-                // a Suflae seed needs Suflae's library and its checks, which a bare verifier does not set up.
+                // a Mielia seed needs Mielia's library and its checks, which a bare verifier does not set up.
                 (string seedSource, string seedFile) = BaseObjectCache.SeedFor(language: language);
                 string seedDir = Path.Combine(path1: Path.GetTempPath(),
                     path2: $"rf_base_seed_{language}_{Environment.ProcessId}");
@@ -448,14 +448,14 @@ internal partial class Program
         }
 
         /// <summary>Compiles Ingrid's library to the object the client's JIT loads (see
-        /// <see cref="Builder.IngridTessera.ObjectPath"/>) while the base is built, so the first run after a warm-up
+        /// <see cref="Builder.IngridLapila.ObjectPath"/>) while the base is built, so the first run after a warm-up
         /// finds it ready. A failure here only costs that first run the compile: the client tries again, and falls
         /// back to the IR.</summary>
         private static void PrepareIngridObject()
         {
             try
             {
-                if (Builder.IngridTessera.ObjectPath(exeDir: AppContext.BaseDirectory) == null)
+                if (Builder.IngridLapila.ObjectPath(exeDir: AppContext.BaseDirectory) == null)
                 {
                     Console.Error.WriteLine(value: "[daemon] Ingrid's library could not be compiled to an object");
                 }
@@ -673,7 +673,7 @@ internal partial class Program
                     config: new ResolvedEntry
                     {
                         ProjectRoot = req.ProjectRoot,
-                        BuildMode = (RfBuildMode)req.BuildMode,
+                        BuildMode = (RaBuildMode)req.BuildMode,
                         DumpAst = req.DumpAst,
                         SaTiming = req.SaTiming,
                         RequireStartRoutine = req.RequireStart,
@@ -760,7 +760,7 @@ internal partial class Program
                     Language lang = CliLanguage;
                     (string ObjPath, IReadOnlyCollection<string> Syms,
                         IReadOnlySet<string> InstanceKeys)? baseArtifact =
-                            EnsureBaseArtifact(language: lang, buildMode: (RfBuildMode)req.BuildMode,
+                            EnsureBaseArtifact(language: lang, buildMode: (RaBuildMode)req.BuildMode,
                                 backend: backend, crashablesRoom: room);
                     // The resident layers are LLVM emitter modules: another backend links its delta to the base
                     // alone.
@@ -772,7 +772,7 @@ internal partial class Program
                     }
                     else if (baseArtifact is { } ba)
                     {
-                        layer = LayerFor(language: lang, buildMode: (RfBuildMode)req.BuildMode, room: room);
+                        layer = LayerFor(language: lang, buildMode: (RaBuildMode)req.BuildMode, room: room);
                         layer.AdoptFinished();
                         residentSymbols = layer.Symbols.Count > 0
                             ? new HashSet<string>(collection: ba.Syms.Concat(second: layer.Symbols),
@@ -797,7 +797,7 @@ internal partial class Program
                         config: new ResolvedEntry
                         {
                             ProjectRoot = req.ProjectRoot,
-                            BuildMode = (RfBuildMode)req.BuildMode,
+                            BuildMode = (RaBuildMode)req.BuildMode,
                             RequireStartRoutine = req.RequireStart,
                             LibraryRoots = req.LibraryRoots,
                             Backend = req.Backend
@@ -872,7 +872,7 @@ internal partial class Program
         {
             try
             {
-                return Builder.IngridTessera.WatchedObjectPath(exeDir: AppContext.BaseDirectory);
+                return Builder.IngridLapila.WatchedObjectPath(exeDir: AppContext.BaseDirectory);
             }
             catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
             {
@@ -1068,7 +1068,7 @@ internal partial class Program
             // Resident-JIT (A) split-at-IR: prefer the WARM DAEMON. It holds the analyzed stdlib snapshot in
             // RAM (captured once at startup), so routing the analysis THERE removes the ~840 ms per-run prebuilt
             // reload the in-process path below pays in this disposable client. The daemon compiles warm and
-            // ships IR; THIS throwaway client only JITs+runs it, so a user crash (rf_crash_text → exit(RF_EXIT_CRASH)) kills only
+            // ships IR; THIS throwaway client only JITs+runs it, so a user crash (rf_crash_text → exit(RA_EXIT_CRASH)) kills only
             // the client and never the warm daemon (§3 crash isolation preserved). Falls through to the
             // in-process lazy path when no daemon is reachable.
             if (resolved.UseDaemon &&
@@ -1373,7 +1373,7 @@ internal partial class Program
 
         private static DaemonResponse? SendRequest(DaemonRequest request, int timeoutMs)
         {
-            bool trace = Environment.GetEnvironmentVariable(variable: "RF_DAEMON_TRACE") is { Length: > 0 };
+            bool trace = Environment.GetEnvironmentVariable(variable: "RA_DAEMON_TRACE") is { Length: > 0 };
             void T(string m)
             {
                 if (trace) { Console.Error.WriteLine(value: $"[daemon-client] {m}"); }
@@ -1430,7 +1430,7 @@ internal partial class Program
             }
 
             // Fold the stdlib source tree's NEWEST mtime into the stamp. A `dotnet build` that only recopied
-            // stdlib `.rf`/`.sf` (no C# change) leaves the DLL mtime untouched, so a DLL-mtime-only stamp
+            // stdlib `.rr`/`.mi` (no C# change) leaves the DLL mtime untouched, so a DLL-mtime-only stamp
             // would let a running daemon keep serving a STALE stdlib snapshot (the phantom "routine X not
             // defined" after editing stdlib). Bumping the stamp on any stdlib edit makes the existing
             // stale-daemon restart path (TryPing mismatch -> ShutdownStaleDaemonIfPresent -> respawn) fire.
@@ -1619,12 +1619,12 @@ internal partial class Program
                 FileName = host, UseShellExecute = false, CreateNoWindow = true
             };
             // Command line depends on HOW this client was launched:
-            //   • via the apphost `RazorForge.exe`  → ProcessPath IS RazorForge.exe → spawn `RazorForge.exe
+            //   • via the apphost `Revare.exe`  → ProcessPath IS Revare.exe → spawn `Revare.exe
             //     daemon` (the exe already knows its DLL; passing the DLL as arg[0] makes the child read
-            //     "RazorForge.dll" as the VERB, fail immediately, and never reach the daemon loop — the bug
+            //     "Revare.dll" as the VERB, fail immediately, and never reach the daemon loop — the bug
             //     where every buildandrun re-spawned a stillborn daemon and fell back to a cold compile).
-            //   • via the muxer `dotnet RazorForge.dll` → ProcessPath is dotnet(.exe) → spawn `dotnet
-            //     RazorForge.dll daemon`.
+            //   • via the muxer `dotnet Revare.dll` → ProcessPath is dotnet(.exe) → spawn `dotnet
+            //     Revare.dll daemon`.
             if (BuilderLocation.RunsThroughDotnetHost)
             {
                 psi.ArgumentList.Add(item: dll!);
@@ -1681,7 +1681,7 @@ internal partial class Program
         }
 
         /// <summary>How long a client waits for the daemon, in whole seconds: <paramref name="defaultSeconds"/>, or the
-        /// value of <c>RAZORFORGE_DAEMON_WAIT_SECONDS</c> / <c>SUFLAE_DAEMON_WAIT_SECONDS</c>, which sets both the wait
+        /// value of <c>REVARE_DAEMON_WAIT_SECONDS</c> / <c>MIELIA_DAEMON_WAIT_SECONDS</c>, which sets both the wait
         /// for a daemon to warm up and the wait for its answer (a slow or busy machine, where warming the standard
         /// library or building its base takes longer).</summary>
         private static int DaemonWaitSeconds(int defaultSeconds)

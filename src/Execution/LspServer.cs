@@ -16,8 +16,8 @@ using Builder.Verification.Results;
 namespace Builder.Execution;
 
 /// <summary>
-/// The Language Server Protocol engine RazorForge and Suflae share, spoken over stdio. Each language runs its own
-/// server (<c>razorforge lsp</c>, <c>suflae lsp</c>) with its own <see cref="Builder.Frontends.LanguageServerProfile"/>
+/// The Language Server Protocol engine Revare and Mielia share, spoken over stdio. Each language runs its own
+/// server (<c>revare lsp</c>, <c>mielia lsp</c>) with its own <see cref="Builder.Frontends.LanguageServerProfile"/>
 /// (keywords, names, formatter); the engine serves only that language's files. On every document open/change it runs the real tokenizer → parser →
 /// semantic analyzer and reports positioned diagnostics; the analyzed AST + tokens are then reused
 /// to serve hover (type / routine signature / variable binding), go-to-definition (routines
@@ -155,7 +155,7 @@ public static class LspServer
 
     /// <summary>
     /// A type as its reader writes it: short names without module paths (<c>List[S64]</c>, not
-    /// <c>List[System.S64]</c>), in the words of the served language (a Suflae entity without its handle), at every
+    /// <c>List[System.S64]</c>), in the words of the served language (a Mielia entity without its handle), at every
     /// depth of its arguments.
     /// </summary>
     private static string TypeText(TypeSymbol type)
@@ -183,7 +183,7 @@ public static class LspServer
         new(pattern: @"(?<![\w.])(?:[A-Za-z_]\w*\.)+(?=[A-Za-z_])");
 
     /// <summary>Text shown to the user, in the words of the served language (see
-    /// <see cref="Builder.Frontends.LanguageRules.SurfaceText"/>): a Suflae user never sees the handle type an
+    /// <see cref="Builder.Frontends.LanguageRules.SurfaceText"/>): a Mielia user never sees the handle type an
     /// entity is carried in.</summary>
     private static string Surface(string text)
     {
@@ -499,7 +499,7 @@ public static class LspServer
     /// <summary>
     /// <c>textDocument/hover</c>: report the resolved type of the expression under the cursor. Reuses
     /// the last analysis of the document (no re-parse) — finds the token at the position, then the
-    /// typed expression anchored at it, and renders its type as a RazorForge code block.
+    /// typed expression anchored at it, and renders its type as a Revare code block.
     /// </summary>
     private static void HandleHover(Stream stdout, JsonElement id, JsonElement root)
     {
@@ -711,7 +711,7 @@ public static class LspServer
     /// has no resolved type.</summary>
     private static string? ResolveHoverFallbackLabel(DocState doc, Token hit, Expression? best)
     {
-        // A realm tag (`C`/`LLVM`/`RF`/`SF` before `::`) is a qualifier, not a value — don't report it
+        // A realm tag (`C`/`LLVM`/`RA`/`MI` before `::`) is a qualifier, not a value — don't report it
         // as the return type. If the qualified call resolved, the routine branch already handled it.
         if (IsRealmQualifier(doc: doc, hit: hit))
         {
@@ -1742,7 +1742,7 @@ public static class LspServer
         }
     }
 
-    /// <summary>True when the token is a realm tag (<c>C</c>/<c>LLVM</c>/<c>RF</c>/<c>SF</c>) — i.e. the
+    /// <summary>True when the token is a realm tag (<c>C</c>/<c>LLVM</c>/<c>RA</c>/<c>MI</c>) — i.e. the
     /// very next token on the line is the <c>::</c> separator. Such a token is a qualifier, not a value,
     /// so hover must not fall back to reporting it as a typed expression.</summary>
     private static bool IsRealmQualifier(DocState doc, Token hit)
@@ -1767,9 +1767,9 @@ public static class LspServer
 
         if (type is EntityTypeSymbol)
         {
-            return Ko(english: "🔒 **entity** — single owner. Hand it off with `steal` (a plain `=` is RF-S413); after " +
+            return Ko(english: "🔒 **entity** — single owner. Hand it off with `steal` (a plain `=` is RA-S413); after " +
                                "that the source binding is dead.",
-                korean: "🔒 **entity** — 소유자는 하나입니다. `steal`로 넘깁니다(그냥 `=`는 RF-S413). 넘긴 뒤에는 원래 " +
+                korean: "🔒 **entity** — 소유자는 하나입니다. `steal`로 넘깁니다(그냥 `=`는 RA-S413). 넘긴 뒤에는 원래 " +
                         "바인딩을 쓸 수 없습니다.");
         }
 
@@ -2209,7 +2209,7 @@ public static class LspServer
     private static void PopulateCompletionItems(DocState doc, int line0, int char0,
         List<Dictionary<string, object?>> items, HashSet<string> seen)
     {
-        // After a `Realm::` (C / LLVM / RF / SF) list ONLY that realm's routines.
+        // After a `Realm::` (C / LLVM / RA / MI) list ONLY that realm's routines.
         string? realm = RealmQualifierBefore(doc: doc, line0: line0, char0: char0);
         if (realm != null)
         {
@@ -2251,8 +2251,8 @@ public static class LspServer
         {
             "C" => RoutineRealm.C,
             "LLVM" => RoutineRealm.LLVM,
-            "RF" => RoutineRealm.RF,
-            "SF" => RoutineRealm.SF,
+            "RA" => RoutineRealm.RA,
+            "MI" => RoutineRealm.MI,
             _ => null
         };
         if (want is not { } wr)
@@ -4433,7 +4433,7 @@ public static class LspServer
 
     /// <summary>
     /// <c>textDocument/codeAction</c>: quick-fixes for the diagnostics in range. Currently one — an
-    /// unused Bool-returning call (RF-W007) gets a "Prepend drop" edit. The structure takes more.
+    /// unused Bool-returning call (RA-W007) gets a "Prepend drop" edit. The structure takes more.
     /// </summary>
     private static void HandleCodeAction(Stream stdout, JsonElement id, JsonElement root)
     {
@@ -4883,9 +4883,9 @@ public static class LspServer
 
     /// <summary>
     /// The source a standard library file was copied from. The build lays the stdlib out next to the executable
-    /// (<c>bin/.../Standard/RazorForge/System/X.rf</c>), and the editor runs the server from a copy of that folder
+    /// (<c>bin/.../Standard/Revare/System/X.rr</c>), and the editor runs the server from a copy of that folder
     /// (whose build folder it names in <c>ANVILA_BUILD_DIR</c>). A location in either copy is shown in the project's
-    /// <c>Standard/System/X.rf</c>, so go-to-definition opens the file that is edited, not one a build overwrites. Any
+    /// <c>Standard/System/X.rr</c>, so go-to-definition opens the file that is edited, not one a build overwrites. Any
     /// other file, or one whose source isn't there, is itself.
     /// </summary>
     private static string SourceFileOf(string fileName)
@@ -5569,8 +5569,8 @@ public static class LspServer
             return uri;
         }
 
-        // Clients escape the drive colon (JetBrains IDEs send `file:///l%3A/x.rf`), which Uri.LocalPath leaves as
-        // `/l:/x.rf`. Unescape, drop the slashes, and give a path without a drive letter its root back.
+        // Clients escape the drive colon (JetBrains IDEs send `file:///l%3A/x.rr`), which Uri.LocalPath leaves as
+        // `/l:/x.rr`. Unescape, drop the slashes, and give a path without a drive letter its root back.
         string path = Uri.UnescapeDataString(stringToUnescape: uri["file:".Length..])
                          .TrimStart('/');
         if (!(path.Length >= 2 && path[index: 1] == ':'))

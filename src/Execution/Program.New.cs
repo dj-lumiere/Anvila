@@ -27,8 +27,8 @@ internal partial class Program
                 mode = "debug"
 
                 """),
-            // Suflae brings IO/Console in every file and ends a routine without `return`.
-            (main, CliRules.FileExtension == ".sf"
+            // Mielia brings IO/Console in every file and ends a routine without `return`.
+            (main, CliRules.FileExtension == ".mi"
                 ? """
                   routine start()
                       show("Hello, world!")

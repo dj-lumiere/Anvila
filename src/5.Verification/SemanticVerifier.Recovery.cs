@@ -179,7 +179,7 @@ public sealed partial class SemanticVerifier
         // routine, or the failable free reader for a conversion), so the variant comes substituted for that
         // same owner: concrete carrier `Optional[S64]` (not the generic-def `Optional[T]`), receiver stays in place
         // so an entity is BORROWED as the base call borrowed it (no synth-routine by-value capture → no
-        // spurious RF-S413). Routine synthesis (below) is the fallback ONLY for a MULTI-call short-circuit, or
+        // spurious RA-S413). Routine synthesis (below) is the fallback ONLY for a MULTI-call short-circuit, or
         // a shape the base has no variant for (check over an absent-only base — the routine path shapes that).
         if (hoister.Hoisted is
                 [
@@ -225,7 +225,7 @@ public sealed partial class SemanticVerifier
             VariableInfo? local = _registry.LookupVariable(name: name);
             if (local != null)
             {
-                // A parameter is a slot like any written one: in Suflae an entity local is passed as its
+                // A parameter is a slot like any written one: in Mielia an entity local is passed as its
                 // Roamed handle (the local itself is retyped to it later), so the slot takes that type too.
                 // An Unbroken is passed by its address, as every routine taking one gets it (SignatureResolver):
                 // a copy would be a second cell, and what the recovered call adds would never reach the caller's.
@@ -270,7 +270,7 @@ public sealed partial class SemanticVerifier
             IsSynthesized = true,
             HasThrow = check,
             // Open: this is builder-internal, and its variant inherits this visibility. Secret would trip
-            // the cross-module access check (RF-S403) at the call site.
+            // the cross-module access check (RA-S403) at the call site.
             Visibility = VisibilityModifier.Open,
             Location = recovery.Location,
             Module = _currentRoutine?.Module,

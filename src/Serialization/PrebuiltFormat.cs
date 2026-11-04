@@ -5,7 +5,7 @@ namespace Builder.Serialization;
 /// <summary>
 /// Names of a language's prebuilt standard-library files: the compiled-stdlib snapshot each language's builder
 /// loads instead of analyzing its standard library on every run. Each language's snapshot carries its own
-/// extension (<c>.pbrf</c> for RazorForge, <c>.pbsf</c> for Suflae), so a file says which builder made it and
+/// extension (<c>.pbrf</c> for Revare, <c>.pbsf</c> for Mielia), so a file says which builder made it and
 /// one language's files are never read as the other's.
 /// </summary>
 public static class PrebuiltFormat
@@ -19,8 +19,8 @@ public static class PrebuiltFormat
     {
         return language switch
         {
-            Language.RazorForge => ".pbrf",
-            Language.Suflae => ".pbsf",
+            Language.Revare => ".pbrf",
+            Language.Mielia => ".pbsf",
             _ => throw new ArgumentOutOfRangeException(paramName: nameof(language), actualValue: language,
                 message: "This language has no prebuilt file extension.")
         };

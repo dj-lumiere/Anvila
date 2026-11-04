@@ -53,7 +53,7 @@ public sealed class DesugaringContext
     public TargetConfig Target { get; }
 
     /// <summary>Build mode — drives BuilderQuery.build_mode.</summary>
-    public RfBuildMode BuildMode { get; }
+    public RaBuildMode BuildMode { get; }
 
     /// <summary>When true, diagnostic passes print per-iteration timings to stderr.</summary>
     public bool SaTiming { get; set; }
@@ -132,7 +132,7 @@ public sealed class DesugaringContext
     /// </summary>
     public DesugaringContext(TypeRegistry registry,
         IReadOnlyDictionary<string, Statement> routineBodies, TargetConfig? target = null,
-        RfBuildMode buildMode = RfBuildMode.Debug)
+        RaBuildMode buildMode = RaBuildMode.Debug)
     {
         Registry = registry;
         RoutineBodies = routineBodies;

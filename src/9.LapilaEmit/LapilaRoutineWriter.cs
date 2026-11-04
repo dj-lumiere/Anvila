@@ -9,10 +9,10 @@ using TypeModel.Enums;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
-namespace Builder.TesseraEmit;
+namespace Builder.LapilaEmit;
 
 /// <summary>
-/// Writes one routine as Tessera. Every local lives in a stack slot, as in the LLVM emitter's
+/// Writes one routine as Lapila. Every local lives in a stack slot, as in the LLVM emitter's
 /// alloca-per-local output (LLVM promotes the slots to registers): a read is a <c>load</c>, a write a
 /// <c>store</c>. Each slot is local to the whole routine, declared in its head (<c>lateinit x: &amp;T</c>), so every block
 /// sees it without taking it as a parameter, and the local's first value is stored where it is declared
@@ -20,9 +20,9 @@ namespace Builder.TesseraEmit;
 /// unique in the routine, so a local of an inner scope never meets another of its name. Each value a statement
 /// computes is bound to a temporary, in evaluation order.
 /// </summary>
-internal sealed class TesseraRoutineWriter
+internal sealed class LapilaRoutineWriter
 {
-    private readonly TesseraWriter _module;
+    private readonly LapilaWriter _module;
     private readonly RoutineInfo _routine;
     private readonly Statement _body;
 
@@ -70,7 +70,7 @@ internal sealed class TesseraRoutineWriter
         public bool Terminated { get; set; }
     }
 
-    public TesseraRoutineWriter(TesseraWriter module, RoutineInfo routine, Statement body)
+    public LapilaRoutineWriter(LapilaWriter module, RoutineInfo routine, Statement body)
     {
         _module = module;
         _routine = routine;
@@ -78,7 +78,7 @@ internal sealed class TesseraRoutineWriter
     }
 
     private bool HasMe => _routine is { OwnerType: not null, IsCreator: false, IsCommon: false } &&
-                          !TesseraWriter.IsVoid(type: _routine.OwnerType);
+                          !LapilaWriter.IsVoid(type: _routine.OwnerType);
 
     private bool MeByReference => Declaration.ReceiverFacts.MeByReference(ownerType: _routine.OwnerType);
 
@@ -115,8 +115,8 @@ internal sealed class TesseraRoutineWriter
         _traced = _module.TracesRoutine(routine: _routine);
         if (_traced)
         {
-            Emit(line: $"{TesseraTrace.Push}(routine_name: {TesseraTrace.CString(text: Collection.TraceFrames.Name(routine: _routine))}, " +
-                       $"file: {TesseraTrace.CString(text: _routine.Location?.FileName ?? "")}, " +
+            Emit(line: $"{LapilaTrace.Push}(routine_name: {LapilaTrace.CString(text: Collection.TraceFrames.Name(routine: _routine))}, " +
+                       $"file: {LapilaTrace.CString(text: _routine.Location?.FileName ?? "")}, " +
                        $"line: {_routine.Location?.Line ?? 0}, column: {_routine.Location?.Column ?? 0})");
         }
 
@@ -150,7 +150,7 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary>
     /// Writes the routine's signature, the same as <see cref="Write"/> gives it, over a body that only ends: the
-    /// declaration of a routine another module defines (a resident base's), which Tessera declares rather than builds.
+    /// declaration of a routine another module defines (a resident base's), which Lapila declares rather than builds.
     /// </summary>
     public string WriteDeclarationOnly()
     {
@@ -167,7 +167,7 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>The receiver parameter, <c>arg_me</c>: a pointer by reference, the value by value. The emitted routines are
-    /// free routines, so the parameter isn't Tessera's receiver <c>me</c>.</summary>
+    /// free routines, so the parameter isn't Lapila's receiver <c>me</c>.</summary>
     private string MeParameter()
     {
         TypeSymbol owner = _routine.OwnerType!;
@@ -184,7 +184,7 @@ internal sealed class TesseraRoutineWriter
             : $"arg_{param.Name}: {TypeText(type: param.Type)}";
     }
 
-    private bool IsVoidReturn => TesseraWriter.IsVoid(type: _routine.ReturnType);
+    private bool IsVoidReturn => LapilaWriter.IsVoid(type: _routine.ReturnType);
 
     private string ReturnTypeText => IsVoidReturn
         ? "Void"
@@ -233,7 +233,7 @@ internal sealed class TesseraRoutineWriter
         // Every return pops the frame the routine pushed. (The value is already computed: it is a temporary.)
         if (_traced && line.StartsWith(value: "return", comparisonType: StringComparison.Ordinal))
         {
-            Emit(line: $"{TesseraTrace.Pop}()");
+            Emit(line: $"{LapilaTrace.Pop}()");
         }
 
         Emit(line: line);
@@ -450,7 +450,7 @@ internal sealed class TesseraRoutineWriter
 
     private void WriteReturn(ReturnStatement statement)
     {
-        if (statement.Value is null || TesseraWriter.IsVoid(type: statement.Value.ResolvedType) ||
+        if (statement.Value is null || LapilaWriter.IsVoid(type: statement.Value.ResolvedType) ||
             statement.Value is IdentifierExpression { Name: "None" })
         {
             if (statement.Value is CallExpression call)
@@ -484,7 +484,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string value = Temp(type: local.Type, expression: $"{local.Place}.{local.Read}()");
-        // An @T always points at a value in Tessera, so a slot that may be empty is asked through its address.
+        // An @T always points at a value in Lapila, so a slot that may be empty is asked through its address.
         string address = TypeText(type: local.Type) == "Addr" ? value : $"{value}.to[Addr]()";
         Emit(line: $"if not {address}.is_hollow()");
         Nested(body: new ExpressionStatement(Expression: call with { SkipsEmptyReceiver = false }, Location: location));
@@ -562,7 +562,7 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary>
     /// A value moved to another representation: the conversion <c>RepresentationCastPass</c> stamped on the
-    /// cast, as Tessera's raw operation of the same instruction.
+    /// cast, as Lapila's raw operation of the same instruction.
     /// </summary>
     private Operand EvaluateRepresentationCast(Operand inner, BackendCastExpression cast)
     {
@@ -577,11 +577,11 @@ internal sealed class TesseraRoutineWriter
         if (cast.Conversion == RepresentationConversion.Same)
         {
             // Pointers share a representation, but a typed pointer @T is reached from another pointer by casting it.
-            // An integer of one width trades its bits between signed and unsigned (Tessera keeps them apart).
+            // An integer of one width trades its bits between signed and unsigned (Lapila keeps them apart).
             return from == to
                 ? inner with { Type = target }
                 : to is ['@', .. var pointee]
-                    // A bitcast, not to[@T](): a RazorForge pointer may be null here, which the program checks itself.
+                    // A bitcast, not to[@T](): a Revare pointer may be null here, which the program checks itself.
                     ? new Operand(Text: Temp(type: target, expression: $"bitcast[{from}, @{pointee}]({Value(operand: inner)})"),
                         Type: target, IsPlace: false)
                     : new Operand(Text: Temp(type: target, expression: $"bitcast[{from}, {to}]({Value(operand: inner)})"),
@@ -671,7 +671,7 @@ internal sealed class TesseraRoutineWriter
     private string Receiver(Operand operand)
     {
         string value = Value(operand: operand);
-        return TesseraWriter.IsName(text: value)
+        return LapilaWriter.IsName(text: value)
             ? value
             : Temp(type: operand.Type, expression: value);
     }
@@ -695,10 +695,10 @@ internal sealed class TesseraRoutineWriter
                 return new Operand(Text: _module.ConstantData(data: data), Type: data.ResolvedType, IsPlace: false);
             case SharedConstantListExpression:
                 // The LLVM emitter lays the list down as writable module data whose pointer fields hold the
-                // addresses of the list and of its elements. A Tessera global starts a pointer only as the address
+                // addresses of the list and of its elements. A Lapila global starts a pointer only as the address
                 // of a global or preset of that pointee type, and the elements are an Items preset, not a U64.
                 throw new NotSupportedException(
-                    message: "The Tessera backend does not lay down an Int literal outside the S64 range yet: its " +
+                    message: "The Lapila backend does not lay down an Int literal outside the S64 range yet: its " +
                              "limbs need a static list whose data field holds the address of the limbs' Items preset.");
             case LiteralExpression { Value: string text, LiteralType: TokenType.B16Literal or TokenType.B32Literal or
                 TokenType.B64Literal } literal:
@@ -842,7 +842,7 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary>
     /// A call through a routine value: one call to the module's routine for that signature
-    /// (<c>TesseraWriter.RoutineValueCall</c>), which branches on the bound payload.
+    /// (<c>LapilaWriter.RoutineValueCall</c>), which branches on the bound payload.
     /// </summary>
     private Operand? WriteIndirectCall(CallExpression call, Operand callee, RoutineTypeSymbol type)
     {
@@ -855,7 +855,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string invocation = $"{_module.RoutineValueCall(routineType: type)}({string.Join(separator: ", ", values: values)})";
-        if (TesseraWriter.IsVoid(type: type.ReturnType))
+        if (LapilaWriter.IsVoid(type: type.ReturnType))
         {
             Emit(line: invocation);
             return null;
@@ -943,7 +943,7 @@ internal sealed class TesseraRoutineWriter
             default:
             {
                 var record = (RecordTypeSymbol)projection.Wrapper.ResolvedType!;
-                string field = TesseraWriter.ValueName(name: record.MemberVariables[index: projection.FieldIndex].Name);
+                string field = LapilaWriter.ValueName(name: record.MemberVariables[index: projection.FieldIndex].Name);
                 return new Operand(Text: Temp(type: inner,
                         expression: wrapper.IsPlace
                             ? $"{wrapper.Text}.{field}.peek()"
@@ -999,22 +999,22 @@ internal sealed class TesseraRoutineWriter
 
         if (owner.IsPlace)
         {
-            return new Operand(Text: $"{owner.Text}.{TesseraWriter.ValueName(name: member.MemberName)}", Type: fieldType, IsPlace: true);
+            return new Operand(Text: $"{owner.Text}.{LapilaWriter.ValueName(name: member.MemberName)}", Type: fieldType, IsPlace: true);
         }
 
         string record = Receiver(operand: owner);
-        return new Operand(Text: Temp(type: fieldType, expression: $"{record}.{TesseraWriter.ValueName(name: member.MemberName)}"),
+        return new Operand(Text: Temp(type: fieldType, expression: $"{record}.{LapilaWriter.ValueName(name: member.MemberName)}"),
             Type: fieldType, IsPlace: false);
     }
 
     /// <summary>
-    /// A float literal as its exact bits (<c>B64.from_bits(0x...)</c>), so Tessera does no rounding of its own.
+    /// A float literal as its exact bits (<c>B64.from_bits(0x...)</c>), so Lapila does no rounding of its own.
     /// The value is the one the LLVM emitter writes: the text read as a double, then narrowed to the literal's
     /// width; a hexadecimal literal is encoded exactly.
     /// </summary>
     private static string FloatLiteral(string text, TokenType type)
     {
-        (string tessera, int mantissa, int exponent) = type switch
+        (string lapila, int mantissa, int exponent) = type switch
         {
             TokenType.B16Literal => ("B16", 10, 5),
             TokenType.B32Literal => ("B32", 23, 8),
@@ -1029,7 +1029,7 @@ internal sealed class TesseraRoutineWriter
             if (NumericLiteralParser.TryEncodeHexFloat(cleaned: cleaned, mantBits: mantissa, expBits: exponent,
                     bits: out bits) != NumericLiteralParser.HexFloatStatus.Exact)
             {
-                throw new NotSupportedException(message: $"The Tessera backend cannot encode the literal {text}.");
+                throw new NotSupportedException(message: $"The Lapila backend cannot encode the literal {text}.");
             }
         }
         else
@@ -1048,7 +1048,7 @@ internal sealed class TesseraRoutineWriter
             };
         }
 
-        return $"{tessera}.from_bits(0x{bits:X})";
+        return $"{lapila}.from_bits(0x{bits:X})";
     }
 
     /// <summary>
@@ -1066,7 +1066,7 @@ internal sealed class TesseraRoutineWriter
             if (NumericLiteralParser.TryEncodeHexFloat(cleaned: cleaned, mantBits: 112, expBits: 15,
                     bits: out UInt128 hexBits) != NumericLiteralParser.HexFloatStatus.Exact)
             {
-                throw new NotSupportedException(message: $"The Tessera backend cannot encode the literal {text}.");
+                throw new NotSupportedException(message: $"The Lapila backend cannot encode the literal {text}.");
             }
 
             return hexBits;
@@ -1113,7 +1113,7 @@ internal sealed class TesseraRoutineWriter
         }
     }
 
-    /// <summary>A scalar literal as a Tessera constant, usable in a global's initializer.</summary>
+    /// <summary>A scalar literal as a Lapila constant, usable in a global's initializer.</summary>
     internal static string ConstantText(LiteralExpression literal)
     {
         return literal is { Value: string text, LiteralType: TokenType.B16Literal or TokenType.B32Literal or
@@ -1147,7 +1147,7 @@ internal sealed class TesseraRoutineWriter
             IFormattable number when literal.Value is not (double or float) =>
                 number.ToString(format: null, formatProvider: CultureInfo.InvariantCulture),
             _ => throw new NotSupportedException(
-                message: $"The Tessera backend does not translate the literal {literal.Value} ({literal.LiteralType}) yet.")
+                message: $"The Lapila backend does not translate the literal {literal.Value} ({literal.LiteralType}) yet.")
         };
     }
 
@@ -1162,7 +1162,7 @@ internal sealed class TesseraRoutineWriter
         // The trace's top frame moves to this call, so a crash under it points here.
         if (_traced && call.Location is { } at && (at.Line > 0 || at.Column > 0))
         {
-            Emit(line: $"{TesseraTrace.UpdateLocation}(line: {at.Line}, column: {at.Column})");
+            Emit(line: $"{LapilaTrace.UpdateLocation}(line: {at.Line}, column: {at.Column})");
         }
 
         if (call.RecoversThroughValue)
@@ -1190,7 +1190,7 @@ internal sealed class TesseraRoutineWriter
 
         if (routine.LlvmIrTemplate != null)
         {
-            string operation = TesseraIntrinsics.Translate(routine: routine,
+            string operation = LapilaIntrinsics.Translate(routine: routine,
                 arguments: OrderedArguments(call: call, routine: routine)
                           .Select(selector: a => a is null
                                ? throw Unsupported(what: $"a missing argument to {routine.Name}")
@@ -1202,7 +1202,7 @@ internal sealed class TesseraRoutineWriter
                 zero: ZeroValue,
                 spill: (value, type) => Place(operand: new Operand(Text: value, Type: type, IsPlace: false)),
                 emit: Emit);
-            if (TesseraWriter.IsVoid(type: routine.ReturnType))
+            if (LapilaWriter.IsVoid(type: routine.ReturnType))
             {
                 Emit(line: operation);
                 return null;
@@ -1214,7 +1214,7 @@ internal sealed class TesseraRoutineWriter
 
         var arguments = new List<string>();
         bool hasReceiver = routine.OwnerType != null && !routine.IsCreator && !routine.IsCommon &&
-                           !TesseraWriter.IsVoid(type: routine.OwnerType);
+                           !LapilaWriter.IsVoid(type: routine.OwnerType);
         if (hasReceiver)
         {
             if (call.Callee is not MemberExpression { Object: var receiverExpression })
@@ -1243,7 +1243,7 @@ internal sealed class TesseraRoutineWriter
                 : Typed(value: Value(operand: operand), from: operand.Type, to: routine.Parameters[index: i].Type));
         }
 
-        // Tessera names each argument of a routine taking two or more, `me` included: its parameters are `arg_<name>`.
+        // Lapila names each argument of a routine taking two or more, `me` included: its parameters are `arg_<name>`.
         // A C routine takes its arguments in order.
         if (arguments.Count >= 2 && routine.CallingConvention != "C")
         {
@@ -1258,8 +1258,8 @@ internal sealed class TesseraRoutineWriter
 
         string text = $"{_module.RoutineName(routine: routine)}({string.Join(separator: ", ", values: arguments)})";
         // A routine that gives back nothing used as a value (a `Work[None]`'s result going into a `List[None]`):
-        // Tessera takes the call as a value of type None, so it is bound once like any other result.
-        if (TesseraWriter.IsVoid(type: routine.ReturnType) && (asStatement || routine.ReturnType is null))
+        // Lapila takes the call as a value of type None, so it is bound once like any other result.
+        if (LapilaWriter.IsVoid(type: routine.ReturnType) && (asStatement || routine.ReturnType is null))
         {
             Emit(line: text);
             return null;
@@ -1302,7 +1302,7 @@ internal sealed class TesseraRoutineWriter
                          .ToList();
     }
 
-    /// <summary>A struct record built from named field values: a Tessera record literal.</summary>
+    /// <summary>A struct record built from named field values: a Lapila record literal.</summary>
     private string RecordLiteral(CallExpression call, RecordTypeSymbol record)
     {
         var fields = new List<string>();
@@ -1314,13 +1314,13 @@ internal sealed class TesseraRoutineWriter
                 throw Unsupported(what: $"a construction of {record.FullName} not written as field: value pairs");
             }
 
-            fields.Add(item: $"{TesseraWriter.ValueName(name: named.Name)}: {Value(operand: Evaluate(expression: named.Value))}");
+            fields.Add(item: $"{LapilaWriter.ValueName(name: named.Name)}: {Value(operand: Evaluate(expression: named.Value))}");
         }
 
         return $"{TypeText(type: record)}({string.Join(separator: ", ", values: fields)})";
     }
 
-    /// <summary>A record built from its field values, given in field order: a Tessera record literal.</summary>
+    /// <summary>A record built from its field values, given in field order: a Lapila record literal.</summary>
     private Operand EvaluateCreator(CreatorExpression creator)
     {
         TypeSymbol? type = creator.ConstructedType;
@@ -1358,7 +1358,7 @@ internal sealed class TesseraRoutineWriter
                            Evaluate(expression: creator.MemberVariables[index: i].Value) is var operand
                 ? Typed(value: Value(operand: operand), from: operand.Type, to: field.Type)
                 : ZeroValue(type: field.Type);
-            fields.Add(item: $"{TesseraWriter.ValueName(name: field.Name)}: {value}");
+            fields.Add(item: $"{LapilaWriter.ValueName(name: field.Name)}: {value}");
         }
 
         string literal = $"{TypeText(type: record)}({string.Join(separator: ", ", values: fields)})";
@@ -1391,14 +1391,14 @@ internal sealed class TesseraRoutineWriter
         for (int i = 0; i < values.Count; i++)
         {
             Emit(line: $"{block}.to[@{_module.EntityRecord(entity: entity)}]()." +
-                       $"{TesseraWriter.ValueName(name: entity.MemberVariables[index: i].Name)}.poke({values[index: i]})");
+                       $"{LapilaWriter.ValueName(name: entity.MemberVariables[index: i].Name)}.poke({values[index: i]})");
         }
 
         return new Operand(Text: block, Type: entity, IsPlace: false);
     }
 
     /// <summary>A variant (Check and Lookup among them) built from its tag and payload: zeroed storage, the tag,
-    /// then the payload stored at its own type into the payload bytes (TesseraWriter.VariantRecord).</summary>
+    /// then the payload stored at its own type into the payload bytes (LapilaWriter.VariantRecord).</summary>
     private Operand EvaluateTaggedCreator(TaggedCreatorExpression tagged)
     {
         if (tagged.ResolvedType is not VariantTypeSymbol carrier)
@@ -1425,10 +1425,10 @@ internal sealed class TesseraRoutineWriter
             // The trace's top frame moves to the throw, so the failure noted points at it.
             if (_traced && tagged.Location is { } at && (at.Line > 0 || at.Column > 0))
             {
-                Emit(line: $"{TesseraTrace.UpdateLocation}(line: {at.Line}, column: {at.Column})");
+                Emit(line: $"{LapilaTrace.UpdateLocation}(line: {at.Line}, column: {at.Column})");
             }
 
-            Emit(line: $"{crashables}.failure.poke({TesseraTrace.FailureNote}())");
+            Emit(line: $"{crashables}.failure.poke({LapilaTrace.FailureNote}())");
             Emit(line: $"{crashables}.data.to[@{TypeText(type: crashable)}]().poke({value})");
         }
         else if (tagged.Payload is { } payload)
@@ -1477,7 +1477,7 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary>
     /// A Crashable member (<c>represent</c>, <c>diagnose</c>, …) called on the error a Check carrier holds:
-    /// a call to the module's dispatch routine for that member (<c>TesseraWriter.CrashableDispatch</c>) with the
+    /// a call to the module's dispatch routine for that member (<c>LapilaWriter.CrashableDispatch</c>) with the
     /// error's type id and the address of the crashable in its <c>Crashables</c>.
     /// </summary>
     private Operand EvaluateCrashableDispatch(CrashableDispatchExpression dispatch)
@@ -1523,6 +1523,6 @@ internal sealed class TesseraRoutineWriter
     private NotSupportedException Unsupported(string what)
     {
         return new NotSupportedException(
-            message: $"The Tessera backend does not translate {what} yet (in {_routine.OwnerType?.FullName ?? _routine.Module}.{_routine.Name}).");
+            message: $"The Lapila backend does not translate {what} yet (in {_routine.OwnerType?.FullName ?? _routine.Module}.{_routine.Name}).");
     }
 }

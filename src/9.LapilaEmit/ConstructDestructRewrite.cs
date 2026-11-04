@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-using Tessera;
+using Lapila;
 
-namespace Builder.TesseraEmit;
+namespace Builder.LapilaEmit;
 
 /// The rule that a type that holds something to release (LifecycleNeeds.cs) says how it is
 /// made and how it is released: such a record without a `construct` gets one taking its fields in order, and such a
@@ -49,7 +49,7 @@ internal static partial class ConstructDestructRewrite
     /// holding something.
     public static string Rewrite(string text)
     {
-        var holds = Holding([("generated.te", text)], unknownHolds: true);
+        var holds = Holding([("generated.li", text)], unknownHolds: true);
         return Rewrite(text, Declared([text]), holds);
     }
 
@@ -67,7 +67,7 @@ internal static partial class ConstructDestructRewrite
             try
             {
                 decls = Parsed.TryGetValue((file, text), out var known) ? known
-                    : Parsed[(file, text)] = new Tessera.Parser(new Tessera.Lexer(file, text).Lex(), file, acceptLegacy: true).ParseModule().Decls;
+                    : Parsed[(file, text)] = new Lapila.Parser(new Lapila.Lexer(file, text).Lex(), file, acceptLegacy: true).ParseModule().Decls;
             }
             catch (CompileError)
             {

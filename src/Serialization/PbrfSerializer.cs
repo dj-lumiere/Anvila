@@ -8,8 +8,8 @@ using System.Text;
 namespace Builder.Serialization;
 
 /// <summary>
-/// A general reflection-based binary graph serializer for the RazorForge compiled-stdlib snapshot
-/// (<c>.pbrf</c> — "prebuilt razorforge"). It serializes the whole in-memory semantic model
+/// A general reflection-based binary graph serializer for the Revare compiled-stdlib snapshot
+/// (<c>.pbrf</c> — "prebuilt revare"). It serializes the whole in-memory semantic model
 /// (TypeInfo/RoutineInfo symbol tables + lowered AST bodies) so a cold compile can DESERIALIZE it
 /// instead of re-analyzing the stdlib from scratch (~5 s).
 ///

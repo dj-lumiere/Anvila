@@ -231,7 +231,7 @@ public static class ModularStdlibCache
     /// <summary>Top-level index: global (non-sliced) metadata + the module label list.</summary>
     public sealed class Index
     {
-        /// <summary>The realm/language (RazorForge or Suflae) that these stdlib artifacts were compiled for.</summary>
+        /// <summary>The realm/language (Revare or Mielia) that these stdlib artifacts were compiled for.</summary>
         public Language Language { get; set; }
 
         /// <summary>Set of module labels that were loaded during the compilation that produced these artifacts.</summary>

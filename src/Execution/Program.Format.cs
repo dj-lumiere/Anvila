@@ -130,7 +130,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Prints the notices of <paramref name="file"/> (likely slips that build as written, such as a Suflae result
+    /// Prints the notices of <paramref name="file"/> (likely slips that build as written, such as a Mielia result
     /// left unused, or a routine without a doc comment) and returns how many there were.
     /// </summary>
     private static int ReportNotices(string file)

@@ -65,7 +65,7 @@ public static class RuntimeContract
     /// <summary>Reference-counting controller surface (<c>RetainManager[T]</c> and the RC wrappers).</summary>
     /// <remarks>The controllers' count primitives are the canonical vocabulary <c>hold</c>/<c>unhold</c>
     /// (strong ±1) and <c>observe</c>/<c>unobserve</c> (weak ±1) — plain stdlib memberRoutine names, called only
-    /// from wrapper <c>.rf</c> bodies, so they need no constants here.</remarks>
+    /// from wrapper <c>.rr</c> bodies, so they need no constants here.</remarks>
     public static class RefCount
     {
         /// <summary><c>RetainManager[T].raw_data()</c> — read the controlled payload.</summary>
@@ -77,13 +77,13 @@ public static class RuntimeContract
         public const string Share = "share";
     }
 
-    /// <summary>Container shape use (the IterGuard), Suflae only: while a `for` loop over a shared entity or a
+    /// <summary>Container shape use (the IterGuard), Mielia only: while a `for` loop over a shared entity or a
     /// call on one of its elements runs, its shape (element count and positions) must stay as it is. The
     /// counter lives on the entity's `Roamed` controller, so every name of the entity sees it. The builder
     /// brackets a use with <see cref="Begin"/>/<see cref="End"/> on the handle, and puts <see cref="RequireFree"/>
     /// before every `@reshaping` call through a handle, which crashes with ReshapingWhileInUseError while a use
-    /// is open. RazorForge rejects the same changes at build time and pays nothing.</summary>
-    /// <remarks>Site: Suflae's ShapeUseLoweringPass.</remarks>
+    /// is open. Revare rejects the same changes at build time and pays nothing.</summary>
+    /// <remarks>Site: Mielia's ShapeUseLoweringPass.</remarks>
     public static class ShapeUse
     {
         /// <summary>Opens one more use of the container's shape.</summary>
@@ -118,7 +118,7 @@ public static class RuntimeContract
     /// <summary>The hidden storage of module-level <c>global</c>s: every global is a field of one
     /// synthesized entity held behind one <c>Roamed</c> singleton, so the per-statement access-lock
     /// brackets serialize concurrent changes and atomic-width fields get a lock-free fast path.</summary>
-    /// <remarks>Sites: Suflae's ModuleGlobalsSynthesisPass (builds both) and GlobalEntityRewritePass
+    /// <remarks>Sites: Mielia's ModuleGlobalsSynthesisPass (builds both) and GlobalEntityRewritePass
     /// (rewrites global reads and writes onto the singleton), RoamedLockBracketLoweringPass (the atomic
     /// fast path keys on the entity).</remarks>
     public static class ModuleGlobals
@@ -130,10 +130,10 @@ public static class RuntimeContract
         public const string SingletonName = "__globals__";
     }
 
-    /// <summary>The routines the builder writes for a Suflae program's own annotations (<c>@Memoize</c> on a routine
+    /// <summary>The routines the builder writes for a Mielia program's own annotations (<c>@Memoize</c> on a routine
     /// whose annotation record has an <c>around</c>): the routine keeps its name and calls <c>around</c>, its body
     /// moves to a routine of its own, and a third one runs that body and keeps the result in an <c>Unknown</c>.</summary>
-    /// <remarks>Sites: Suflae's AnnotationSynthesisPass (writes them) and ReflectionTablePass (leaves them out of
+    /// <remarks>Sites: Mielia's AnnotationSynthesisPass (writes them) and ReflectionTablePass (leaves them out of
     /// ObjectHacker's routine tables).</remarks>
     public static class ProgramAnnotation
     {
@@ -199,7 +199,7 @@ public static class RuntimeContract
         /// <summary>Take the entity out of its only handle, ending the handle (a creator returning a handle).</summary>
         public const string ReleaseInner = "release_inner";
 
-        /// <summary>Whether the handle holds nothing: Suflae's <c>x is None</c> on an optional entity reference.</summary>
+        /// <summary>Whether the handle holds nothing: Mielia's <c>x is None</c> on an optional entity reference.</summary>
         public const string IsHollow = "is_hollow";
 
         /// <summary>`==` between two handles either of which may hold nothing (a hollow handle), the call `==` on two
@@ -217,7 +217,7 @@ public static class RuntimeContract
         public const string HandleDiagnose = "handle_diagnose";
 
         /// <summary>Make the entity keep another one alive (an emitter adapter keeping the collection it walks), the
-        /// builder's call right after a Suflae program makes an adapter.</summary>
+        /// builder's call right after a Mielia program makes an adapter.</summary>
         public const string Keep = "keep";
 
         /// <summary>The standard library's mark on an entity that guards itself (a mailbox over a channel): its member
@@ -276,7 +276,7 @@ public static class RuntimeContract
     /// untyped pointer, and what a routine is handed to native code as.</summary>
     public const string Addr = "Addr";
 
-    /// <summary>The C strings RazorForge makes and the C string pointers they go in place of. A <c>CStr</c>
+    /// <summary>The C strings Revare makes and the C string pointers they go in place of. A <c>CStr</c>
     /// argument to a <c>CStrView</c> parameter becomes <c>arg.view()</c>, and <c>steal arg</c> becomes
     /// <c>arg.leak()</c> (memory handed to C for good). The same holds for <c>CWStr</c> and <c>CWStrView</c>.</summary>
     public static class CString
@@ -364,12 +364,12 @@ public static class RuntimeContract
     /// <remarks>Sites: SemanticVerifier.Stamps (NoteStampedTypes), SemanticVerifier.Helpers.Access (CheckStampHasSlot).</remarks>
     public const string StampedTypeName = "Stamped";
 
-    /// <summary><c>Stamped[T].same_entity</c> (Stamped.rf): what <c>a === b</c> on two stamps runs, the same slot and
+    /// <summary><c>Stamped[T].same_entity</c> (Stamped.rr): what <c>a === b</c> on two stamps runs, the same slot and
     /// generation. A stamp is a value of eight bytes, so the builder compares both fields instead of one address.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
     public const string StampSameEntity = "same_entity";
 
-    /// <summary><c>Stamped[T].other_entity</c> (Stamped.rf): what <c>a !== b</c> on two stamps runs.</summary>
+    /// <summary><c>Stamped[T].other_entity</c> (Stamped.rr): what <c>a !== b</c> on two stamps runs.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
     public const string StampOtherEntity = "other_entity";
 
@@ -434,8 +434,8 @@ public static class RuntimeContract
     /// <summary><c>control</c> — the <c>Controlling</c> marker-protocol coercion (yields a borrow view).</summary>
     public const string Control = "control";
 
-    /// <summary><c>read_in_place</c> — a token's value read where it is with no copy (<c>Viewing.rf</c>,
-    /// <c>Modifying.rf</c>), for a value that holds an entity, which is never copied.</summary>
+    /// <summary><c>read_in_place</c> — a token's value read where it is with no copy (<c>Viewing.rr</c>,
+    /// <c>Modifying.rr</c>), for a value that holds an entity, which is never copied.</summary>
     /// <remarks>Sites: OperatorLoweringPass (an element read that holds an entity), PatternLoweringPass (a token
     /// subject reaching one), ScopeTeardownLoweringPass.ViewVerbs.</remarks>
     public const string ReadInPlace = "read_in_place";
@@ -584,7 +584,7 @@ public static class RuntimeContract
     /// <summary>An observer of an entity that doesn't keep it alive.</summary>
     public const string Watched = "Watched";
 
-    /// <summary>Biased-reference-counted, auto-promoting handle (Suflae `entity` backing). Registered
+    /// <summary>Biased-reference-counted, auto-promoting handle (Mielia `entity` backing). Registered
     /// as an RC wrapper for lifetime (retain/release), but deliberately NOT in the forwarding /
     /// read-only / coercion sets: access is builder-inserted lock-wrapping, never <c>refer</c>/
     /// <c>control</c> (which would hand out a lock-bypassing raw reference).</summary>
@@ -787,8 +787,8 @@ public static class RuntimeContract
 
     // =====================================================================================
     // Native runtime externs — C-ABI symbols emitted directly into the module by codegen.
-    // These are matched against Ingrid (its Tessera code: runtime-tessera in the runtime library,
-    // tessera/ linked into every module), NOT stdlib .rf, so they are a DIFFERENT contract (a rename
+    // These are matched against Ingrid (its Lapila code: runtime-lapila in the runtime library,
+    // lapila/ linked into every module), NOT stdlib .rr, so they are a DIFFERENT contract (a rename
     // here means editing Ingrid too, and validate-stdlib cannot check them). Collected here so codegen has one name table.
     // Sites: LlvmEmitter.Expressions (declarations + call sites).
     // =====================================================================================

@@ -8,7 +8,7 @@ namespace TypeModel;
 /// </summary>
 public static class Realms
 {
-    /// <summary>The shared standard library's realm, RazorForge's (<c>RF</c>): what a source writes as <c>RF::</c>
+    /// <summary>The shared standard library's realm, Revare's (<c>RA</c>): what a source writes as <c>RA::</c>
     /// to reach it from another realm.</summary>
-    public const string Shared = "RF";
+    public const string Shared = "RA";
 }

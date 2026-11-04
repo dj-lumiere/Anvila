@@ -1,7 +1,7 @@
 namespace Builder;
 
 /// <summary>
-/// Caches the parsed <c>config.toml</c> of an explicit-entry build (<c>buildandrun file.rf</c>) as a small binary
+/// Caches the parsed <c>config.toml</c> of an explicit-entry build (<c>buildandrun file.rr</c>) as a small binary
 /// file, so a dev-loop run does not load and JIT the TOML parser (its first use costs ~20 ms per process). The key
 /// covers the manifest's full path, its exact text, and the builder DLL's timestamp, so any edit to the manifest
 /// or a rebuilt builder misses the cache. Only manifests whose parse depends on nothing but their own text are
@@ -50,7 +50,7 @@ internal static class ManifestCache
             loaded.Debug.PruneStats = reader.ReadBoolean();
             loaded.Debug.JitTrace = reader.ReadBoolean();
             loaded.Debug.DumpIr = reader.ReadBoolean();
-            loaded.Debug.DumpTessera = reader.ReadBoolean();
+            loaded.Debug.DumpLapila = reader.ReadBoolean();
             loaded.Debug.ReachabilityDump = ReadNullable(reader: reader);
             loaded.Debug.MaySuspendDump = ReadNullable(reader: reader);
             sbyte deadlockCheck = reader.ReadSByte();
@@ -101,7 +101,7 @@ internal static class ManifestCache
                 writer.Write(value: manifest.Debug.PruneStats);
                 writer.Write(value: manifest.Debug.JitTrace);
                 writer.Write(value: manifest.Debug.DumpIr);
-                writer.Write(value: manifest.Debug.DumpTessera);
+                writer.Write(value: manifest.Debug.DumpLapila);
                 WriteNullable(writer: writer, value: manifest.Debug.ReachabilityDump);
                 WriteNullable(writer: writer, value: manifest.Debug.MaySuspendDump);
                 writer.Write(value: manifest.Debug.DeadlockCheck switch { null => (sbyte)-1, true => (sbyte)1, false => (sbyte)0 });
@@ -124,7 +124,7 @@ internal static class ManifestCache
         long compilerTicks = BuilderLocation.NewestBuildTicks();
         ulong hash = Fnv1a(text: $"{FormatVersion}\0{compilerTicks}\0{fullPath}\0{content}");
         return Path.Combine(path1: Path.GetTempPath(),
-            path2: "razorforge",
+            path2: "revare",
             path3: "manifest-cache",
             path4: $"{hash:x16}.bin");
     }

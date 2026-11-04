@@ -37,7 +37,7 @@ public sealed record BuildResult(
 
 /// <summary>
 /// Coordinates multi-file building with circular import detection.
-/// This is the entry point for building RazorForge/Suflae projects.
+/// This is the entry point for building Revare/Mielia projects.
 /// </summary>
 public sealed class BuildDriver
 {
@@ -460,29 +460,29 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// The name of the importing file's language when the import names a module of the RazorForge standard library
-    /// that the language's own standard library doesn't declare (a Suflae file's <c>import BuilderQuery</c>): such a
-    /// module hands out values the language doesn't have. Null when the import is fine: a RazorForge file, a language
+    /// The name of the importing file's language when the import names a module of the Revare standard library
+    /// that the language's own standard library doesn't declare (a Mielia file's <c>import BuilderQuery</c>): such a
+    /// module hands out values the language doesn't have. Null when the import is fine: a Revare file, a language
     /// without a standard library of its own, a module of the project or a library, or one the language's standard
     /// library declares too.
     /// </summary>
     private string? ImportsModuleMissingFromOwnStdlib(ImportDeclaration import, string filePath, string resolvedPath)
     {
         Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
-        // The standard library's own files reach what they wrap (Suflae's List imports BuilderQuery).
+        // The standard library's own files reach what they wrap (Mielia's List imports BuilderQuery).
         bool fromStdlib = Path.GetFullPath(path: filePath).StartsWith(value: Path.GetFullPath(path: _stdlibRoot),
             comparisonType: StringComparison.OrdinalIgnoreCase);
-        if (fromStdlib || language == Language.RazorForge || !Builder.Frontends.Languages.IsRegistered(language: language) ||
-            !Builder.Frontends.Languages.IsRegistered(language: Language.RazorForge))
+        if (fromStdlib || language == Language.Revare || !Builder.Frontends.Languages.IsRegistered(language: language) ||
+            !Builder.Frontends.Languages.IsRegistered(language: Language.Revare))
         {
             return null;
         }
 
         Builder.Frontends.LanguageRules rules = Builder.Frontends.Languages.For(language: language);
-        string razorForgeStdlib = Path.GetFullPath(path: Path.Combine(path1: _stdlibRoot,
-            path2: Builder.Frontends.Languages.For(language: Language.RazorForge).Name)) + Path.DirectorySeparatorChar;
+        string revareStdlib = Path.GetFullPath(path: Path.Combine(path1: _stdlibRoot,
+            path2: Builder.Frontends.Languages.For(language: Language.Revare).Name)) + Path.DirectorySeparatorChar;
         if (!rules.HasOwnStandardLibrary ||
-            !Path.GetFullPath(path: resolvedPath).StartsWith(value: razorForgeStdlib,
+            !Path.GetFullPath(path: resolvedPath).StartsWith(value: revareStdlib,
                 comparisonType: StringComparison.OrdinalIgnoreCase))
         {
             return null;
@@ -559,7 +559,7 @@ public sealed class BuildDriver
 
     /// <summary>
     /// Resolves and processes a directory-as-module import: several files in one directory that
-    /// all declare the same <c>module</c> name (e.g. <c>Fun2/A.rf</c> and <c>Fun2/B.rf</c> both
+    /// all declare the same <c>module</c> name (e.g. <c>Fun2/A.rr</c> and <c>Fun2/B.rr</c> both
     /// declaring <c>module Fun2</c>), gathered by a bare/selective import (<c>import Fun2</c> or
     /// <c>import Fun2.[A, B]</c>) that no single-file resolution can satisfy.
     /// Only files whose <c>module</c> declaration equals <paramref name="moduleName"/> are taken,
@@ -601,7 +601,7 @@ public sealed class BuildDriver
 
     /// <summary>
     /// Discovers and processes the other files of <paramref name="filePath"/>'s own module: sibling
-    /// <c>.rf</c>/<c>.sf</c> files in the same directory that declare the same
+    /// <c>.rr</c>/<c>.mi</c> files in the same directory that declare the same
     /// <paramref name="modulePath"/>. This makes a module's files mutually visible without an explicit
     /// import, including when one of them is the compilation entry and nothing imports the module.
     /// Only same-directory siblings are gathered, matching the one-module-per-directory convention
@@ -637,8 +637,8 @@ public sealed class BuildDriver
                 continue;
             }
 
-            // File-granularity conditional compilation: skip a `.rf` sibling whose leading
-            // `#@target(...)` directive doesn't match the build target (RazorForge-only).
+            // File-granularity conditional compilation: skip a `.rr` sibling whose leading
+            // `#@target(...)` directive doesn't match the build target (Revare-only).
             if (!Targeting.TargetGate.ShouldCompile(filePath: fullCandidate))
             {
                 continue;
@@ -653,10 +653,10 @@ public sealed class BuildDriver
             }
 
             // A program has one entry. A sibling that writes a `routine start()` of its own is another program
-            // that happens to share the module name (`main.sf` next to a draft `main.next.sf`), not a part of this
+            // that happens to share the module name (`main.mi` next to a draft `main.next.mi`), not a part of this
             // one: it stays out of the build, so its errors, a parse error included, are not this build's. Also a
             // line scan, so it answers for a file that does not parse. A sibling that only looks like a script is
-            // built: the parser decides whether it is one, and a script that is not an entry file is RF-S443
+            // built: the parser decides whether it is one, and a script that is not an entry file is RA-S443
             // (ReportScriptsOutsideEntryFiles), never a silent omission.
             if (BuildHasEntryPoint() && ManifestLoader.FileDeclaresExplicitStart(filePath: fullCandidate))
             {
@@ -735,9 +735,9 @@ public sealed class BuildDriver
         {
             Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
 
-            // Validate language consistency: a build reads its own language and RazorForge (the
+            // Validate language consistency: a build reads its own language and Revare (the
             // standard library every build shares), never another front end's sources.
-            if (language != _language && language != Language.RazorForge)
+            if (language != _language && language != Language.Revare)
             {
                 _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.LanguageMismatch,
                     Message: $"Cannot import {language} file '{filePath}' from a {_language} project.",
@@ -748,11 +748,11 @@ public sealed class BuildDriver
                 return null;
             }
 
-            // A Suflae project MAY import RazorForge modules — SF's System IS RF's System, and a Suflae
-            // program consuming a RazorForge library (e.g. an engine module) is the whole point of the
-            // realm split. The `.rf` file is parsed with the RazorForge grammar below, so its entities
-            // stay RF-realm (bare, not auto-roamed) — an SF↔RF boundary reference, same as `RF::`.
-            // (Importing a non-stdlib `.rf` from SF was blocked; lifted to wire the SF→RF-module handoff.)
+            // A Mielia project MAY import Revare modules — MI's System IS RA's System, and a Mielia
+            // program consuming a Revare library (e.g. an engine module) is the whole point of the
+            // realm split. The `.rr` file is parsed with the Revare grammar below, so its entities
+            // stay RA-realm (bare, not auto-roamed) — an MI↔RA boundary reference, same as `RA::`.
+            // (Importing a non-stdlib `.rr` from MI was blocked; lifted to wire the MI→RA-module handoff.)
             bool isStdlibFile = Path.GetFullPath(path: filePath)
                                     .StartsWith(value: Path.GetFullPath(path: _stdlibRoot),
                                          comparisonType: StringComparison.OrdinalIgnoreCase);
@@ -841,7 +841,7 @@ public sealed class BuildDriver
     /// Extracts the declared module path and import declarations from a parsed AST. A file with no
     /// <c>module</c> header gets one DERIVED from its path relative to the project root (the config.toml
     /// directory): each path segment is PascalCased (spaces removed), '.'/'..' segments dropped, the
-    /// extension stripped, joined with '/'. E.g. <c>../SomeFolder/SomeMoreFolder/file a.rf</c> ->
+    /// extension stripped, joined with '/'. E.g. <c>../SomeFolder/SomeMoreFolder/file a.rr</c> ->
     /// <c>SomeFolder/SomeMoreFolder/FileA</c>. A synthetic ModuleDeclaration is inserted at the top of
     /// the AST so every downstream reader (type/routine registration, protocol conformance) sees the
     /// same module uniformly.
@@ -1042,7 +1042,7 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Scans one <c>module_paths</c> folder for <c>*.rf</c> and <c>*.sf</c> sources and registers each into the resolver
+    /// Scans one <c>module_paths</c> folder for <c>*.rr</c> and <c>*.mi</c> sources and registers each into the resolver
     /// index.
     /// </summary>
     private void PreRegisterLibraryRoot(string libraryRoot)
@@ -1078,7 +1078,7 @@ public sealed class BuildDriver
             return;
         }
 
-        // A file without a `module` line is the module its place in the folder names (`money/tax.rf` is Money/Tax).
+        // A file without a `module` line is the module its place in the folder names (`money/tax.rr` is Money/Tax).
         string moduleName = ast.Declarations.OfType<ModuleDeclaration>().FirstOrDefault()?.Path ??
                             DeriveModuleFromPath(filePath: filePath);
         _resolver.RegisterFile(filePath: filePath, moduleName: moduleName, ast: ast);

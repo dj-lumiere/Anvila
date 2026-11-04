@@ -70,7 +70,7 @@ public partial class LlvmEmitter
         _currentDbgLoc = prev;
     }
 
-    /// <summary>Records a DISubprogram descriptor for an RF routine define. No-op unless debug mode.</summary>
+    /// <summary>Records a DISubprogram descriptor for an RA routine define. No-op unless debug mode.</summary>
     private void RecordDebugSubprogram(string funcName, SourceLocation? location)
     {
         _currentRoutineSymbol = StripQuotes(sym: funcName);
@@ -88,7 +88,7 @@ public partial class LlvmEmitter
             : full;
         if (string.IsNullOrEmpty(value: file))
         {
-            file = "unknown.rf";
+            file = "unknown.rr";
         }
 
         _debugSubprograms[key: StripQuotes(sym: funcName)] =
@@ -96,7 +96,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Attaches line-tables-only debug metadata to the finished IR: <c>!dbg</c> on each RF-routine
+    /// Attaches line-tables-only debug metadata to the finished IR: <c>!dbg</c> on each RA-routine
     /// <c>define</c> (→ a distinct DISubprogram) and on each single-line instruction inside it (→ a
     /// DILocation for the current source line/col, tracked from the trace calls). Appends the module's
     /// <c>!llvm.dbg.cu</c> / <c>!llvm.module.flags</c> and the metadata block. No-op unless debug mode.
@@ -155,7 +155,7 @@ public partial class LlvmEmitter
 
         if (_traceFromStack)
         {
-            // The traced routines, for the table the native toolchain writes (Tessera's TraceTable).
+            // The traced routines, for the table the native toolchain writes (Lapila's TraceTable).
             var entries = new List<int>();
             foreach ((string sym, (string Name, string File, bool HidesPosition) frame) in _tracedRoutines)
             {
@@ -166,12 +166,12 @@ public partial class LlvmEmitter
 
                 int entry = registry.AllocId();
                 registry.Meta.Append(value: $"!{entry} = " +
-                    Tessera.TraceTable.Entry(subprogram: registry.GetSub(funcName: sym), name: frame.Name,
+                    Lapila.TraceTable.Entry(subprogram: registry.GetSub(funcName: sym), name: frame.Name,
                         file: frame.File, hidesPosition: frame.HidesPosition) + "\n");
                 entries.Add(item: entry);
             }
 
-            outSb.Append(value: $"\n{Tessera.TraceTable.NamedMetadata} = !{{{string.Join(separator: ", ", values: entries.Select(selector: e => $"!{e}"))}}}\n");
+            outSb.Append(value: $"\n{Lapila.TraceTable.NamedMetadata} = !{{{string.Join(separator: ", ", values: entries.Select(selector: e => $"!{e}"))}}}\n");
         }
 
         int flagsId = registry.AllocId();
@@ -209,7 +209,7 @@ public partial class LlvmEmitter
         outSb.Append(
             value:
             $"!{cuId} = distinct !DICompileUnit(language: DW_LANG_C99, file: !{cuFileId}, " +
-            "producer: \"RazorForge\", isOptimized: false, runtimeVersion: 0, emissionKind: LineTablesOnly)\n");
+            "producer: \"Revare\", isOptimized: false, runtimeVersion: 0, emissionKind: LineTablesOnly)\n");
         outSb.Append(value: $"!{flagsId} = !{{i32 2, !\"Debug Info Version\", i32 3}}\n");
         outSb.Append(value: meta);
     }

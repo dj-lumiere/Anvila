@@ -970,7 +970,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         RoutineInfo synthesized, Dictionary<string, TypeSymbol> protoSubs)
     {
         // The default's file may not be analyzed yet when the call that reaches it sits in a library body made
-        // concrete before anything else reached that file (Suflae's `skip(count: Int)` calls RazorForge's
+        // concrete before anything else reached that file (Mielia's `skip(count: Int)` calls Revare's
         // `skip`): analyze it first, or the clone carries no types.
         ctx.AnalyzeRoutineOnDemand?.Invoke(arg: protocolRoutine.RegistryKey);
         if (protocolRoutine.GenericDefinition is { } protocolDefinition)

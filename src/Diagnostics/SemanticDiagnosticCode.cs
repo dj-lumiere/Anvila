@@ -3,35 +3,35 @@ using TypeModel.Enums;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Semantic diagnostic codes for RazorForge (RF-S prefix) and Suflae (SF-S prefix, same numbers).
+/// Semantic diagnostic codes for Revare (RA-S prefix) and Mielia (MI-S prefix, same numbers).
 /// Covers semantic analysis errors including type checking, scope resolution,
 /// and language-specific validation.
 ///
 /// Code ranges:
-/// - RF-S001-RF-S049: Literal and Identifier Errors
-/// - RF-S050-RF-S099: Binary and Unary Operator Errors
-/// - RF-S100-RF-S149: Type Resolution Errors
-/// - RF-S150-RF-S199: Generic and Constraint Errors
-/// - RF-S200-RF-S249: Statement Errors
-/// - RF-S250-RF-S299: Assignment and Mutability Errors
-/// - RF-S300-RF-S349: Control Flow and Return Errors
-/// - RF-S350-RF-S399: Pattern Matching Errors
-/// - RF-S400-RF-S449: Declaration and Visibility Errors
-/// - RF-S450-RF-S499: Member Access Errors
-/// - RF-S500-RF-S549: Call and Argument Errors
-/// - RF-S550-RF-S599: Collection Literal Errors
-/// - RF-S600-RF-S649: Memory Token Errors (RazorForge-specific)
-/// - RF-S650-RF-S699: Modification Inference Errors
-/// - RF-S700-RF-S749: Protocol Conformance Errors
-/// - RF-S750-RF-S799: Error Handling Errors (throw)
-/// - RF-S800-RF-S849: Language Restriction Errors
-/// - RF-S850-RF-S899: Intrinsic and Native Call Errors
-/// - RF-S900-RF-S949: Concurrency and Task Dependency Errors
+/// - RA-S001-RA-S049: Literal and Identifier Errors
+/// - RA-S050-RA-S099: Binary and Unary Operator Errors
+/// - RA-S100-RA-S149: Type Resolution Errors
+/// - RA-S150-RA-S199: Generic and Constraint Errors
+/// - RA-S200-RA-S249: Statement Errors
+/// - RA-S250-RA-S299: Assignment and Mutability Errors
+/// - RA-S300-RA-S349: Control Flow and Return Errors
+/// - RA-S350-RA-S399: Pattern Matching Errors
+/// - RA-S400-RA-S449: Declaration and Visibility Errors
+/// - RA-S450-RA-S499: Member Access Errors
+/// - RA-S500-RA-S549: Call and Argument Errors
+/// - RA-S550-RA-S599: Collection Literal Errors
+/// - RA-S600-RA-S649: Memory Token Errors (Revare-specific)
+/// - RA-S650-RA-S699: Modification Inference Errors
+/// - RA-S700-RA-S749: Protocol Conformance Errors
+/// - RA-S750-RA-S799: Error Handling Errors (throw)
+/// - RA-S800-RA-S849: Language Restriction Errors
+/// - RA-S850-RA-S899: Intrinsic and Native Call Errors
+/// - RA-S900-RA-S949: Concurrency and Task Dependency Errors
 /// </summary>
 public enum SemanticDiagnosticCode
 {
     // ═══════════════════════════════════════════════════════════════════════════
-    // LITERAL AND IDENTIFIER ERRORS (RF-S001 - RF-S049)
+    // LITERAL AND IDENTIFIER ERRORS (RA-S001 - RA-S049)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Unknown literal type encountered during parsing.</summary>
@@ -110,7 +110,7 @@ public enum SemanticDiagnosticCode
     SpecialFloatNotInType = 20,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // BINARY AND UNARY OPERATOR ERRORS (RF-S050 - RF-S099)
+    // BINARY AND UNARY OPERATOR ERRORS (RA-S050 - RA-S099)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Logical operator (and/or) requires boolean operands.</summary>
@@ -159,7 +159,7 @@ public enum SemanticDiagnosticCode
     SliceInvalidUsage = 70,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // TYPE RESOLUTION ERRORS (RF-S100 - RF-S149)
+    // TYPE RESOLUTION ERRORS (RA-S100 - RA-S149)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Referenced type is not defined.</summary>
@@ -211,11 +211,11 @@ public enum SemanticDiagnosticCode
     ImportNonOpenSymbol = 115,
 
     /// <summary>A file of a language with a standard library of its own imports a standard library module only the
-    /// RazorForge standard library has (a Suflae file importing BuilderQuery).</summary>
+    /// Revare standard library has (a Mielia file importing BuilderQuery).</summary>
     ModuleNotInLanguageStandardLibrary = 116,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // GENERIC AND CONSTRAINT ERRORS (RF-S150 - RF-S199)
+    // GENERIC AND CONSTRAINT ERRORS (RA-S150 - RA-S199)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Type does not implement required protocol from constraint.</summary>
@@ -263,7 +263,7 @@ public enum SemanticDiagnosticCode
     OverridableDeriveNeedsOverrideMarker = 164,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // STATEMENT ERRORS (RF-S200 - RF-S249)
+    // STATEMENT ERRORS (RA-S200 - RA-S249)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Variable declaration requires type annotation or initializer.</summary>
@@ -306,7 +306,7 @@ public enum SemanticDiagnosticCode
     DestructuringArityMismatch = 220,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ASSIGNMENT AND MUTABILITY ERRORS (RF-S250 - RF-S299)
+    // ASSIGNMENT AND MUTABILITY ERRORS (RA-S250 - RA-S299)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Invalid assignment target (not a variable, member variable, or index).</summary>
@@ -363,7 +363,7 @@ public enum SemanticDiagnosticCode
     AssignWhileMatched = 264,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // CONTROL FLOW AND RETURN ERRORS (RF-S300 - RF-S349)
+    // CONTROL FLOW AND RETURN ERRORS (RA-S300 - RA-S349)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Return statement outside of a routine.</summary>
@@ -392,7 +392,7 @@ public enum SemanticDiagnosticCode
     BecomesOutsideWhenArm = 308,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PATTERN MATCHING ERRORS (RF-S350 - RF-S399)
+    // PATTERN MATCHING ERRORS (RA-S350 - RA-S399)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Guard expression must be boolean.</summary>
@@ -426,7 +426,7 @@ public enum SemanticDiagnosticCode
     ElseBindsSeveralTypes = 359,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // DECLARATION AND VISIBILITY ERRORS (RF-S400 - RF-S449)
+    // DECLARATION AND VISIBILITY ERRORS (RA-S400 - RA-S449)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Type with this name is already defined.</summary>
@@ -469,17 +469,17 @@ public enum SemanticDiagnosticCode
     /// copy would make two of the one entity. An entity is the declaration that may.</summary>
     RecordHoldsEntity = 409,
 
-    /// <summary>RETIRED: a bundle without type parameters. There is no <c>bundle</c> (RF-G228). Code number reserved
+    /// <summary>RETIRED: a bundle without type parameters. There is no <c>bundle</c> (RA-G228). Code number reserved
     /// to avoid reuse.</summary>
     BundleWithoutParameters = 445,
 
-    /// <summary>RETIRED: a bundle that contains itself. There is no <c>bundle</c> (RF-G228). Code number reserved to
+    /// <summary>RETIRED: a bundle that contains itself. There is no <c>bundle</c> (RA-G228). Code number reserved to
     /// avoid reuse.</summary>
     RecursiveBundle = 446,
 
-    /// <summary>A Suflae program uses a RazorForge library type or routine that Suflae's library does not show (no
-    /// <c>@rf</c> declaration binds it).</summary>
-    UnsharedRazorForgeDeclaration = 447,
+    /// <summary>A Mielia program uses a Revare library type or routine that Mielia's library does not show (no
+    /// <c>@ra</c> declaration binds it).</summary>
+    UnsharedRevareDeclaration = 447,
 
     /// <summary>A routine that a Work (or another thread) reaches reads or changes a plain <c>global</c> that is changed
     /// somewhere in the program: another thread may change it while this one reads it.</summary>
@@ -559,27 +559,27 @@ public enum SemanticDiagnosticCode
     VariantNotDismantled = 434,
 
     /// <summary><c>var</c> declared at module level. <c>var</c> is a routine-local binding; module-level
-    /// mutable state must use a Suflae <c>global</c> (RazorForge has no module-level mutable state).</summary>
+    /// mutable state must use a Mielia <c>global</c> (Revare has no module-level mutable state).</summary>
     ModuleLevelVarNotAllowed = 435,
 
-    /// <summary>Circular Suflae <c>global</c> initialization — a set of globals directly reference each
+    /// <summary>Circular Mielia <c>global</c> initialization — a set of globals directly reference each
     /// other (or a global references itself) in their initializers, so none can initialize first.</summary>
     ModuleGlobalCircularInit = 436,
 
-    /// <summary>A Suflae <c>global</c> whose initializer reads another global has a type the build cannot
+    /// <summary>A Mielia <c>global</c> whose initializer reads another global has a type the build cannot
     /// seed before the ordered initialization runs (only number, <c>Text</c> and <c>Bool</c> globals can).</summary>
     ModuleGlobalDependentInitUnsupported = 437,
 
-    /// <summary>Suflae <c>global</c> declarations exist but no file in the build has a
+    /// <summary>Mielia <c>global</c> declarations exist but no file in the build has a
     /// <c>routine start()</c> (or top-level statements) to host their initialization.</summary>
     ModuleGlobalWithoutStart = 438,
 
-    /// <summary>A Suflae routine's parameter or return type is a bare <c>RF::</c> RazorForge entity. An
-    /// RF entity has no reference count, so passing it by value across an SF routine boundary would let
-    /// SF's scope-exit teardown destroy the same object more than once (caller + callee + return) →
-    /// heap corruption. Hold it as a field of an SF entity, or hand it across as <c>Retained[T]</c>
+    /// <summary>A Mielia routine's parameter or return type is a bare <c>RA::</c> Revare entity. An
+    /// RA entity has no reference count, so passing it by value across an MI routine boundary would let
+    /// MI's scope-exit teardown destroy the same object more than once (caller + callee + return) →
+    /// heap corruption. Hold it as a field of an MI entity, or hand it across as <c>Retained[T]</c>
     /// (persistent) / <c>Viewing[T]</c>·<c>Modifying[T]</c> (in-call access) instead.</summary>
-    SuflaeBareRfEntityInSignature = 439,
+    MieliaBareRaEntityInSignature = 439,
 
     /// <summary>An operand of the reference-identity operator <c>===</c>/<c>!==</c> is not a
     /// reference-carrying type. Identity ("same object?") is only meaningful for an <c>entity</c> or a
@@ -605,7 +605,7 @@ public enum SemanticDiagnosticCode
     ScriptVariableNotVisibleInRoutine = 444,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MEMBER ACCESS ERRORS (RF-S450 - RF-S499)
+    // MEMBER ACCESS ERRORS (RA-S450 - RA-S499)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Type does not have the specified member.</summary>
@@ -639,7 +639,7 @@ public enum SemanticDiagnosticCode
     DirectWiredRoutineCall = 460,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // CALL AND ARGUMENT ERRORS (RF-S500 - RF-S549)
+    // CALL AND ARGUMENT ERRORS (RA-S500 - RA-S549)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Wrong number of arguments provided (too few).</summary>
@@ -707,7 +707,7 @@ public enum SemanticDiagnosticCode
     EmitterRunOut = 517,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // COLLECTION LITERAL ERRORS (RF-S550 - RF-S599)
+    // COLLECTION LITERAL ERRORS (RA-S550 - RA-S599)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>List element type mismatch.</summary>
@@ -738,7 +738,7 @@ public enum SemanticDiagnosticCode
     EmptySetWhereDictExpected = 558,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MEMORY TOKEN ERRORS - RAZORFORGE SPECIFIC (RF-S600 - RF-S649)
+    // MEMORY TOKEN ERRORS - REVARE SPECIFIC (RA-S600 - RA-S649)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Cannot return scope-bound token from routine.</summary>
@@ -787,7 +787,7 @@ public enum SemanticDiagnosticCode
     ForeignCallbackMustBeNonCapturing = 637,
 
     /// <summary>A lambda parameter's type cannot be inferred — no annotation and no typed target/context.
-    /// RazorForge is statically typed with no runtime routine lookup, so an un-inferable parameter has no
+    /// Revare is statically typed with no runtime routine lookup, so an un-inferable parameter has no
     /// resolvable type. Annotate it (`(a: S32, b: S32) => …`) or assign the lambda to a typed target.</summary>
     LambdaParameterTypeNotInferable = 638,
 
@@ -811,7 +811,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Cannot downgrade token permission (e.g., .view() on Modifying).</summary>
     TokenDowngradeProhibited = 618,
 
-    /// <summary>Suflae: member access on a possibly-none (`E?`) entity reference that has not been
+    /// <summary>Mielia: member access on a possibly-none (`E?`) entity reference that has not been
     /// null-checked in the current flow. Guard it with `if x isnot none` / `when x is none`.</summary>
     NullableEntityDeref = 619,
 
@@ -942,14 +942,14 @@ public enum SemanticDiagnosticCode
     StealOnSomePaths = 616,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MUTATION INFERENCE ERRORS (RF-S650 - RF-S699)
+    // MUTATION INFERENCE ERRORS (RA-S650 - RA-S699)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Mutation category conflict detected.</summary>
     MutationCategoryConflict = 653,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PROTOCOL CONFORMANCE ERRORS (RF-S700 - RF-S749)
+    // PROTOCOL CONFORMANCE ERRORS (RA-S700 - RA-S749)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Thrown value must implement Crashable protocol.</summary>
@@ -1010,7 +1010,7 @@ public enum SemanticDiagnosticCode
 
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ERROR HANDLING ERRORS (RF-S750 - RF-S799)
+    // ERROR HANDLING ERRORS (RA-S750 - RA-S799)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Error during variant generation.</summary>
@@ -1048,7 +1048,7 @@ public enum SemanticDiagnosticCode
     VariantCaseContainsInvalidType = 764,
 
     /// <summary>RETIRED: index-operator legality is governed by protocol conformance
-    /// (ViewingIndexable/ModifyingIndexable, enforced by RF-S411 OperatorWithoutProtocol), not by type kind.
+    /// (ViewingIndexable/ModifyingIndexable, enforced by RA-S411 OperatorWithoutProtocol), not by type kind.
     /// Code number reserved to avoid reuse.</summary>
     IndexOperatorTypeKindRestriction = 765,
 
@@ -1099,11 +1099,11 @@ public enum SemanticDiagnosticCode
     ValueTupleContainmentViolation = 779,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // LANGUAGE RESTRICTION ERRORS (RF-S800 - RF-S849)
+    // LANGUAGE RESTRICTION ERRORS (RA-S800 - RA-S849)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Feature not available in Suflae.</summary>
-    FeatureNotInSuflae = 800,
+    /// <summary>Feature not available in Mielia.</summary>
+    FeatureNotInMielia = 800,
 
     /// <summary>Danger blocks cannot be nested.</summary>
     NestedDangerBlock = 801,
@@ -1129,13 +1129,13 @@ public enum SemanticDiagnosticCode
     /// `drop x`. Only a type's own `destruct` body calls its members' `destruct`.</summary>
     DestructIsBuilderCalled = 812,
 
-    /// <summary>Suflae cannot use C interop directly.</summary>
-    SuflaeNoCInterop = 810,
+    /// <summary>Mielia cannot use C interop directly.</summary>
+    MieliaNoCInterop = 810,
 
     /// <summary>Two external("C") declarations for the same C symbol disagree on signature.</summary>
     ExternalSignatureMismatch = 811,
 
-    /// <summary>A C routine takes or returns a C string RazorForge made (`CStr`, `CWStr`) where C has a pointer
+    /// <summary>A C routine takes or returns a C string Revare made (`CStr`, `CWStr`) where C has a pointer
     /// (`CStrView`, `CWStrView`).</summary>
     OwnedCStringAtCBoundary = 814,
 
@@ -1150,11 +1150,11 @@ public enum SemanticDiagnosticCode
     /// known point. A resource that must be released at a known point uses <c>using</c> (<c>enter</c>/<c>exit</c>).</summary>
     SharedEntityDestruct = 821,
 
-    /// <summary>Suflae untyped parameter defaults to Data.</summary>
-    SuflaeImplicitDataType = 830,
+    /// <summary>Mielia untyped parameter defaults to Data.</summary>
+    MieliaImplicitDataType = 830,
 
-    /// <summary>Suflae type inference falls back to Data.</summary>
-    SuflaeDataFallback = 831,
+    /// <summary>Mielia type inference falls back to Data.</summary>
+    MieliaDataFallback = 831,
 
     /// <summary>Routine cannot directly return Check[T], which only `check` makes. A routine may return T?.</summary>
     ErrorHandlingTypeAsReturnType = 806,
@@ -1171,7 +1171,7 @@ public enum SemanticDiagnosticCode
     NotRebuildableFromSerial = 813,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // INTRINSIC AND NATIVE CALL ERRORS (RF-S850 - RF-S899)
+    // INTRINSIC AND NATIVE CALL ERRORS (RA-S850 - RA-S899)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Intrinsic call only allowed inside danger block.</summary>
@@ -1190,7 +1190,7 @@ public enum SemanticDiagnosticCode
     UncheckedOperatorOutsideDanger = 854,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // CONCURRENCY AND TASK DEPENDENCY ERRORS (RF-S900 - RF-S949)
+    // CONCURRENCY AND TASK DEPENDENCY ERRORS (RA-S900 - RA-S949)
     // ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -1234,7 +1234,7 @@ public enum SemanticDiagnosticCode
 public static class SemanticDiagnosticCodeExtensions
 {
     /// <summary>
-    /// Formats code as RF-Snnn or SF-Snnn depending on language (e.g., RF-S413, SF-S436). Both
+    /// Formats code as RA-Snnn or MI-Snnn depending on language (e.g., RA-S413, MI-S436). Both
     /// languages share one number space, so the same number means the same rule in either.
     /// </summary>
     public static string ToCodeString(this SemanticDiagnosticCode code, Language language)

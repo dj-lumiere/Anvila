@@ -204,10 +204,10 @@ internal sealed class TypeResolver
         }
 
         TypeSymbol resolved = ResolveTypeCore(typeExpr: typeExpr);
-        // Effective realm = the explicit `RF::`/`SF::` qualifier, else the realm of the file being analyzed:
-        // a bare `List` in a `.sf` file is Suflae's own list when Suflae declares one. Name resolution above
+        // Effective realm = the explicit `RA::`/`MI::` qualifier, else the realm of the file being analyzed:
+        // a bare `List` in a `.mi` file is Mielia's own list when Mielia declares one. Name resolution above
         // prefers that realm already; this swap also covers a generic instance resolved through the other
-        // realm's definition, and turns `RF::System.List` in a `.sf` into the RazorForge list. Null-safe when
+        // realm's definition, and turns `RA::System.List` in a `.mi` into the Revare list. Null-safe when
         // the realm declares no such type (the other realm's type stays).
         string effectiveRealm = typeExpr.Realm ?? _sa._registry.ResolutionRealm;
         if (resolved is TypeSymbol ti && effectiveRealm != ti.Realm &&
@@ -216,10 +216,10 @@ internal sealed class TypeResolver
             resolved = bridged;
         }
 
-        // An `RF::Name` qualifier is an explicit RazorForge/bare-realm reference — it deliberately opts OUT
-        // of Suflae's `entity -> Roamed[entity]` lowering (that is the whole point: an SF wrapper entity
-        // holds a BARE `RF::System.List` inside, without re-roaming it into an infinite `Roamed[List]`). Any
-        // other realm (null = ambient) gets the normal Suflae lowering.
+        // An `RA::Name` qualifier is an explicit Revare/bare-realm reference — it deliberately opts OUT
+        // of Mielia's `entity -> Roamed[entity]` lowering (that is the whole point: an MI wrapper entity
+        // holds a BARE `RA::System.List` inside, without re-roaming it into an infinite `Roamed[List]`). Any
+        // other realm (null = ambient) gets the normal Mielia lowering.
         if (typeExpr.Realm != TypeModel.Realms.Shared)
         {
             resolved = RoamSharedEntitySlot(resolved: resolved);
@@ -230,17 +230,17 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// Suflae representation unification, centralized: in a Suflae USER file an <c>entity E</c> is a
+    /// Mielia representation unification, centralized: in a Mielia USER file an <c>entity E</c> is a
     /// <c>Roamed[E]</c> biased-RC handle, so any entity type resolved through <see cref="ResolveType"/>
     /// (fields, parameters, returns, local annotations, container element types — every slot) is
     /// substituted to <c>Roamed[E]</c> at this single choke point instead of per-site gates.
-    /// <para>Carve-outs: the stdlib is excluded (borrowed RazorForge source keeps bare single-owner
+    /// <para>Carve-outs: the stdlib is excluded (borrowed Revare source keeps bare single-owner
     /// entities), and an already-<c>Roamed[...]</c> type is idempotent (no <c>Roamed[Roamed[E]]</c>). An
     /// <c>E?</c> (<c>Optional[E]</c>) is <c>Optional[Roamed[E]]</c>, the optional of the handle, as any other
     /// <c>T?</c> is <c>Optional[T]</c>.</para>
     /// </summary>
     /// <summary>
-    /// The same Suflae substitution for a slot type that was INFERRED rather than written: a collection
+    /// The same Mielia substitution for a slot type that was INFERRED rather than written: a collection
     /// literal's element, key or value type taken from its elements (<c>[mine]</c> is a
     /// <c>List[Roamed[Account]]</c>, exactly like a written <c>List[Account]</c>).
     /// </summary>
@@ -387,7 +387,7 @@ internal sealed class TypeResolver
         // label; its identity is its positional SLOT in the enclosing scope. So resolve an in-scope
         // parameter BEFORE any global lookup — otherwise a user type whose name matches a stdlib
         // generic's parameter (e.g. `record T` vs `List[T]`) hijacks that parameter during the
-        // generic's body/signature resolution (the RF-S954 monomorphization collision). Checking the
+        // generic's body/signature resolution (the RA-S954 monomorphization collision). Checking the
         // slot here, not a collision-proof renamed string, keeps the label genuinely irrelevant.
         //
         // The shadow is granted ONLY when the name is a GENUINE parameter of a generic-DEFINITION
@@ -982,7 +982,7 @@ internal sealed class TypeResolver
         string root = segments[0];
 
         // The root must be `Me` or an in-scope generic parameter. Anything else (a module path
-        // such as `razorforge/Collections.Dict`) is not a projection — defer to normal lookup.
+        // such as `revare/Collections.Dict`) is not a projection — defer to normal lookup.
         TypeSymbol baseType;
         if (root == "Me")
         {

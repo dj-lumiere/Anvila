@@ -30,12 +30,12 @@ public sealed record SemanticError(
 
     /// <summary>
     /// The code as the user sees it, spelled in the language of the file the error points at
-    /// (RF-S### for a .rf file, SF-S### for a .sf file).
+    /// (RA-S### for a .rr file, MI-S### for a .mi file).
     /// </summary>
     public string CodeString => GrammarCode ?? Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
 
     /// <summary>
-    /// The grammar code (RF-G###) of a parse error carried as a build error, shown in place of the semantic code.
+    /// The grammar code (RA-G###) of a parse error carried as a build error, shown in place of the semantic code.
     /// </summary>
     public string? GrammarCode { get; init; }
 
@@ -45,7 +45,7 @@ public sealed record SemanticError(
 
     /// <summary>
     /// Gets the formatted error message including diagnostic code and location.
-    /// Format: error[RF-S###]: filename:line:column: message (SF-S### for a Suflae file)
+    /// Format: error[RA-S###]: filename:line:column: message (MI-S### for a Mielia file)
     /// </summary>
     public string FormattedMessage =>
         $"error[{CodeString}]: {Location.FileName}:{Location.Line}:{Location.Column}: {SurfaceMessage}";

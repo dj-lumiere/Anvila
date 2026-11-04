@@ -8,7 +8,7 @@ using Builder.Verification.Scopes;
 namespace Builder.Declaration;
 
 /// <summary>
-/// Central registry for all type information in a RazorForge/Suflae program.
+/// Central registry for all type information in a Revare/Mielia program.
 /// Provides unified lookup for types, routines, member variables, and scopes.
 /// </summary>
 public sealed partial class TypeRegistry
@@ -93,7 +93,7 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>Whether a file belongs to <paramref name="language"/>'s own standard library (its folder under the
-    /// standard library root), whatever the file's extension: Suflae's library has RazorForge files of its own.</summary>
+    /// standard library root), whatever the file's extension: Mielia's library has Revare files of its own.</summary>
     public bool IsLanguageLibraryFile(string? filePath, Language language)
     {
         if (string.IsNullOrEmpty(value: _stdlibPath) || string.IsNullOrEmpty(value: filePath))
@@ -117,19 +117,19 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// The language of the code being analyzed or lowered now: RazorForge while a stdlib-source scope is
-    /// open (the standard library is RazorForge source, even in a Suflae build), else <see cref="Language"/>.
+    /// The language of the code being analyzed or lowered now: Revare while a stdlib-source scope is
+    /// open (the standard library is Revare source, even in a Mielia build), else <see cref="Language"/>.
     /// </summary>
     public Language AnalysisLanguage => _stdlibSourceScopes > 0 || SourceIsOtherLanguage
-        ? Language.RazorForge
+        ? Language.Revare
         : Language;
 
     /// <summary>The file of the code being analyzed or lowered now, set by the analyzer as it moves from file to
     /// file. Empty when no file is current.</summary>
     public string SourceFile { get; set; } = string.Empty;
 
-    /// <summary>Whether the code in front of the registry is a program file written in RazorForge inside a build of
-    /// another language (a `.rf` module a Suflae program imports). It is RazorForge source, as the shared standard
+    /// <summary>Whether the code in front of the registry is a program file written in Revare inside a build of
+    /// another language (a `.rr` module a Mielia program imports). It is Revare source, as the shared standard
     /// library is: its entities are not shared, whatever the build's language does.</summary>
     private bool SourceIsOtherLanguage => _stdlibSourceScopes == 0 && IsOtherLanguageFile(filePath: SourceFile) &&
                                           !IsStandardLibraryFile(filePath: SourceFile);
@@ -146,7 +146,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Whether the code being analyzed or lowered now holds entities as shared handles: a build whose language
     /// shares entities, in a file of that language, its own standard library files included. The shared
-    /// RazorForge library keeps single-owner entities in every build.
+    /// Revare library keeps single-owner entities in every build.
     /// </summary>
     public bool EntitiesAreShared => CompilationRules.EntitiesAreShared && !SourceIsOtherLanguage &&
                                      (_stdlibSourceScopes == 0 || ResolutionRealm == CompilationRules.ShortName);
@@ -292,7 +292,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>An entity slot written in <paramref name="filePath"/> as the code there holds it: the shared
     /// <c>Roamed[E]</c> handle in a file that shares entities (see <see cref="EntitiesAreSharedIn"/>), else as
-    /// written. A type written <c>RF::Name</c> keeps RazorForge's single-owner entity.</summary>
+    /// written. A type written <c>RA::Name</c> keeps Revare's single-owner entity.</summary>
     public TypeSymbol RoamEntitySlotIn(SyntaxTree.TypeExpression? written, string? filePath, TypeSymbol resolved)
     {
         return written?.Realm != TypeModel.Realms.Shared &&
@@ -393,13 +393,13 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Opens a scope in which the code being analyzed is standard library source, so
-    /// <see cref="AnalysisLanguage"/> is RazorForge until the scope is disposed. Scopes nest.
+    /// <see cref="AnalysisLanguage"/> is Revare until the scope is disposed. Scopes nest.
     /// </summary>
     public StdlibSourceScope AnalyzingStdlibSource()
     {
         _stdlibSourceScopes++;
         // Standard library source sees the shared routines only, even when a lookup made inside a surface view
-        // (a Suflae surface routine being made concrete) is what asked for the file. Otherwise the shared
+        // (a Mielia surface routine being made concrete) is what asked for the file. Otherwise the shared
         // declarations in it would bind to the surface routines standing in for them.
         var scope = new StdlibSourceScope(registry: this, savedViewSet: _surfaceViewSet, savedView: _surfaceView);
         _surfaceViewSet = false;
@@ -429,12 +429,12 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The AMBIENT realm of the compilation — the world-line a bare (unqualified) type name resolves to:
-    /// <c>"RF"</c> for a RazorForge compile, <c>"SF"</c> for a Suflae compile. A compilation-global
+    /// <c>"RA"</c> for a Revare compile, <c>"MI"</c> for a Mielia compile. A compilation-global
     /// constant (like <see cref="Language"/>): types of this realm key BARE (realm-free
     /// <see cref="TypeSymbol.FullName"/>) so the whole name-resolution hot path stays realm-blind; only the
-    /// NON-ambient (bridged via <c>RF::</c>/<c>SF::</c>) realm gets a realm-marked
+    /// NON-ambient (bridged via <c>RA::</c>/<c>MI::</c>) realm gets a realm-marked
     /// <see cref="TypeSymbol.RealmQualifiedName"/> registry key. Settable so stdlib bodies of each realm are
-    /// analyzed under their own realm — see SemanticVerifier.AnalyzeStdlibBodies. Defaults to <c>"RF"</c>.
+    /// analyzed under their own realm — see SemanticVerifier.AnalyzeStdlibBodies. Defaults to <c>"RA"</c>.
     /// </summary>
     public string AmbientRealm { get; set; } = TypeModel.Realms.Shared;
 
@@ -446,12 +446,12 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The realm whose types a bare (unqualified) name should PREFER during the CURRENT file's analysis —
-    /// set per-file (a <c>.sf</c> file ⇒ <c>"SF"</c>, a <c>.rf</c> file ⇒ <c>"RF"</c>). When it differs
-    /// from <see cref="AmbientRealm"/> (i.e. analyzing an SF file while RF stays the ambient/bare realm),
+    /// set per-file (a <c>.mi</c> file ⇒ <c>"MI"</c>, a <c>.rr</c> file ⇒ <c>"RA"</c>). When it differs
+    /// from <see cref="AmbientRealm"/> (i.e. analyzing an MI file while RA stays the ambient/bare realm),
     /// <see cref="LookupType(string)"/> first tries the <c>{ResolutionRealm}::</c>-keyed type before the
-    /// bare ambient one, so a bare <c>List</c> in a Suflae file resolves to the SF-realm <c>System.List</c>
-    /// (bridged, keyed <c>SF::System.List</c>) yet still falls back to the RF-realm type for anything the SF
-    /// surface has not (re)declared. Defaults to <c>"RF"</c> ⇒ equal to the ambient ⇒ zero effect on RF.
+    /// bare ambient one, so a bare <c>List</c> in a Mielia file resolves to the MI-realm <c>System.List</c>
+    /// (bridged, keyed <c>MI::System.List</c>) yet still falls back to the RA-realm type for anything the MI
+    /// surface has not (re)declared. Defaults to <c>"RA"</c> ⇒ equal to the ambient ⇒ zero effect on RA.
     /// </summary>
     public string ResolutionRealm { get; set; } = TypeModel.Realms.Shared;
 
@@ -868,10 +868,10 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// The routines of one name the code being analyzed sees. A program of a realm that writes its own surface
     /// routines sees each in place of the shared overload called the same way (the same parameter names:
-    /// Suflae's `getitem(index: Int)` stands in for `getitem(index: U64)`), and the shared overloads it does
+    /// Mielia's `getitem(index: Int)` stands in for `getitem(index: U64)`), and the shared overloads it does
     /// not replace. The standard library, the realm's own files included, works with the shared routines only:
-    /// inside, a collection counts with `U64` even where its Suflae surface counts with `Int`. A surface
-    /// routine that stands in for no shared one (Suflae's `Array.erase`) is the realm's own addition, so the
+    /// inside, a collection counts with `U64` even where its Mielia surface counts with `Int`. A surface
+    /// routine that stands in for no shared one (Mielia's `Array.erase`) is the realm's own addition, so the
     /// realm's library files see it too.
     /// </summary>
     internal List<RoutineInfo> VisibleOverloads(List<RoutineInfo> overloads)
@@ -907,7 +907,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Whether the realm's <paramref name="surface"/> routine stands in for the <paramref name="shared"/> one: it is
     /// called the same way (the same parameter names), and either takes the same types or the shared one is not the
-    /// type's own operation on itself. Suflae's <c>getitem(index: Int)</c> stands in for <c>getitem(index: U64)</c>,
+    /// type's own operation on itself. Mielia's <c>getitem(index: Int)</c> stands in for <c>getitem(index: U64)</c>,
     /// but its <c>Decimal.mul(you: Int)</c> is an addition next to <c>Decimal.mul(you: Decimal)</c>, not a
     /// replacement of it.
     /// </summary>
@@ -998,7 +998,7 @@ public sealed partial class TypeRegistry
     /// <summary>Presets indexed by module-qualified name for unambiguous lookup.</summary>
     private readonly Dictionary<string, VariableInfo> _presetsByQualifiedName = new();
 
-    /// <summary>Suflae module-level <c>global</c> variables (mutable, session-lifetime), accessible
+    /// <summary>Mielia module-level <c>global</c> variables (mutable, session-lifetime), accessible
     /// across files within their module. Separate from presets so they are NOT inlined.</summary>
     private readonly Dictionary<string, VariableInfo> _globals = new();
 
@@ -1052,11 +1052,11 @@ public sealed partial class TypeRegistry
         RegisterErrorHandlingTypes();
 
         // Load System module eagerly - System types are fundamental to every program.
-        // NOTE: user-code bare names still resolve to the RF-realm System (world-line) — a `.sf` file's bare
-        // `List` is the RF `System.List` roamed, which WORKS end-to-end. Flipping the user resolution realm to
-        // SF (so bare `List` → the SF wrapper) is DEFERRED: it triggers a pipeline-wide realm cascade
+        // NOTE: user-code bare names still resolve to the RA-realm System (world-line) — a `.mi` file's bare
+        // `List` is the RA `System.List` roamed, which WORKS end-to-end. Flipping the user resolution realm to
+        // MI (so bare `List` → the MI wrapper) is DEFERRED: it triggers a pipeline-wide realm cascade
         // (construction create-binding, reachability create-seeding, codegen emission) not yet complete —
-        // see [[sf-real-stdlib-direction]]. The SF wrapper is reachable explicitly via `SF::List`.
+        // see [[sf-real-stdlib-direction]]. The MI wrapper is reachable explicitly via `MI::List`.
         LoadCoreModule();
     }
 
@@ -1111,14 +1111,14 @@ public sealed partial class TypeRegistry
         return _stdlibLoader.ParseErrors;
     }
 
-    /// <summary>The standard library's <c>@rf("...")</c> declarations (see <see cref="RfBindingCheck"/>).</summary>
-    internal IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings =>
-        _stdlibLoader?.RfBindings ?? [];
+    /// <summary>The standard library's <c>@ra("...")</c> declarations (see <see cref="RaBindingCheck"/>).</summary>
+    internal IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RaBindings =>
+        _stdlibLoader?.RaBindings ?? [];
 
-    /// <summary>The <c>Module.Name</c> of every type RazorForge's library declares (see
-    /// <see cref="StdlibLoader.RazorForgeLibraryTypes"/>).</summary>
-    internal IReadOnlySet<string> RazorForgeLibraryTypes =>
-        _stdlibLoader?.RazorForgeLibraryTypes ?? new HashSet<string>();
+    /// <summary>The <c>Module.Name</c> of every type Revare's library declares (see
+    /// <see cref="StdlibLoader.RevareLibraryTypes"/>).</summary>
+    internal IReadOnlySet<string> RevareLibraryTypes =>
+        _stdlibLoader?.RevareLibraryTypes ?? new HashSet<string>();
 
     /// <summary>
     /// Gets the parsed stdlib programs (for code generation).
@@ -1149,7 +1149,7 @@ public sealed partial class TypeRegistry
         _restoredStdlibPrograms = programs;
         // The snapshot restores _presets (one entry per name) but not the (file, name) declaration sites, so
         // a restored build would treat every stdlib `secret preset` use as coming from a foreign file
-        // (FileDeclaresPreset false → RF-S secret-access error, the argument typed as an error, overloads
+        // (FileDeclaresPreset false → RA-S secret-access error, the argument typed as an error, overloads
         // chosen differently from a cold build). The restored programs carry the declarations: re-record
         // their sites exactly as RegisterPreset does in a cold build.
         foreach ((Program program, string _, string _) in programs)
@@ -1292,7 +1292,7 @@ public sealed partial class TypeRegistry
 
         // Bare module name (e.g. `import Collections`) — load every file declaring `module <Name>`
         // via the multi-file overload. Filesystem fallback can't handle directory-as-module unless
-        // the directory contains a same-named anchor file (e.g. BuilderQuery/BuilderQuery.rf).
+        // the directory contains a same-named anchor file (e.g. BuilderQuery/BuilderQuery.rr).
         // A module path whose module is several files (`import Text/Patterns`) loads the same way: an import path
         // otherwise resolves to one of its files.
         bool isBareModuleName =
@@ -1352,7 +1352,7 @@ public sealed partial class TypeRegistry
         out string? effectiveModule)
     {
         // Dedup by RESOLVED FILE PATH: the file may already be registered under a different
-        // import-path alias (e.g. the build pipeline pre-marked `module Fun2` from Fun2/A.rf,
+        // import-path alias (e.g. the build pipeline pre-marked `module Fun2` from Fun2/A.rr,
         // and we're now serving `import Fun2.A` which resolves back to that same file). Serve
         // it from the existing registration instead of re-parsing/re-registering it, which
         // would raise duplicate-definition errors.
@@ -1459,9 +1459,9 @@ public sealed partial class TypeRegistry
     /// The registry key for a type: the realm-free <see cref="TypeSymbol.FullName"/> when the type belongs to
     /// the ambient realm (the common case — keeps the name-resolution hot path realm-blind), or the
     /// realm-marked <see cref="TypeSymbol.RealmQualifiedName"/> when it is a BRIDGED (non-ambient) realm type,
-    /// so a bridged <c>RF::System.List</c> never collides with the ambient <c>System.List</c> when both
-    /// world-lines coexist in one compilation. When <see cref="AmbientRealm"/> is the default <c>"RF"</c> and
-    /// every type is <c>Realm="RF"</c>, this is exactly <see cref="TypeSymbol.FullName"/> (no behavior change).
+    /// so a bridged <c>RA::System.List</c> never collides with the ambient <c>System.List</c> when both
+    /// world-lines coexist in one compilation. When <see cref="AmbientRealm"/> is the default <c>"RA"</c> and
+    /// every type is <c>Realm="RA"</c>, this is exactly <see cref="TypeSymbol.FullName"/> (no behavior change).
     /// </summary>
     internal string RealmRegistryKey(TypeSymbol type)
     {
@@ -1472,10 +1472,10 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The routine-index key for <paramref name="routine"/>: its realm-free
-    /// <see cref="RoutineInfo.RegistryKey"/> when its owner is ambient-realm (the common case — RF routines
-    /// in an RF compile, SF routines in an SF compile keep bare keys), or that key prefixed with
-    /// <c>{ownerRealm}::</c> when the owner is a BRIDGED realm, so a bridged <c>RF::System.List.add_last</c>
-    /// never collides with / shadows the ambient <c>System.List.add_last</c> (the RF-S406 creator clash).
+    /// <see cref="RoutineInfo.RegistryKey"/> when its owner is ambient-realm (the common case — RA routines
+    /// in an RA compile, MI routines in an MI compile keep bare keys), or that key prefixed with
+    /// <c>{ownerRealm}::</c> when the owner is a BRIDGED realm, so a bridged <c>RA::System.List.add_last</c>
+    /// never collides with / shadows the ambient <c>System.List.add_last</c> (the RA-S406 creator clash).
     /// Owner-less (free) routines are never realm-bridged, so they use the bare key.
     /// </summary>
     public static string RealmRoutineKey(RoutineInfo routine)
@@ -1916,8 +1916,8 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Looks up a type by name IN A SPECIFIC REALM — the realm-aware sibling of <see cref="LookupType(string)"/>.
     /// The ambient realm keys bare (delegates to the realm-blind lookup); a bridged realm is keyed by
-    /// <see cref="TypeSymbol.RealmQualifiedName"/> (<c>{realm}::{FullName}</c>), so this reaches the SF-realm
-    /// <c>System.List</c> even while the RazorForge-realm <c>System.List</c> occupies the bare key (and vice
+    /// <see cref="TypeSymbol.RealmQualifiedName"/> (<c>{realm}::{FullName}</c>), so this reaches the MI-realm
+    /// <c>System.List</c> even while the Revare-realm <c>System.List</c> occupies the bare key (and vice
     /// versa). Returns null when no type of that realm is registered (caller decides whether to fall back).
     /// </summary>
     public TypeSymbol? LookupType(string name, string realm)
@@ -1943,10 +1943,10 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Looks up a type by name, PREFERRING the current <see cref="ResolutionRealm"/> (per-file) over the
-    /// bare ambient realm. When resolution realm == ambient (every RF compile, and RF files in an SF
-    /// compile) this is exactly the plain ambient lookup — zero behavioral change. When analyzing an SF
-    /// file (resolution realm SF, ambient RF) a bare name that has an SF-realm (bridged) type resolves to
-    /// it first, else falls through to the RF-realm type.
+    /// bare ambient realm. When resolution realm == ambient (every RA compile, and RA files in an MI
+    /// compile) this is exactly the plain ambient lookup — zero behavioral change. When analyzing an MI
+    /// file (resolution realm MI, ambient RA) a bare name that has an MI-realm (bridged) type resolves to
+    /// it first, else falls through to the RA-realm type.
     /// </summary>
     public TypeSymbol? LookupType(string name)
     {
@@ -1963,7 +1963,7 @@ public sealed partial class TypeRegistry
                 : hit;
         }
 
-        // A type only the file's realm declares (Suflae's `NegativeIndexError`), by its name or System-prefixed.
+        // A type only the file's realm declares (Mielia's `NegativeIndexError`), by its name or System-prefixed.
         return _types.TryGetValue(key: $"{ResolutionRealm}::{name}", value: out TypeSymbol? own) ||
                (!name.Contains(value: '.') &&
                 _types.TryGetValue(key: $"{ResolutionRealm}::System.{name}", value: out own))
@@ -2063,7 +2063,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Re-resolves <paramref name="type"/> into the <paramref name="realm"/> world-line — the mechanism
-    /// behind an explicit <c>RF::</c>/<c>SF::</c> qualifier. Name resolution is realm-blind and always yields
+    /// behind an explicit <c>RA::</c>/<c>MI::</c> qualifier. Name resolution is realm-blind and always yields
     /// the AMBIENT-realm type (keyed bare); this swaps it to the bridged realm's equivalent, which the
     /// registry keys by <see cref="TypeSymbol.RealmQualifiedName"/> (<c>{realm}::{FullName}</c>). Returns null
     /// when no such bridged type is registered (caller keeps the ambient resolution — for a pure-ambient
@@ -2087,9 +2087,9 @@ public sealed partial class TypeRegistry
         };
         if (genericDef != null && type.TypeArguments is { Count: > 0 } args)
         {
-            // The target realm's DEFINITION is keyed BARE when it is the ambient realm (RF types under an
-            // RF-ambient compile), or `{realm}::`-marked when bridged. Using the ambient (bare) lookup for
-            // the ambient case is what lets `RF::System.List` reach the RF-realm list (keyed bare `System.List`).
+            // The target realm's DEFINITION is keyed BARE when it is the ambient realm (RA types under an
+            // RA-ambient compile), or `{realm}::`-marked when bridged. Using the ambient (bare) lookup for
+            // the ambient case is what lets `RA::System.List` reach the RA-realm list (keyed bare `System.List`).
             TypeSymbol? tDef;
             if (realm == AmbientRealm)
             {
@@ -2213,20 +2213,20 @@ public sealed partial class TypeRegistry
             $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name))}]";
         // Module-qualified full key: used when @llvm_ir type args are rewritten to fully-qualified
         // names by GenericAstRewriter (e.g. "Collections.BTreeSetNode[System.S64]"). A BRIDGED (non-ambient)
-        // realm def gets a leading `RF::`/`SF::` so a bridged `RF::System.List[S64]` keys distinctly from the
+        // realm def gets a leading `RA::`/`MI::` so a bridged `RA::System.List[S64]` keys distinctly from the
         // ambient `System.List[S64]`; the ambient realm adds no prefix (unchanged for a single-realm compile).
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        // An argument of the other realm is marked too: `Accessing[SF::System.List[T]]` is not
+        // An argument of the other realm is marked too: `Accessing[MI::System.List[T]]` is not
         // `Accessing[System.List[T]]`.
         bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
         string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument
             ? $"{realmPrefix}{genericDef.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: ResolutionArgumentKey))}]"
             : null;
 
-        // The module-qualified key is DISTINCT across modules/realms (RazorForge `System.List` vs the
-        // Suflae-realm overlay `Suflae.List`), so check it FIRST — the bare fullKey/shortKey below are
+        // The module-qualified key is DISTINCT across modules/realms (Revare `System.List` vs the
+        // Mielia-realm overlay `Mielia.List`), so check it FIRST — the bare fullKey/shortKey below are
         // module-blind aliases that a same-named other-module type can occupy first-wins.
         if (TryGetCachedResolution(fullKey: fullKey,
                 shortKey: shortKey,
@@ -2338,7 +2338,7 @@ public sealed partial class TypeRegistry
         }
 
         // Bare fullKey: accept only when the cached resolution's generic DEFINITION is the one requested
-        // (no-op for single-realm types; rejects a Suflae `List[System.S32]` for a System.List request).
+        // (no-op for single-realm types; rejects a Mielia `List[System.S32]` for a System.List request).
         if (_resolutions.TryGetValue(key: fullKey, value: out existing) &&
             ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef) &&
             ResolutionArgumentRealmsMatch(resolved: existing, typeArguments: typeArguments))
@@ -2472,8 +2472,8 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>Whether a cached resolution's arguments come from the same realms as the requested ones. The
-    /// bare keys name arguments without their realm, so an instance over Suflae's own <c>List</c> must not be
-    /// handed back for RazorForge's, nor the other way round. Arguments of the ambient realm on both sides
+    /// bare keys name arguments without their realm, so an instance over Mielia's own <c>List</c> must not be
+    /// handed back for Revare's, nor the other way round. Arguments of the ambient realm on both sides
     /// match as before.</summary>
     private bool ResolutionArgumentRealmsMatch(TypeSymbol resolved, List<TypeSymbol> typeArguments)
     {
@@ -2518,7 +2518,7 @@ public sealed partial class TypeRegistry
     /// True when a cached resolution's generic DEFINITION is the one being requested (matched by
     /// module-qualified FullName). Guards the bare, module-blind resolution-cache aliases against
     /// returning a same-NAMED type from a DIFFERENT module/realm — a request for `System.List[S32]` must
-    /// not be satisfied by a cached Suflae-realm `Suflae.List[S32]` sharing the bare key `List[System.S32]`.
+    /// not be satisfied by a cached Mielia-realm `Mielia.List[S32]` sharing the bare key `List[System.S32]`.
     /// For single-realm types (one type of a given name) the definition matches itself, so this is a
     /// no-op; it only bites on genuine cross-module name collisions. Falls back to bare-name equality
     /// when the cached instance records no definition (older/aliased instances).
@@ -2532,9 +2532,9 @@ public sealed partial class TypeRegistry
             ProtocolTypeSymbol p => p.GenericDefinition,
             _ => null
         };
-        // Realm must ALSO match: `FullName`/`BareName` are realm-FREE, so a Suflae-realm `System.List[S32]`
-        // would otherwise satisfy a request for the RazorForge-realm `System.List` def via the module-blind
-        // bare alias — handing back the SF wrapper for an `RF::System.List[T]()` construction, whose `create`
+        // Realm must ALSO match: `FullName`/`BareName` are realm-FREE, so a Mielia-realm `System.List[S32]`
+        // would otherwise satisfy a request for the Revare-realm `System.List` def via the module-blind
+        // bare alias — handing back the MI wrapper for an `RA::System.List[T]()` construction, whose `create`
         // then self-recurses. Comparing realm keeps the two world-lines' resolutions distinct.
         return resolvedDef == null
             ? resolved.BareName == genericDef.BareName && resolved.Realm == genericDef.Realm
@@ -2551,11 +2551,11 @@ public sealed partial class TypeRegistry
         string fullKey =
             $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.FullName))}]";
         // Module-qualified key first (distinct across modules/realms); mirrors GetOrCreateResolution
-        // incl. the bridged-realm `RF::`/`SF::` prefix (ambient realm adds none).
+        // incl. the bridged-realm `RA::`/`MI::` prefix (ambient realm adds none).
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        // An argument of the other realm is marked too: `Accessing[SF::System.List[T]]` is not
+        // An argument of the other realm is marked too: `Accessing[MI::System.List[T]]` is not
         // `Accessing[System.List[T]]`.
         bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
         string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument
@@ -2956,7 +2956,7 @@ public sealed partial class TypeRegistry
     /// Auto-registers <c>serialize</c> if EVERY element is serializable — or a routine (the derive
     /// template boxes a routine element's signature via <c>represent</c>). A tuple can hold otherwise-
     /// unserializable elements (unlike a record), so gate on the elements. Generic-parameter elements
-    /// (<c>Tuple[U64, T]</c>) are excluded — the body clones per CONCRETE instantiation (RF-S959).
+    /// (<c>Tuple[U64, T]</c>) are excluded — the body clones per CONCRETE instantiation (RA-S959).
     /// </summary>
     private void RegisterTupleSerializeRoutine(TupleTypeSymbol newType, List<TypeSymbol> elementTypes)
     {
@@ -3457,7 +3457,7 @@ public sealed partial class TypeRegistry
     /// <param name="type">The type of the variable.</param>
     /// <param name="isPreset">Whether this is a preset (build-time constant).</param>
     /// <param name="presetValue">The preset value.</param>
-    /// <param name="isGlobal">Whether this is a Suflae module-level <c>global</c> variable (mutable,
+    /// <param name="isGlobal">Whether this is a Mielia module-level <c>global</c> variable (mutable,
     /// session-lifetime). When true the declared variable carries <see cref="VariableInfo.IsGlobal"/>
     /// so identifier resolution can stamp references with <c>IsModuleGlobal</c>.</param>
     /// <param name="location">Source location for error reporting; stored on the variable for

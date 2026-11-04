@@ -36,14 +36,14 @@ public sealed class PackageInfo
     public string? Repository { get; set; }
 
     /// <summary>
-    /// Gets the RazorForge release the package's sources are written for (what <c>migrate</c> reads).
+    /// Gets the Revare release the package's sources are written for (what <c>migrate</c> reads).
     /// </summary>
-    public string? RazorForgeVersion { get; set; }
+    public string? RevareVersion { get; set; }
 
     /// <summary>
-    /// Gets the Suflae release the package's sources are written for.
+    /// Gets the Mielia release the package's sources are written for.
     /// </summary>
-    public string? SuflaeVersion { get; set; }
+    public string? MieliaVersion { get; set; }
 }
 
 /// <summary>
@@ -105,8 +105,8 @@ public sealed class BuildTarget
     public string Mode { get; set; } = "debug";
 
     /// <summary>Route builds through the warm compile daemon when one is running (was the
-    /// <c>RAZORFORGE_DAEMON</c> env var). Controlled by the <c>[target] use-daemon</c> field. The ORC-JIT
-    /// dev-loop path (was <c>RAZORFORGE_JIT</c>) is now selected by the <c>mode = "debug-jit"</c> build mode.</summary>
+    /// <c>REVARE_DAEMON</c> env var). Controlled by the <c>[target] use-daemon</c> field. The ORC-JIT
+    /// dev-loop path (was <c>REVARE_JIT</c>) is now selected by the <c>mode = "debug-jit"</c> build mode.</summary>
     public bool UseDaemon { get; set; }
 
     /// <summary>Enable the incremental JIT dev loop (resident-JIT (B)): with <c>mode="debug-jit"</c>, run
@@ -120,22 +120,22 @@ public sealed class BuildTarget
     public bool Incremental { get; set; }
 
     /// <summary>The backend that translates the program, by registered name (<c>[target] backend</c>):
-    /// <c>"llvm"</c> (the default, the LLVM emitter) or another registered backend such as Tessera.</summary>
+    /// <c>"llvm"</c> (the default, the LLVM emitter) or another registered backend such as Lapila.</summary>
     public string Backend { get; set; } = "llvm";
 }
 
 /// <summary>
 /// The <c>[debug]</c> section — internal builder diagnostics, formerly the <c>RF_*</c> /
-/// <c>RAZORFORGE_JIT_TRACE</c> environment variables. All default off; niche developer tooling.
+/// <c>REVARE_JIT_TRACE</c> environment variables. All default off; niche developer tooling.
 /// </summary>
 public sealed class DebugOptions
 {
-    /// <summary>Write the post-desugar AST to a <c>.rf.desugared</c> file alongside the build
+    /// <summary>Write the post-desugar AST to a <c>.rr.desugared</c> file alongside the build
     /// (<c>dump-ast</c>).</summary>
     public bool DumpAst { get; set; }
 
     /// <summary>Print compile timing — BOTH the coarse <c>[phase]</c> totals and the granular <c>[SA]</c>
-    /// sub-phases (<c>timing</c>). Merges the former separate <c>sa-timing</c> + <c>RAZORFORGE_PHASE_TIMING</c>,
+    /// sub-phases (<c>timing</c>). Merges the former separate <c>sa-timing</c> + <c>REVARE_PHASE_TIMING</c>,
     /// which were redundant (phase-timing already forced sa-timing on).</summary>
     public bool Timing { get; set; }
 
@@ -155,9 +155,9 @@ public sealed class DebugOptions
     /// <c>.ll</c>) and suppresses the post-run <c>.ll</c> cleanup.</summary>
     public bool DumpIr { get; set; }
 
-    /// <summary>Write the program's Tessera translation as <c>&lt;entry&gt;.te</c> next to the source
-    /// (<c>dump-tessera</c>), whichever backend builds it.</summary>
-    public bool DumpTessera { get; set; }
+    /// <summary>Write the program's Lapila translation as <c>&lt;entry&gt;.li</c> next to the source
+    /// (<c>dump-lapila</c>), whichever backend builds it.</summary>
+    public bool DumpLapila { get; set; }
 
     /// <summary>Path to dump the routine-reachability set (<c>reachability-dump</c>); null = off.</summary>
     public string? ReachabilityDump { get; set; }

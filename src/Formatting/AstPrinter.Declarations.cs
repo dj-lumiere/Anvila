@@ -759,7 +759,7 @@ internal sealed partial class AstPrinter
         }
 
         if (body.Statements.Count == 0 && (routine.Annotations.Contains(item: "innate") ||
-                                           Builder.Declaration.RfBindingCheck.IsBinding(declaration: routine)))
+                                           Builder.Declaration.RaBindingCheck.IsBinding(declaration: routine)))
         {
             return;
         }

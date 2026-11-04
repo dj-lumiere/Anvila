@@ -5,25 +5,25 @@ using TypeModel.Types;
 namespace Builder.Declaration;
 
 /// <summary>
-/// Checks every <c>@rf("...")</c> declaration of the standard library against the RazorForge declaration it names. Such
-/// a declaration is how Suflae's library shows a shared type or routine in Suflae's own words: it creates nothing and
-/// binds to the shared declaration, so the documentation, hover and go-to-definition show Suflae's view of it. A name
+/// Checks every <c>@ra("...")</c> declaration of the standard library against the Revare declaration it names. Such
+/// a declaration is how Mielia's library shows a shared type or routine in Mielia's own words: it creates nothing and
+/// binds to the shared declaration, so the documentation, hover and go-to-definition show Mielia's view of it. A name
 /// that resolves to nothing, to another kind of declaration, or to a routine with other parameters means the two
 /// libraries have drifted apart, which <c>validate-stdlib</c> reports.
 /// </summary>
-internal static class RfBindingCheck
+internal static class RaBindingCheck
 {
-    /// <summary>The annotation that binds a declaration to a RazorForge one, as the parser stores it.</summary>
-    private const string Prefix = "rf(";
+    /// <summary>The annotation that binds a declaration to a Revare one, as the parser stores it.</summary>
+    private const string Prefix = "ra(";
 
-    /// <summary>Whether the declaration is an <c>@rf("...")</c> binding.</summary>
+    /// <summary>Whether the declaration is an <c>@ra("...")</c> binding.</summary>
     internal static bool IsBinding(SyntaxTree.Declaration declaration)
     {
         return AnnotationsOf(declaration: declaration)
                   ?.Any(predicate: a => a.StartsWith(value: Prefix, comparisonType: StringComparison.Ordinal)) == true;
     }
 
-    /// <summary>The RazorForge name an <c>@rf("...")</c> declaration binds to, or null when it is written without one.</summary>
+    /// <summary>The Revare name an <c>@ra("...")</c> declaration binds to, or null when it is written without one.</summary>
     internal static string? TargetOf(SyntaxTree.Declaration declaration)
     {
         string? annotation = AnnotationsOf(declaration: declaration)
@@ -48,7 +48,7 @@ internal static class RfBindingCheck
     /// </summary>
     internal static void LoadModules(TypeRegistry registry)
     {
-        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RfBindings
+        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RaBindings
                     .GroupBy(keySelector: b => b.Module)
                     .Select(selector: g => g.First())
                     .ToList())
@@ -61,16 +61,16 @@ internal static class RfBindingCheck
         }
     }
 
-    /// <summary>The problems found, one line each with the file and line of the <c>@rf</c> declaration.</summary>
+    /// <summary>The problems found, one line each with the file and line of the <c>@ra</c> declaration.</summary>
     internal static List<string> Check(TypeRegistry registry)
     {
         var errors = new List<string>();
-        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RfBindings.ToList())
+        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RaBindings.ToList())
         {
             string at = $"{file}:{declaration.Location.Line}";
             if (TargetOf(declaration: declaration) is not { } target)
             {
-                errors.Add(item: $"{at}: @rf needs the RazorForge name in quotes, like @rf(\"S64\").");
+                errors.Add(item: $"{at}: @ra needs the Revare name in quotes, like @ra(\"S64\").");
                 continue;
             }
 
@@ -87,17 +87,17 @@ internal static class RfBindingCheck
     }
 
     /// <summary>
-    /// What Suflae's programs may use of RazorForge's library: the name of each bound type, and each bound routine as
+    /// What Mielia's programs may use of Revare's library: the name of each bound type, and each bound routine as
     /// its call shape (see <see cref="ShapeOf(RoutineInfo)"/>). A protocol binding lends the shapes of the routines it
     /// lists.
     /// </summary>
     /// <param name="registry">The registry whose bindings are read.</param>
     /// <param name="openOnly">True to leave out the <c>secret</c> bindings: what a program may name, not only what
-    ///     Suflae's library (and the builder's lowerings of it) may.</param>
+    ///     Mielia's library (and the builder's lowerings of it) may.</param>
     internal static HashSet<string> BoundNames(TypeRegistry registry, bool openOnly = false)
     {
         var bound = new HashSet<string>(comparer: StringComparer.Ordinal);
-        foreach ((SyntaxTree.Declaration declaration, _, _) in registry.RfBindings)
+        foreach ((SyntaxTree.Declaration declaration, _, _) in registry.RaBindings)
         {
             if (TargetOf(declaration: declaration) is not { } target ||
                 openOnly && VisibilityOf(declaration: declaration) == VisibilityModifier.Secret)
@@ -196,7 +196,7 @@ internal static class RfBindingCheck
         return registry.LookupType(name: name) ?? registry.LookupType(name: $"{module}.{name}");
     }
 
-    /// <summary>A type binding: the RazorForge type exists, is the same kind, and has every member variable, case,
+    /// <summary>A type binding: the Revare type exists, is the same kind, and has every member variable, case,
     /// flag or protocol routine the declaration lists (a declaration may list fewer: it shows what the language
     /// shows).</summary>
     private static string? CheckType(TypeRegistry registry, SyntaxTree.Declaration declaration, string target,
@@ -204,7 +204,7 @@ internal static class RfBindingCheck
     {
         if (FindType(registry: registry, name: target, module: module) is not { } type)
         {
-            return $"@rf(\"{target}\") names no RazorForge type.";
+            return $"@ra(\"{target}\") names no Revare type.";
         }
 
         (string Kind, bool Same) kind = declaration switch
@@ -221,7 +221,7 @@ internal static class RfBindingCheck
         };
         if (!kind.Same)
         {
-            return $"@rf(\"{target}\") on a {kind.Kind} names a {type.Category} in RazorForge.";
+            return $"@ra(\"{target}\") on a {kind.Kind} names a {type.Category} in Revare.";
         }
 
         List<SyntaxTree.Declaration>? members = declaration switch
@@ -242,12 +242,12 @@ internal static class RfBindingCheck
             MemberVariableInfo? match = sharedFields.FirstOrDefault(predicate: m => m.Name == field.Name);
             if (match == null)
             {
-                return $"'{field.Name}' is not a member variable of RazorForge's {target}.";
+                return $"'{field.Name}' is not a member variable of Revare's {target}.";
             }
 
             if (!SameType(written: field.Type, shared: match.Type))
             {
-                return $"'{field.Name}' is {match.Type.Name} in RazorForge's {target}, not {field.Type?.Name}.";
+                return $"'{field.Name}' is {match.Type.Name} in Revare's {target}, not {field.Type?.Name}.";
             }
         }
 
@@ -257,7 +257,7 @@ internal static class RfBindingCheck
                 foreach (ChoiceCase choiceCase in choice.Cases.Where(predicate: c =>
                              sharedChoice.Cases.All(predicate: s => s.Name != c.Name)))
                 {
-                    return $"'{choiceCase.Name}' is not a case of RazorForge's {target}.";
+                    return $"'{choiceCase.Name}' is not a case of Revare's {target}.";
                 }
 
                 break;
@@ -265,7 +265,7 @@ internal static class RfBindingCheck
                 foreach (string flag in flags.Members.Where(predicate: f =>
                              sharedFlags.Members.All(predicate: s => s.Name != f)))
                 {
-                    return $"'{flag}' is not a flag of RazorForge's {target}.";
+                    return $"'{flag}' is not a flag of Revare's {target}.";
                 }
 
                 break;
@@ -288,7 +288,7 @@ internal static class RfBindingCheck
                                                m.ParameterNames.Where(predicate: n => n != "me")
                                                 .SequenceEqual(second: names))))
                     {
-                        return $"RazorForge's {target} has no routine {signature.Name}" +
+                        return $"Revare's {target} has no routine {signature.Name}" +
                                $"({string.Join(separator: ", ", values: names)}).";
                     }
                 }
@@ -300,7 +300,7 @@ internal static class RfBindingCheck
     }
 
     /// <summary>Whether a type written in the declaration names the shared type, compared by name without type
-    /// arguments. A missing written type matches anything. Suflae has no access tokens, so a shared
+    /// arguments. A missing written type matches anything. Mielia has no access tokens, so a shared
     /// <c>Viewing[T]</c> or <c>Modifying[T]</c> is written as the <c>T</c> it reaches.</summary>
     private static bool SameType(TypeExpression? written, TypeSymbol? shared)
     {
@@ -381,7 +381,7 @@ internal static class RfBindingCheck
 
         if (named.Count == 0)
         {
-            return $"RazorForge has no routine {what}.";
+            return $"Revare has no routine {what}.";
         }
 
         List<string> parameters = routine.Parameters.Where(predicate: p => p.Name != "me")
@@ -393,7 +393,7 @@ internal static class RfBindingCheck
                                         .ToList();
         if (shaped.Count == 0)
         {
-            return $"RazorForge's {what} takes no ({string.Join(separator: ", ", values: parameters)}).";
+            return $"Revare's {what} takes no ({string.Join(separator: ", ", values: parameters)}).";
         }
 
         // Parameter and return types are compared by name as written, without type arguments. A creator's return
@@ -411,6 +411,6 @@ internal static class RfBindingCheck
         });
         return matches
             ? null
-            : $"RazorForge's {what} has other parameter or return types than this declaration.";
+            : $"Revare's {what} has other parameter or return types than this declaration.";
     }
 }

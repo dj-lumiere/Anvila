@@ -447,7 +447,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // which hands the payload's SINGLE reference to the caller and empties the carrier
         // (`present = false`), the model a `Optional[Entity]` requires (an entity cannot be co-owned).
         // NOTE: `unwrap`/`!!` does NOT reach here — it returns `me.value.copy()` (an explicit
-        // co-owning duplicate in Optional.rf; `copy` is the unified record/variant/managed-leaf
+        // co-owning duplicate in Optional.rr; `copy` is the unified record/variant/managed-leaf
         // duplication verb, so a Copyable variant like SerialValue resolves via its arm-walk copy),
         // a CallExpression, so the carrier stays a co-owner and the caller gets an independent
         // reference (correct for record/value/managed payloads).
@@ -710,7 +710,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
 
     /// <summary>An element of an inline array literal that builds a record or tuple in place (a construction call or a
     /// creator): what it is built from is copied into it. Anything else, a bare name included, stays as it is. An
-    /// entity built in place (a shared handle in Suflae, a worker's job) is not copied from what it is built from,
+    /// entity built in place (a shared handle in Mielia, a worker's job) is not copied from what it is built from,
     /// and a variant boxes its payload.</summary>
     private Expression BuildInPlace(Expression element)
     {
@@ -800,12 +800,12 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private BinaryExpression StripStealFromAssign(BinaryExpression bin)
     {
         // Field-write to an RC-wrapper / Roamed field: codegen owns the release-old + retain-new RC
-        // (isRoamedField), so retaining the RHS here too DOUBLE-counts — an SF self-cycle
+        // (isRoamedField), so retaining the RHS here too DOUBLE-counts — an MI self-cycle
         // (`a.next = a`) then never reaches refcount 0 and cc_collect reclaims nothing. Recurse for
         // nested copies but do NOT retain the top-level RHS. Local / non-RC-field targets keep the
         // normal retain (managed leaves like Text ARE pass-owned).
-        // That retain-new comes from Suflae's own entity lowering, which writes the `.share()` before this pass runs.
-        // RazorForge has no such step (a program does not write `.share()`: `=` copies a handle), so there the field
+        // That retain-new comes from Mielia's own entity lowering, which writes the `.share()` before this pass runs.
+        // Revare has no such step (a program does not write `.share()`: `=` copies a handle), so there the field
         // write is an ordinary copy position and the handle gains its holder here.
         if (bin.Left is MemberExpression lhsm && IsRcWrapperType(type: lhsm.ResolvedType) &&
             (bin.Location?.FileName is not { } file ||

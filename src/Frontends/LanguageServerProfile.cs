@@ -5,7 +5,7 @@ namespace Builder.Frontends;
 /// <summary>
 /// What one language's Language Server says and serves: the shared engine (<c>Builder.Execution.LspServer</c>)
 /// does the protocol, the documents and the analysis, and asks the profile for everything that is the
-/// language's own. RazorForge and Suflae each run their own server (<c>razorforge lsp</c>, <c>suflae lsp</c>), and
+/// language's own. Revare and Mielia each run their own server (<c>revare lsp</c>, <c>mielia lsp</c>), and
 /// an editor routes each file to the server of its extension.
 /// </summary>
 public abstract class LanguageServerProfile

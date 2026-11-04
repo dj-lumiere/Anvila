@@ -195,7 +195,7 @@ public partial class LlvmEmitter
         // Look up the variable in local variables first
         if (!_localVariables.TryGetValue(key: identifier.Name, value: out TypeSymbol? varType))
         {
-            // Suflae module-level `global`: load from its `@global` symbol.
+            // Mielia module-level `global`: load from its `@global` symbol.
             if (TryGetModuleGlobal(name: identifier.Name, variable: identifier.ResolvedVariable,
                     slot: out (TypeSymbol Type, string Symbol) gslot))
             {

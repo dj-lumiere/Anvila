@@ -217,7 +217,7 @@ internal sealed class CallBindingPass : AstRewriter
             return null;
         }
 
-        // A Suflae entity's routine takes the Roamed handle as `me`, so a `Roamed[Point]` receiver is already
+        // A Mielia entity's routine takes the Roamed handle as `me`, so a `Roamed[Point]` receiver is already
         // its own receiver.
         bool otherOwner = routine.OwnerType is not ProtocolTypeSymbol && routine.OwnerType!.FullName != receiver.FullName &&
                           routine.MeType?.FullName != receiver.FullName;

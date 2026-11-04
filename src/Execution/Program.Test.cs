@@ -7,7 +7,7 @@ using TypeModel.Enums;
 namespace Builder.Execution;
 
 /// <summary>The <c>test</c> command: builds and runs a set of programs and compares what each does with what it
-/// should do, the same way <c>tessera test</c> does.</summary>
+/// should do, the same way <c>lapila test</c> does.</summary>
 internal partial class Program
 {
     /// <summary>How long one test program may take to build and run before it counts as failed.</summary>
@@ -15,7 +15,7 @@ internal partial class Program
 
     /// <summary>
     /// Runs <c>test &lt;dir-or-file&gt;...</c>: every source of the running language in each directory (and each file
-    /// named) is built and run as its own program. Next to <c>&lt;name&gt;.rf</c> (or <c>.sf</c>):
+    /// named) is built and run as its own program. Next to <c>&lt;name&gt;.rr</c> (or <c>.mi</c>):
     /// <c>&lt;name&gt;.expected</c> is what its standard output must be, <c>&lt;name&gt;.exit</c> the exit code it must
     /// end with (0 when there is none), <c>&lt;name&gt;.error</c> a text the build must fail with, and
     /// <c>&lt;name&gt;.input</c> its standard input (an empty one when there is none). Returns 1 when any test fails.
@@ -158,9 +158,9 @@ internal partial class Program
         }
 
         TimeSpan limit = test.TimeLimit ?? TestTimeout;
-        // A memory limit is checked by the runtime, which counts the heap when RF_MEMORY_LIMIT is set.
+        // A memory limit is checked by the runtime, which counts the heap when RA_MEMORY_LIMIT is set.
         Dictionary<string, string>? environment = test.MemoryLimit is { } bytes
-            ? new Dictionary<string, string> { [key: "RF_MEMORY_LIMIT"] = bytes.ToString(provider: CultureInfo.InvariantCulture) }
+            ? new Dictionary<string, string> { [key: "RA_MEMORY_LIMIT"] = bytes.ToString(provider: CultureInfo.InvariantCulture) }
             : null;
         (int exit, _, string stderr, bool timedOut) = RunProgram(fileName: exe, arguments: [], input: "",
             environment: environment, timeout: limit);

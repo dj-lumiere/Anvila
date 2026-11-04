@@ -81,7 +81,7 @@ public record DeclarationStatement(Declaration Declaration, SourceLocation Locat
 
 /// <summary>
 /// Assignment statement that stores a value into a target location.
-/// Represents the assignment operator (=) in both RazorForge and Suflae.
+/// Represents the assignment operator (=) in both Revare and Mielia.
 /// </summary>
 /// <param name="Target">The left-hand side target to assign to (variable, property, array element)</param>
 /// <param name="Value">The right-hand side expression whose value will be assigned</param>
@@ -98,7 +98,7 @@ public record DeclarationStatement(Declaration Declaration, SourceLocation Locat
 public record AssignmentStatement(Expression Target, Expression Value, SourceLocation Location)
     : Statement(Location: Location)
 {
-    /// <summary>True for the builder-synthesized assignment that initializes a Suflae module-level
+    /// <summary>True for the builder-synthesized assignment that initializes a Mielia module-level
     /// <c>global</c> at the top of <c>start()</c>. Signals the Roamed promotion pass to escape the
     /// global's handle to ESCAPED (armed-lock) mode right after init — a global is reachable from every
     /// task, so its access lock must engage for thread-safe concurrent mutation.</summary>
@@ -179,7 +179,7 @@ public record ReturnStatement(Expression? Value, SourceLocation Location)
 
 /// <summary>
 /// Statement that fails the current function with an error, returning it via Result[T].
-/// Used in RazorForge and Suflae for recoverable errors that should be handled by the caller.
+/// Used in Revare and Mielia for recoverable errors that should be handled by the caller.
 /// </summary>
 /// <param name="Error">Expression that evaluates to a Crashable error type</param>
 /// <param name="Location">Source location information</param>
@@ -339,7 +339,7 @@ public enum AtomicRmwOperation
 
 /// <summary>
 /// A lock-free read-modify-write of one atomic-width scalar field, produced by lowering (never parsed).
-/// <c>RoamedLockBracketLoweringPass</c> turns a Suflae module-global update
+/// <c>RoamedLockBracketLoweringPass</c> turns a Mielia module-global update
 /// <c>__globals__.n = __globals__.n.add(d)</c> into this node instead of bracketing it with the access
 /// lock, and the emitter translates it to a single sequentially consistent <c>atomicrmw</c> on the
 /// field's address. The arithmetic wraps on overflow, like every atomic.
@@ -407,7 +407,7 @@ public record CancellationPopStatement(string Local, SourceLocation Location) : 
 
 /// <summary>
 /// Conditional statement that executes different code paths based on a boolean condition.
-/// Represents if-then-else constructs in both RazorForge and Suflae.
+/// Represents if-then-else constructs in both Revare and Mielia.
 /// </summary>
 /// <param name="Condition">Boolean expression to evaluate for branching decision</param>
 /// <param name="ThenStatement">Statement to execute when condition is true</param>
@@ -484,7 +484,7 @@ public record WhileStatement(
 
     /// <summary>True for <c>until c</c>, kept as a loop that runs while <c>not (c)</c>: the condition is the negation
     /// of what was written, so the source prints back as written. False only for a loop written with the old
-    /// <c>while</c>, which the parser reads to report it (RF-G224) and for <c>migrate</c>.</summary>
+    /// <c>while</c>, which the parser reads to report it (RA-G224) and for <c>migrate</c>.</summary>
     public bool IsUntil { get; init; }
 
     /// <summary>True when the loop as written carried values (<c>with …</c>), which lowering takes off before it lowers
@@ -1280,7 +1280,7 @@ public record DangerStatement(BlockStatement Body, SourceLocation Location)
 {
     /// <summary>
     /// True for a danger block the builder wrote (the routines that build and run a Work recipe). It is
-    /// allowed in Suflae, where a written danger block is not.
+    /// allowed in Mielia, where a written danger block is not.
     /// </summary>
     public bool IsBuilderWritten { get; init; }
 

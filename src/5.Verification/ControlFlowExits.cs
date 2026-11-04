@@ -65,7 +65,7 @@ internal static class ControlFlowExits
     /// loop — i.e. a break not nested inside another loop. Used by
     /// <see cref="AlwaysTerminates"/> to decide whether an unconditional <c>loop</c> has a
     /// fall-through edge. Nested loops (<c>loop</c>/<c>while</c>/<c>for</c>) are boundaries: a break
-    /// inside them belongs to that inner loop, so we do not descend into them. RazorForge breaks are
+    /// inside them belongs to that inner loop, so we do not descend into them. Revare breaks are
     /// unlabeled, so a break always targets the nearest enclosing loop.
     /// </summary>
     private static bool LoopBodyCanBreakOut(Statement statement)

@@ -101,20 +101,20 @@ internal sealed class SignatureResolver
         // For stdlib types the Phase 3 object is mutated in-place, so the lookup returns the
         // same object — no behaviour change there.
         // Realm-aware refresh: keep the owner in ITS OWN realm. A realm-blind lookup by FullName would
-        // rebind an SF-realm `System.List` routine's owner to the RazorForge-realm `System.List` (same bare
-        // key) → the routine keys bare → collides with / shadows the RF routine (RF-S406). For ambient-realm
-        // owners `LookupType(name, realm)` reduces to the plain lookup, so RF is unaffected.
+        // rebind an MI-realm `System.List` routine's owner to the Revare-realm `System.List` (same bare
+        // key) → the routine keys bare → collides with / shadows the RA routine (RA-S406). For ambient-realm
+        // owners `LookupType(name, realm)` reduces to the plain lookup, so RA is unaffected.
         TypeSymbol? refreshedOwnerType = pending.OwnerType != null
             ? _sa._registry.LookupType(name: pending.OwnerType.FullName,
                 realm: pending.OwnerType.Realm) ?? pending.OwnerType
             : null;
 
-        // Suflae representation unification: in a Suflae file (Suflae's own library files included), an
+        // Mielia representation unification: in a Mielia file (Mielia's own library files included), an
         // `entity` is a `Roamed[E]` handle, so entity types in its routine SIGNATURES (params + return + `me`)
         // are substituted to `Roamed[E]` — the same rule TypeBodyResolver applies to entity FIELDS. The
-        // borrowed RF stdlib is RazorForge source (bare single-owner entities), and its concrete entity
-        // signatures must NOT be rewritten even though it's loaded under an SF compile.
-        bool sfUserEntity = _sa._registry.EntitiesAreSharedIn(filePath: pending.FilePath);
+        // borrowed RA stdlib is Revare source (bare single-owner entities), and its concrete entity
+        // signatures must NOT be rewritten even though it's loaded under an MI compile.
+        bool miUserEntity = _sa._registry.EntitiesAreSharedIn(filePath: pending.FilePath);
 
         // Desugar homogeneous variadic params (`nums...: T`) into a const-generic `Array[T, __VarargN]`
         // BEFORE the generic-param filter below, so the implicit arity generic is picked up as a normal
@@ -145,7 +145,7 @@ internal sealed class SignatureResolver
         // A param that is NOT receiver-derived — a free routine's own `[T]`, or a member routine's
         // memberRoutine-generic `[U]` — is an EXPLICIT declaration. It must NEVER be dropped just because a
         // user type shares its name (`record T` + `identity[T]`, `record U` + `Holder[A].mapped[U]`):
-        // its identity is its slot, not the label. Filtering it here was the RF-S502 half of the
+        // its identity is its slot, not the label. Filtering it here was the RA-S502 half of the
         // name-as-identity collision (the resolver-side half is TypeResolver's slot-first shadowing).
         HashSet<string> receiverLeaves =
             CollectReceiverLeafParamNames(receiver: routine.ReceiverType);
@@ -224,7 +224,7 @@ internal sealed class SignatureResolver
             }
         }
 
-        // SF entity RETURN types resolve to `Roamed[E]` via the ResolveType choke point, so `return me`
+        // MI entity RETURN types resolve to `Roamed[E]` via the ResolveType choke point, so `return me`
         // (me is `Roamed[E]` via MeType below) yields a retained handle to the SAME controller. `create`
         // returns the raw entity it builds; its return goes through the memberwise-synthesis path (not
         // this ResolveType call), so no explicit carve-out is needed here.
@@ -237,7 +237,7 @@ internal sealed class SignatureResolver
         ValidateReturnTypeNotCarrier(returnType: returnType, routine: routine);
 
         // Entity / generic-param returns are ALWAYS rvalue (in-flight) — INFERRED, not required
-        // (RF-S803 relaxed 2026-07-13). A return produces a value, and single ownership means an
+        // (RA-S803 relaxed 2026-07-13). A return produces a value, and single ownership means an
         // entity leaves a routine only by MOVE (implicit return-move) — there is no bound-lvalue-copy
         // mode for entities. The move-vs-link distinction that actually matters is already carried by
         // the type shape (bare `T` = move, borrow-wrapper = link) plus `steal` at use sites, so the
@@ -253,13 +253,13 @@ internal sealed class SignatureResolver
                 implicitConstraints: implicitConstraints,
                 astParamGenericNames: astParamGenericNames);
 
-        // Specialized-receiver member `me` (e.g. `List[Work[V]]`), else the SF-user-entity Roamed[E]
-        // handle. A specialized `meType` takes precedence over the SF wrap.
+        // Specialized-receiver member `me` (e.g. `List[Work[V]]`), else the MI-user-entity Roamed[E]
+        // handle. A specialized `meType` takes precedence over the MI wrap.
         TypeSymbol? meType = ResolveSpecializedReceiverMeType(pending: pending,
             refreshedOwnerType: refreshedOwnerType,
             routine: routine,
             filteredGenericParams: filteredGenericParams) ?? ResolveSharedEntityMeType(
-            sfUserEntity: sfUserEntity,
+            miUserEntity: miUserEntity,
             pending: pending,
             routine: routine,
             refreshedOwnerType: refreshedOwnerType);
@@ -571,9 +571,9 @@ internal sealed class SignatureResolver
         RejectRvalueMarkInSlot(typeExpr: param.Type,
             positionDescription: $"parameter '{param.Name}'",
             allowTopLevelRvalue: true);
-        // Suflae entity params resolve to `Roamed[E]` at the single ResolveType choke point
+        // Mielia entity params resolve to `Roamed[E]` at the single ResolveType choke point
         // (TypeResolver.RoamSharedEntitySlot) — no per-site substitution here. The callee receives
-        // the caller's Roamed handle directly (a BORROW; ScopeTeardownLoweringPass skips SF Roamed
+        // the caller's Roamed handle directly (a BORROW; ScopeTeardownLoweringPass skips MI Roamed
         // params). `me` has no type expression (inferred from OwnerType) so it is set via MeType below.
         TypeSymbol paramType = _typeResolver.ResolveType(typeExpr: param.Type);
 
@@ -713,19 +713,19 @@ internal sealed class SignatureResolver
     }
 
     /// <summary>
-    /// SF slice 2: resolves the <c>me</c> type of a USER entity member routine to the <c>Roamed[E]</c>
+    /// MI slice 2: resolves the <c>me</c> type of a USER entity member routine to the <c>Roamed[E]</c>
     /// handle (not bare <c>E</c>), so <c>me.field</c> routes through the Roamed access machinery and
     /// <c>return me</c> type-matches the now <c>Roamed[E]</c> return. Creators (<c>create</c>, incl. the
     /// failable ones) keep bare <c>me</c> — they build the raw entity before any controller exists.
     /// Returns <c>null</c> when the conditions do not apply.
     /// </summary>
-    private TypeSymbol? ResolveSharedEntityMeType(bool sfUserEntity,
+    private TypeSymbol? ResolveSharedEntityMeType(bool miUserEntity,
         SemanticVerifier.PendingRoutine pending, RoutineDeclaration routine, TypeSymbol? refreshedOwnerType)
     {
         // The entity's own `destruct` runs from the handle's teardown (the free hook of its manager, or
         // `roam_free`), which has the bare entity, not a handle: its `me` is the entity itself, and no one can
         // hold it anew from there.
-        if (sfUserEntity && pending.Kind == RoutineKind.MemberRoutine &&
+        if (miUserEntity && pending.Kind == RoutineKind.MemberRoutine &&
             pending.Kind is not RoutineKind.Creator && routine.Name != RuntimeContract.Destroy &&
             refreshedOwnerType is EntityTypeSymbol ownerEntity &&
             _sa._registry.LookupType(name: RuntimeContract.Roamed) is { } roamedOwnerDef)
@@ -933,7 +933,7 @@ internal sealed class SignatureResolver
         }
 
         // Re-lookup the owner type to get the updated version with protocols (realm-aware: keep the
-        // owner in its own world-line so an SF-realm owner isn't rebound to the RF-realm same-name type).
+        // owner in its own world-line so an MI-realm owner isn't rebound to the RA-realm same-name type).
         TypeSymbol? currentOwnerType =
             _sa._registry.LookupType(name: routineInfo.OwnerType.FullName,
                 realm: routineInfo.OwnerType.Realm);
@@ -1147,7 +1147,7 @@ internal sealed class SignatureResolver
     /// <summary>
     /// Checks a parameter the protocol declares <c>Viewing[Me]</c>: the routine reads the other value and
     /// never takes it. <c>Viewing[Owner]</c> always fits. A bare <c>Owner</c> fits a value type (a read of a
-    /// value is the value) and a Suflae entity (a shared handle). A RazorForge entity must spell the read,
+    /// value is the value) and a Mielia entity (a shared handle). A Revare entity must spell the read,
     /// since a bare entity parameter takes the entity from whoever passes it.
     /// </summary>
     private void CheckReadsMeParameter(ProtocolCheckContext ctx, string paramName, TypeSymbol actualType)
@@ -1275,7 +1275,7 @@ internal sealed class SignatureResolver
             return true;
         }
 
-        // A Suflae entity is shared, so its signature slots resolve to Roamed[E]: a `duplicate` written
+        // A Mielia entity is shared, so its signature slots resolve to Roamed[E]: a `duplicate` written
         // `-> Point` reads as Roamed[Point], and that handle is still the entity's Me.
         if (ownerType is EntityTypeSymbol &&
             actualType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed } &&
@@ -1343,7 +1343,7 @@ internal sealed class SignatureResolver
         }
 
         // Re-lookup the owner type to get the updated version with protocols (realm-aware: keep the
-        // owner in its own world-line so an SF-realm owner isn't rebound to the RF-realm same-name type).
+        // owner in its own world-line so an MI-realm owner isn't rebound to the RA-realm same-name type).
         TypeSymbol? currentOwnerType =
             _sa._registry.LookupType(name: routineInfo.OwnerType.FullName,
                 realm: routineInfo.OwnerType.Realm);

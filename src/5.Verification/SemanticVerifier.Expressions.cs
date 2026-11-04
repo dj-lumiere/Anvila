@@ -252,7 +252,7 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // A name whose module-level `var` was already rejected (RF-S435) is reported once, there.
+        // A name whose module-level `var` was already rejected (RA-S435) is reported once, there.
         if (_rejectedModuleVarNames.Contains(item: id.Name))
         {
             return ErrorTypeSymbol.Instance;
@@ -267,7 +267,7 @@ public sealed partial class SemanticVerifier
 
     private readonly HashSet<(RoutineInfo Routine, string Name)> _reportedScriptVariables = [];
 
-    /// <summary>Names of module-level <c>var</c> declarations already rejected with RF-S435.</summary>
+    /// <summary>Names of module-level <c>var</c> declarations already rejected with RA-S435.</summary>
     private readonly HashSet<string> _rejectedModuleVarNames = [];
 
     /// <summary>
@@ -558,7 +558,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol ResolveVariableReference(IdentifierExpression id, VariableInfo varInfo)
     {
-        // Suflae `global`: stamp the reference so GlobalEntityRewritePass can retarget it to the
+        // Mielia `global`: stamp the reference so GlobalEntityRewritePass can retarget it to the
         // hidden __ModuleGlobals singleton field (thread-safe storage). LookupVariable checked local
         // scopes first, so a local shadowing a global returns the local (IsGlobal=false) and is NOT
         // stamped — the flag is shadowing-exact.
@@ -626,7 +626,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RF-S615 for a use of <paramref name="name"/> after a <c>steal</c> moved its value out: names the line of the
+    /// RA-S615 for a use of <paramref name="name"/> after a <c>steal</c> moved its value out: names the line of the
     /// steal and where the value went when that is known, and points at the new owner or at using the name
     /// before the steal.
     /// </summary>
@@ -690,7 +690,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// If a <c>secret</c> (module-private) type whose bare name matches <paramref name="name"/> exists
     /// in a module OTHER than the current one, resolution deliberately hid it — report a dedicated
-    /// RF-S402 explaining that (instead of letting the caller emit a misleading "unknown type/identifier"
+    /// RA-S402 explaining that (instead of letting the caller emit a misleading "unknown type/identifier"
     /// that reads like a typo), and return true. Returns false when no such type exists.
     /// </summary>
     internal bool TryReportSecretTypeAccess(string name, SourceLocation location)
@@ -745,7 +745,7 @@ public sealed partial class SemanticVerifier
                type.TypeArguments is [{ BareName: Declaration.RuntimeContract.StampedTypeName }];
     }
 
-    /// <summary>Reports RF-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>
+    /// <summary>Reports RA-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>
     private bool ValidateIdentityOperand(TypeSymbol type, BinaryOperator op,
         SourceLocation location)
     {
@@ -1482,7 +1482,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The operator routine a bare number literal on the right picks when its own type matches none: the one
-    /// overload whose operand is a number type the literal fits (`1h // 4` in Suflae, where `4` starts as
+    /// overload whose operand is a number type the literal fits (`1h // 4` in Mielia, where `4` starts as
     /// <c>Int</c>, picks <c>floordiv(divisor: S64)</c> over <c>floordiv(you: Duration)</c>). Null when no
     /// overload or more than one takes it.
     /// </summary>
@@ -1649,9 +1649,9 @@ public sealed partial class SemanticVerifier
     /// Re-infers the bare-integer-literal ELEMENT operand of a membership expression against the
     /// container's element type. Membership (<c>x in coll</c>/<c>x notin coll</c>) reverses to
     /// <c>coll.contains(x)</c> (element is LEFT); container-first (<c>coll have 20</c>/<c>coll lack 20</c>)
-    /// keeps the container LEFT and the element RIGHT. Without this a Suflae <c>20 in list_of_s64</c> keeps
+    /// keeps the container LEFT and the element RIGHT. Without this a Mielia <c>20 in list_of_s64</c> keeps
     /// <c>20</c> at the <c>Int</c> default so the element type never matches and <c>contains</c> is
-    /// silently always false. Unwrap SF's Roamed/RC wrappers to reach the collection, then take its first
+    /// silently always false. Unwrap MI's Roamed/RC wrappers to reach the collection, then take its first
     /// type argument (List/Set/Array element, Dict key).
     /// </summary>
     private (TypeSymbol leftType, TypeSymbol rightType) ReinferMembershipLiteralOperand(
@@ -1680,7 +1680,7 @@ public sealed partial class SemanticVerifier
     private bool DeclaresOperatorRoutine(TypeSymbol receiverType, string operatorMemberRoutine,
         TypeSymbol argType)
     {
-        // A type may define an operator whose result is another type (Suflae's `Int / Int` gives a
+        // A type may define an operator whose result is another type (Mielia's `Int / Int` gives a
         // `Decimal`), so it obeys no `Me`-returning operator protocol. The operator binds when the type itself
         // declares the operator routine with the operand parameter `you` taking the other side.
         // A shift takes its amount as the U32 every integer amount converts to (`to_shift_amount()`): a type with
@@ -1976,7 +1976,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Validates an identifier (variable) as an assignment target: checks preset immutability and,
-    /// in Suflae, updates the variable's nullability flow state based on the RHS.
+    /// in Mielia, updates the variable's nullability flow state based on the RHS.
     /// </summary>
     /// <summary>The <c>steal</c> of <paramref name="name"/> inside the arguments of the call being analyzed, if the
     /// name is dead because of it (rather than a steal earlier in the code).</summary>
@@ -2001,7 +2001,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// An assignment to the name a <c>for</c> loop binds each element to (RF-S251): the loop binds it again every
+    /// An assignment to the name a <c>for</c> loop binds each element to (RA-S251): the loop binds it again every
     /// round, so the assignment would change nothing the loop sees. Reports it and returns true, else false.
     /// </summary>
     private bool ReportLoopVariableAssignment(IdentifierExpression id, SourceLocation location)
@@ -2034,10 +2034,10 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Validates a member-access expression as an assignment target: checks read-only wrappers,
-    /// setter visibility, Suflae non-nullable field nullability, and @readonly routine mutation.
+    /// setter visibility, Mielia non-nullable field nullability, and @readonly routine mutation.
     /// </summary>
     /// <summary>
-    /// Reports a write to a member variable of a binding that is only read (a preset, a RazorForge global): the write
+    /// Reports a write to a member variable of a binding that is only read (a preset, a Revare global): the write
     /// would change that binding's value as much as assigning it would. The binding is the variable the chain of member
     /// variables and elements starts from (<c>settings</c> in <c>settings.audio.volume = 5</c>).
     /// </summary>
@@ -2093,8 +2093,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Records the <c>setitem</c> a subscript write calls (<see cref="IndexExpression.ResolvedSetItem"/>, for the shape
     /// check of the indirect cases), and reports <c>d[k] = v</c> on the container a <c>for</c> loop is walking when
-    /// that <c>setitem</c> is <c>@reshaping</c> (a <c>Dict</c>'s may add the key): RF-S625, as a call of a reshaping
-    /// routine on it would be. A language that checks shapes as the program runs (Suflae) leaves this to that check.
+    /// that <c>setitem</c> is <c>@reshaping</c> (a <c>Dict</c>'s may add the key): RA-S625, as a call of a reshaping
+    /// routine on it would be. A language that checks shapes as the program runs (Mielia) leaves this to that check.
     /// </summary>
     private void CheckIndexWriteReshape(IndexExpression index, SourceLocation location)
     {
@@ -2172,14 +2172,14 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Post-target-validation checks shared by all scalar assignment forms: RF entity bare-assignment
+    /// Post-target-validation checks shared by all scalar assignment forms: RA entity bare-assignment
     /// prohibition, implicit non-trivially-assignable wrapper copy detection, type-compatibility, and
     /// <c>??=</c> flow-narrowing.
     /// </summary>
     private void ValidateAssignmentValueConstraints(Expression target, Expression value,
         TypeSymbol targetType, TypeSymbol valueType, SourceLocation location)
     {
-        // RazorForge: Entity bare assignment prohibition.
+        // Revare: Entity bare assignment prohibition.
         // `b = a` where `a` is a bare identifier of entity-KIND type (a bare entity, or a record/tuple that
         // transitively owns one) is a build error — copying it would make two owners of the single-owner
         // entity inside. Move it (`steal`) or hold a shareable handle.
@@ -2259,7 +2259,7 @@ public sealed partial class SemanticVerifier
         // For a same-typed compound op (`+= -= *= /= //= %= **= &= |= ^= ??=`) the RHS
         // must conform to the TARGET type, so a bare literal like `1` in `i += 1` types
         // as the target (e.g. `U64`) rather than the language default — `Int` in
-        // Suflae, `S64` in RazorForge. Without this hint an SF `U64 += 1` leaves the `1`
+        // Mielia, `S64` in Revare. Without this hint an MI `U64 += 1` leaves the `1`
         // an `Int`, which mis-lowers (Int.from_literal against a fixed-width
         // target) into a runaway/garbage result. Shift amounts (`<<= >>= >>>=`) are
         // U32, not the target type, so they keep their own inference.
@@ -2406,8 +2406,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Checks the right-hand side of a compound assignment against the operator it dispatches to, with the
     /// same rules as the binary form: <c>t += v</c> must be rejected exactly when <c>t = t + v</c> is. Two
-    /// fixed-width types of different width are RF-S767, and a value no in-place or regular overload
-    /// accepts (a Suflae <c>Int += S64</c>) is a conversion error. Without this check the operator is
+    /// fixed-width types of different width are RA-S767, and a value no in-place or regular overload
+    /// accepts (a Mielia <c>Int += S64</c>) is a conversion error. Without this check the operator is
     /// resolved by name alone and the emitter passes the wrong value representation to it. Returns true
     /// when a violation was reported.
     /// </summary>
@@ -2658,7 +2658,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Analyzes the force-unwrap operator (<c>!!</c>): a carrier's payload type, else the type's <c>unwrap</c>
-    /// member routine return, else RF-S (unsupported operator).
+    /// member routine return, else RA-S (unsupported operator).
     /// </summary>
     private TypeSymbol AnalyzeForceUnwrap(UnaryExpression unary, TypeSymbol operandType)
     {

@@ -12,45 +12,45 @@ namespace Builder.Documentation;
 /// <param name="Types">The types bound.</param>
 /// <param name="Routines">The routines bound.</param>
 /// <param name="Problems">The files that could not be read, each with the reason.</param>
-internal sealed record RfStubResult(int Files, int Types, int Routines, List<string> Problems);
+internal sealed record RaStubResult(int Files, int Types, int Routines, List<string> Problems);
 
 /// <summary>
-/// Writes <c>@rf("...")</c> stub files for the shared RazorForge declarations a Suflae program sees and the Suflae
-/// library does not show yet: one file per RazorForge source file, at the same relative path, in the same module.
-/// Each stub carries RazorForge's doc comment as a first draft, to be reworded in Suflae's words. A declaration the
-/// Suflae library already binds, or a routine it replaces with one of the same call shape, is left out, so a later
-/// run writes only what RazorForge added since.
+/// Writes <c>@ra("...")</c> stub files for the shared Revare declarations a Mielia program sees and the Mielia
+/// library does not show yet: one file per Revare source file, at the same relative path, in the same module.
+/// Each stub carries Revare's doc comment as a first draft, to be reworded in Mielia's words. A declaration the
+/// Mielia library already binds, or a routine it replaces with one of the same call shape, is left out, so a later
+/// run writes only what Revare added since.
 /// </summary>
-internal sealed class RfStubWriter
+internal sealed class RaStubWriter
 {
-    /// <summary>RazorForge folders whose types a Suflae program never works with: buildtime reflection (Suflae reflects
+    /// <summary>Revare folders whose types a Mielia program never works with: buildtime reflection (Mielia reflects
     /// at runtime through ObjectHacker), C structures, and SIMD lanes.</summary>
     private static readonly string[] UnsharedFolders =
         ["BuilderExpansion", "BuilderQuery", "System/CSubSystem", "Simd"];
 
-    /// <summary>Public RazorForge routines that only the builder's own code calls (the size of a Work recipe
+    /// <summary>Public Revare routines that only the builder's own code calls (the size of a Work recipe
     /// slot, used when the builder lays a recipe out).</summary>
     private static readonly HashSet<string> UnsharedRoutines = new(comparer: StringComparer.Ordinal)
     {
         "recipe_slot_size"
     };
 
-    /// <summary>RazorForge files that hold only C declarations and the builder's own helpers, and the files of raw memory
-    /// and its handles (a Suflae program works with none of them, only with `ByteSize` from the same folder).</summary>
+    /// <summary>Revare files that hold only C declarations and the builder's own helpers, and the files of raw memory
+    /// and its handles (a Mielia program works with none of them, only with `ByteSize` from the same folder).</summary>
     private static readonly string[] UnsharedFiles =
     [
-        "System/NativeDeclarations.rf", "System/Memory/Closure.rf", "System/Memory/CycleCollector.rf",
-        "System/Memory/Exclusive.rf", "System/Memory/GuardManager.rf", "System/Memory/AccessPolicy.rf",
-        "System/Memory/MultiRead.rf", "System/Memory/ReadOnly.rf", "System/Memory/RetainManager.rf",
-        "System/Memory/RoamManager.rf", "System/Memory/Guarded.rf",
-        "System/Memory/Hijacked.rf", "System/Memory/Modifying.rf",
-        "System/Memory/Retained.rf", "System/Memory/Roamed.rf", "System/Memory/Tracked.rf",
-        "System/Memory/Viewing.rf", "System/Memory/Watched.rf", "System/Memory/Witnessed.rf"
+        "System/NativeDeclarations.rr", "System/Memory/Closure.rr", "System/Memory/CycleCollector.rr",
+        "System/Memory/Exclusive.rr", "System/Memory/GuardManager.rr", "System/Memory/AccessPolicy.rr",
+        "System/Memory/MultiRead.rr", "System/Memory/ReadOnly.rr", "System/Memory/RetainManager.rr",
+        "System/Memory/RoamManager.rr", "System/Memory/Guarded.rr",
+        "System/Memory/Hijacked.rr", "System/Memory/Modifying.rr",
+        "System/Memory/Retained.rr", "System/Memory/Roamed.rr", "System/Memory/Tracked.rr",
+        "System/Memory/Viewing.rr", "System/Memory/Watched.rr", "System/Memory/Witnessed.rr"
     ];
 
     /// <summary>
-    /// RazorForge types a Suflae program does not use: access tokens and raw memory, protocols about them, the walks
-    /// and nodes of collections Suflae does not have, and the library's own helpers that RazorForge leaves public.
+    /// Revare types a Mielia program does not use: access tokens and raw memory, protocols about them, the walks
+    /// and nodes of collections Mielia does not have, and the library's own helpers that Revare leaves public.
     /// </summary>
     private static readonly HashSet<string> UnsharedTypes = new(comparer: StringComparer.Ordinal)
     {
@@ -61,11 +61,11 @@ internal sealed class RfStubWriter
         "SplitArrayEmitter", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
         "DD", "FloatDigits", "FloatParsed",
         "IntegerLimbView", "IntV",
-        // Suflae has its own lists and no structure-of-arrays layouts.
+        // Mielia has its own lists and no structure-of-arrays layouts.
         "SplitList", "SplitItems", "RotatableList"
     };
 
-    /// <summary>The protocols a Suflae program has no use for, left out of an <c>obeys</c> list.</summary>
+    /// <summary>The protocols a Mielia program has no use for, left out of an <c>obeys</c> list.</summary>
     private static readonly HashSet<string> UnsharedProtocols = new(comparer: StringComparer.Ordinal)
     {
         "Assignable", "UnbrokenType", "Splittable", "ConstCompatible", "Accessing", "Controlling"
@@ -88,26 +88,26 @@ internal sealed class RfStubWriter
     private readonly string _ownRoot;
     private readonly List<string> _problems = [];
 
-    /// <summary>Creates a writer over the RazorForge library at <paramref name="sharedRoot"/> and the Suflae library
+    /// <summary>Creates a writer over the Revare library at <paramref name="sharedRoot"/> and the Mielia library
     /// at <paramref name="ownRoot"/>.</summary>
-    public RfStubWriter(string sharedRoot, string ownRoot)
+    public RaStubWriter(string sharedRoot, string ownRoot)
     {
         _sharedRoot = System.IO.Path.GetFullPath(path: sharedRoot);
         _ownRoot = System.IO.Path.GetFullPath(path: ownRoot);
     }
 
     /// <summary>Writes the stub files under <paramref name="outputRoot"/>. An existing file is not overwritten.</summary>
-    public RfStubResult Write(string outputRoot)
+    public RaStubResult Write(string outputRoot)
     {
-        List<Source> own = Read(root: _ownRoot, language: Language.Suflae);
-        List<Source> shared = Read(root: _sharedRoot, language: Language.RazorForge)
+        List<Source> own = Read(root: _ownRoot, language: Language.Mielia);
+        List<Source> shared = Read(root: _sharedRoot, language: Language.Revare)
                              .Where(predicate: s => !UnsharedFolders.Any(predicate: f =>
                                                         s.Path.StartsWith(value: f + "/",
                                                             comparisonType: StringComparison.Ordinal)) &&
                                                     !UnsharedFiles.Contains(value: s.Path))
                              .ToList();
 
-        // What the Suflae library already shows: its own types (which stand in for shared ones of the same name),
+        // What the Mielia library already shows: its own types (which stand in for shared ones of the same name),
         // its bindings, and its own routines by call shape.
         var ownTypes = new HashSet<string>(comparer: StringComparer.Ordinal);
         var bound = new HashSet<string>(comparer: StringComparer.Ordinal);
@@ -115,7 +115,7 @@ internal sealed class RfStubWriter
         foreach (SyntaxTree.Declaration declaration in own.SelectMany(selector: s =>
                      s.Program.Declarations.OfType<SyntaxTree.Declaration>()))
         {
-            if (RfBindingCheck.TargetOf(declaration: declaration) is { } target)
+            if (RaBindingCheck.TargetOf(declaration: declaration) is { } target)
             {
                 bound.Add(item: declaration is RoutineDeclaration r
                     ? Shape(target: target, routine: r)
@@ -193,7 +193,7 @@ internal sealed class RfStubWriter
                     }
 
                     AppendDoc(text: text, source: source, line: routine.Location.Line, indent: "");
-                    text.Append(value: $"@rf(\"{target}\")\n{CleanSignature(signature: signature)}\n\n");
+                    text.Append(value: $"@ra(\"{target}\")\n{CleanSignature(signature: signature)}\n\n");
                     routineCount++;
                 }
             }
@@ -204,7 +204,7 @@ internal sealed class RfStubWriter
             }
 
             string file = System.IO.Path.Combine(path1: outputRoot,
-                path2: System.IO.Path.ChangeExtension(path: source.Path, extension: ".sf"));
+                path2: System.IO.Path.ChangeExtension(path: source.Path, extension: ".mi"));
             if (File.Exists(path: file))
             {
                 _problems.Add(item: $"{file}: already there, not overwritten");
@@ -213,14 +213,14 @@ internal sealed class RfStubWriter
 
             Directory.CreateDirectory(path: System.IO.Path.GetDirectoryName(path: file)!);
             File.WriteAllText(path: file,
-                contents: $"module {source.Module}\n\n# Each declaration below creates nothing: `@rf` names the shared " +
+                contents: $"module {source.Module}\n\n# Each declaration below creates nothing: `@ra` names the shared " +
                           "declaration it shows, and validate-stdlib\n# checks that the two still match.\n\n" +
                           text.ToString()
                                                                     .TrimEnd() + "\n");
             fileCount++;
         }
 
-        return new RfStubResult(Files: fileCount, Types: typeCount, Routines: routineCount, Problems: _problems);
+        return new RaStubResult(Files: fileCount, Types: typeCount, Routines: routineCount, Problems: _problems);
     }
 
     private List<Source> Read(string root, Language language)
@@ -260,7 +260,7 @@ internal sealed class RfStubWriter
         string name)
     {
         AppendDoc(text: text, source: source, line: type.Location.Line, indent: "");
-        text.Append(value: $"@rf(\"{name}\")\n");
+        text.Append(value: $"@ra(\"{name}\")\n");
         string header = CleanSignature(signature: Signature(source: source, printer: printer, declaration: type));
         text.Append(value: header)
             .Append(value: '\n');
@@ -332,7 +332,7 @@ internal sealed class RfStubWriter
             .Append(value: "\n\n");
     }
 
-    /// <summary>A printed signature without annotations, without <c>dangerous</c>, and with the protocols a Suflae
+    /// <summary>A printed signature without annotations, without <c>dangerous</c>, and with the protocols a Mielia
     /// program has no use for taken out of its <c>obeys</c> list.</summary>
     private static string CleanSignature(string signature)
     {
@@ -421,7 +421,7 @@ internal sealed class RfStubWriter
         }
     }
 
-    /// <summary>The name an <c>@rf</c> binding of the routine gives: <c>Type.name</c> for a member routine, the type's
+    /// <summary>The name an <c>@ra</c> binding of the routine gives: <c>Type.name</c> for a member routine, the type's
     /// name for a creator, the name alone for a free routine.</summary>
     private static string TargetFor(RoutineDeclaration routine)
     {

@@ -148,7 +148,7 @@ public sealed partial class TypeRegistry
         }
 
         // No backend-type shortcut: scalar primitives still define `eq`/`hash` explicitly
-        // (see System/Numerics/*.rf) and will be picked up by the LookupMemberRoutine fallback below.
+        // (see System/Numerics/*.rr) and will be picked up by the LookupMemberRoutine fallback below.
         // The shortcut used to fire on every `@llvm("…")`-backed record — including aggregate-
         // backed records like `Array[T, N]` (`@llvm("[{N} x {T}]")`) — which masked the
         // generic-constraint check we need for correctness.
@@ -501,7 +501,7 @@ public sealed partial class TypeRegistry
         }
 
         // `==` and the hash ask each member variable the way the conformance the builder gives them does (a
-        // Suflae `List` member is held by its handle, and a number hashes without naming `Hashable`).
+        // Mielia `List` member is held by its handle, and a number hashes without naming `Hashable`).
         return protocol is "Equatable" or "Hashable"
             ? MemberProjection(type: type)
                .All(predicate: m => MemberVariableHasValueRoutine(type: m, protocolName: protocol))
@@ -672,7 +672,7 @@ public sealed partial class TypeRegistry
     /// hash (the numbers hash without naming the protocol).</summary>
     internal bool MemberVariableHasValueRoutine(TypeSymbol type, string protocolName)
     {
-        // A member variable holding a library entity through its `Roamed` handle (a Suflae `List` field) compares and
+        // A member variable holding a library entity through its `Roamed` handle (a Mielia `List` field) compares and
         // hashes the entity: `==` on the handle goes to the entity's own.
         if (type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol held] })
         {
@@ -816,12 +816,12 @@ public sealed partial class TypeRegistry
             return null;
         }
 
-        // A generic INSTANCE (e.g. `Dict[S64, S64]`) — or a REALM-BRIDGED copy of a type (the SF-realm `System.Dict`
-        // an `.sf` file resolves to) — can carry an EMPTY own ImplementedProtocols: the declared conformances
+        // A generic INSTANCE (e.g. `Dict[S64, S64]`) — or a REALM-BRIDGED copy of a type (the MI-realm `System.Dict`
+        // an `.mi` file resolves to) — can carry an EMPTY own ImplementedProtocols: the declared conformances
         // (`obeys Container, Iterable, …`) are populated by the eager Phase-3 conformance pass onto the AMBIENT
-        // (RF-realm) generic DEFINITION only. Without inheriting them, `x in dict` in an SF file false-fires
-        // RF-S065. Fold in the ambient definition's protocols (realm-blind lookup by bare name reaches the
-        // populated RF-realm def even under an SF ResolutionRealm); conditional (`when`) conformances stay
+        // (RA-realm) generic DEFINITION only. Without inheriting them, `x in dict` in an MI file false-fires
+        // RA-S065. Fold in the ambient definition's protocols (realm-blind lookup by bare name reaches the
+        // populated RA-realm def even under an MI ResolutionRealm); conditional (`when`) conformances stay
         // gated per-instance by ConditionalConformanceHolds (checked against THIS instance's type args).
         if (implemented.Count == 0 || type.IsGenericResolution)
         {

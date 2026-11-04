@@ -10,10 +10,10 @@ using TypeModel.Types;
 namespace Builder;
 
 /// <summary>
-/// Prints the post-desugared AST back to RF-like source text for debugging.
+/// Prints the post-desugared AST back to RA-like source text for debugging.
 /// Implements <see cref="ISyntaxTreeVisitor{T}"/> with <c>string</c> as the result type.
 /// </summary>
-public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
+public sealed class RaSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 {
     /// <summary>Return-type suffix rendered when a routine has no declared return type or returns None.</summary>
     private const string ReturnNoneSuffix = " -> None";
@@ -1829,7 +1829,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
                  .TrimEnd();
     }
 
-    /// <summary>Formats a member-variable declaration as an RF field: <c>visibility name: Type[ = init]</c>
+    /// <summary>Formats a member-variable declaration as an RA field: <c>visibility name: Type[ = init]</c>
     /// (no <c>var</c> — that prefix is for locals only).</summary>
     private string FormatMemberField(VariableDeclaration field)
     {

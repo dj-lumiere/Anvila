@@ -303,7 +303,7 @@ public sealed partial class SemanticVerifier
         }
 
         // A bare real int/float literal conforms to a contextual complex type as its REAL component
-        // (imag = 0). This is the RF-S767 path that makes `3 + 4i` legible: `3` becomes `C(3, 0)` and
+        // (imag = 0). This is the RA-S767 path that makes `3 + 4i` legible: `3` becomes `C(3, 0)` and
         // `4i` becomes `C(0, 4)`, so the sum is one Complex+Complex add. LiteralLoweringPass builds the
         // pure-real constructor from the resolved complex type.
         if (literal.LiteralType is TokenType.UndecidedInteger or TokenType.UndecidedDecimal &&
@@ -336,8 +336,8 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Resolves the type of a bare <c>none</c> value literal against its expected carrier slot
-    /// (Optional[T] / variant-with-None, or a Suflae <c>Roamed[E]</c> optional entity slot).
-    /// Reports RF-S if no valid carrier context is present.
+    /// (Optional[T] / variant-with-None, or a Mielia <c>Roamed[E]</c> optional entity slot).
+    /// Reports RA-S if no valid carrier context is present.
     /// </summary>
     private TypeSymbol AnalyzeNoneValueLiteral(LiteralExpression literal, TypeSymbol? expectedType)
     {
@@ -362,7 +362,7 @@ public sealed partial class SemanticVerifier
             return presetFlags;
         }
 
-        // Suflae: `none` against an entity slot that is not optional (`x: E`, not `x: E?`).
+        // Mielia: `none` against an entity slot that is not optional (`x: E`, not `x: E?`).
         if (SharedEntities.IsEntityRef(type: expectedType ?? ErrorTypeSymbol.Instance))
         {
             string entityName = expectedType is { TypeArguments: [{ } held] } ? held.Name : expectedType!.Name;
@@ -388,8 +388,8 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Maps a literal's token type to its resolved type name (PascalCase), or null for an unknown
-    /// literal type. Unsuffixed integer/decimal literals default to S64/B64 (RF) or Int/Decimal
-    /// (Suflae) per the literal's own source-file language.
+    /// literal type. Unsuffixed integer/decimal literals default to S64/B64 (RA) or Int/Decimal
+    /// (Mielia) per the literal's own source-file language.
     /// </summary>
     private string? MapLiteralTypeName(LiteralExpression literal)
     {
@@ -422,19 +422,19 @@ public sealed partial class SemanticVerifier
             TokenType.D64Literal => "D64",
             TokenType.D128Literal => "D128",
 
-            // Unsuffixed literals: type inference resolves these; fallback is S64/B64 (RF) or Int/Decimal
-            // (Suflae). CRITICAL: the Suflae default applies ONLY to Suflae SOURCE. The RF stdlib is shared
-            // by SF ("SF's System IS RF's System") and its bodies get (re-)analyzed under an SF compile (generic
-            // monomorphization / variant-body collection) OUTSIDE the AnalyzeStdlibBodies RF-mode override —
-            // there `_registry.Language` is Suflae. A stdlib `int_eq[U256](b: 0)` must keep RF's S64 default
-            // (coerces to the U256/i256 compare); the SF Int default is a HEAP RECORD that can't coerce
+            // Unsuffixed literals: type inference resolves these; fallback is S64/B64 (RA) or Int/Decimal
+            // (Mielia). CRITICAL: the Mielia default applies ONLY to Mielia SOURCE. The RA stdlib is shared
+            // by MI ("MI's System IS RA's System") and its bodies get (re-)analyzed under an MI compile (generic
+            // monomorphization / variant-body collection) OUTSIDE the AnalyzeStdlibBodies RA-mode override —
+            // there `_registry.Language` is Mielia. A stdlib `int_eq[U256](b: 0)` must keep RA's S64 default
+            // (coerces to the U256/i256 compare); the MI Int default is a HEAP RECORD that can't coerce
             // into a scalar op → `store %Record.Numerics.Int` / `icmp i256, %Record` type errors. Key on
             // the LITERAL's own file (its Location), NOT `_currentFilePath` (stale = the user entry under
             // cross-module body analysis).
             TokenType.UndecidedInteger => DefaultsToArbitraryPrecision(literal: literal)
                 ? IntegerTypeName
                 : "S64",
-            // A hex float (0x1.8p3) is binary-only, so it defaults to B64 in Suflae too.
+            // A hex float (0x1.8p3) is binary-only, so it defaults to B64 in Mielia too.
             TokenType.UndecidedDecimal => DefaultsToArbitraryPrecision(literal: literal) &&
                                           !(literal.Value is string raw &&
                                             NumericLiteralParser.IsHexFloatText(text: raw))
@@ -488,13 +488,13 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The unsuffixed-literal default (Int/Decimal vs S64/B64) follows the literal's SOURCE-FILE
-    /// LANGUAGE, not the compile's language and not stdlib-ness: a <c>.sf</c> file uses Suflae defaults,
-    /// a <c>.rf</c> file uses RF defaults. This is correct for every mix — RF/SF user code, the shared RF
-    /// stdlib (<c>.rf</c>) borrowed by an SF compile (must keep S64/B64 so `int_eq[U256](b: 0)` stays a
-    /// coercible scalar, not a heap Int record), AND a future dedicated Suflae stdlib (<c>.sf</c>),
-    /// which SHOULD get Suflae defaults. (Keying on <c>_registry.Language</c> wrongly gave RF stdlib bodies
-    /// the SF default when re-analyzed under an SF compile; keying on stdlib-directory membership would
-    /// wrongly force RF defaults onto a future <c>.sf</c> stdlib.) Uses the literal's OWN file (its
+    /// LANGUAGE, not the compile's language and not stdlib-ness: a <c>.mi</c> file uses Mielia defaults,
+    /// a <c>.rr</c> file uses RA defaults. This is correct for every mix — RA/MI user code, the shared RA
+    /// stdlib (<c>.rr</c>) borrowed by an MI compile (must keep S64/B64 so `int_eq[U256](b: 0)` stays a
+    /// coercible scalar, not a heap Int record), AND a future dedicated Mielia stdlib (<c>.mi</c>),
+    /// which SHOULD get Mielia defaults. (Keying on <c>_registry.Language</c> wrongly gave RA stdlib bodies
+    /// the MI default when re-analyzed under an MI compile; keying on stdlib-directory membership would
+    /// wrongly force RA defaults onto a future <c>.mi</c> stdlib.) Uses the literal's OWN file (its
     /// Location) — <c>_currentFilePath</c> is the user entry when a cross-module stdlib body is
     /// (re-)analyzed during monomorphization, so it is unreliable here.
     /// </summary>

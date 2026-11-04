@@ -15,7 +15,7 @@ namespace Builder.Collection.Passes;
 /// Writes ObjectHacker's routine tables (<c>call</c>, <c>create</c>, <c>types(in:)</c>, <c>routines(in:)</c>) once the
 /// demand walk has settled. A table lists only routines the walk reached, so it is written after the walk: written
 /// during it, its dispatch calls would make every routine of a type reached. Each table routine is declared in the
-/// library (<c>ObjectHacker/Reflect.rf</c>) with a body that lists nothing, and the walk builds it like any other
+/// library (<c>ObjectHacker/Reflect.rr</c>) with a body that lists nothing, and the walk builds it like any other
 /// routine. Afterwards this pass gives each reached table the body for what the walk reached, analyzes and lowers
 /// it, and the caller walks once more, so the helpers a dispatch body calls (argument conversions, the
 /// <c>Unknown</c> of a result type) are built too. A rewritten table can make more types described (the type of a
@@ -82,7 +82,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
             }
 
             _written[key: key] = text;
-            if (Environment.GetEnvironmentVariable(variable: "RF_DEBUG_REFLECT") is { Length: > 0 })
+            if (Environment.GetEnvironmentVariable(variable: "RA_DEBUG_REFLECT") is { Length: > 0 })
             {
                 Console.Error.WriteLine(value: $"[reflect] {key}\n{text}");
             }
@@ -145,7 +145,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
     {
         return annotations?.Where(predicate: a =>
                                Parser.Parser.IsProgramAnnotation(name: Parser.Parser.AnnotationName(annotation: a),
-                                   language: Language.Suflae))
+                                   language: Language.Mielia))
                           .ToList() ?? [];
     }
 
@@ -154,11 +154,11 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         RoutineInfo definition = info.GenericDefinition ?? info;
         return TableNames.Contains(item: info.Name) && definition.Module == ModuleName &&
                definition.Location?.FileName is { } file &&
-               file.EndsWith(value: "Reflect.rf", comparisonType: StringComparison.Ordinal);
+               file.EndsWith(value: "Reflect.rr", comparisonType: StringComparison.Ordinal);
     }
 
     /// <summary>The type a per-type table is for (its one type argument), and the type whose routines it lists: a
-    /// Suflae entity's handle lists the entity's routines.</summary>
+    /// Mielia entity's handle lists the entity's routines.</summary>
     private (TypeSymbol Value, TypeSymbol Declared)? OwnerOf(RoutineInfo info)
     {
         if (info.TypeArguments is not [{ } value])
@@ -174,8 +174,8 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         return (HandleOf(type: value), value);
     }
 
-    /// <summary>What a Suflae program holds of a type: a handle to an entity, the value itself otherwise. ObjectHacker
-    /// is Suflae's, so every entity it meets is held this way.</summary>
+    /// <summary>What a Mielia program holds of a type: a handle to an entity, the value itself otherwise. ObjectHacker
+    /// is Mielia's, so every entity it meets is held this way.</summary>
     private TypeSymbol HandleOf(TypeSymbol type)
     {
         return type is EntityTypeSymbol &&
@@ -727,7 +727,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
                      .Select(selector: m => (m.Name, m.Type, (string?)null))
                      .ToList()
                     : DescribeParameters(info: r);
-                // The creator every entity has makes the entity itself, which a Suflae value is a handle to.
+                // The creator every entity has makes the entity itself, which a Mielia value is a handle to.
                 string keep = r == null && o.Declared is EntityTypeSymbol &&
                               !ReferenceEquals(objA: o.Value, objB: o.Declared)
                     ? $"entity_unknown[{subs.Type(type: o.Declared)}](value: {{0}})"
@@ -866,7 +866,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
 
     private static Statement Parse(string text, RoutineInfo info)
     {
-        string file = (info.GenericDefinition ?? info).Location?.FileName ?? "Reflect.rf";
+        string file = (info.GenericDefinition ?? info).Location?.FileName ?? "Reflect.rr";
         string source = $"module {ModuleName}\n\nroutine reflected_table()\n{text}";
         Language language = Builder.Frontends.Languages.OfFile(fileName: file);
         List<Builder.Tokenizer.Token> tokens =

@@ -28,7 +28,7 @@ internal sealed class FormatRefusedException(string reason) : Exception(message:
 }
 
 /// <summary>
-/// The RazorForge and Suflae source formatter: parses a file, prints its syntax tree in the one canonical layout,
+/// The Revare and Mielia source formatter: parses a file, prints its syntax tree in the one canonical layout,
 /// and keeps the result only when it parses back to the same tree with the same comments. Language differences come
 /// through <see cref="LanguageRules"/>.
 /// </summary>

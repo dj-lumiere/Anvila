@@ -17,14 +17,14 @@ internal partial class Program
         options: RegexOptions.Compiled);
 
     /// <summary>
-    /// <c>--step return-steal</c> (RazorForge): a local handed over inside a <c>return</c> expression ends at that
+    /// <c>--step return-steal</c> (Revare): a local handed over inside a <c>return</c> expression ends at that
     /// return, so it moves without <c>steal</c>: <c>return Board(rows: steal rows)</c> is <c>return Board(rows:
     /// rows)</c> and <c>return steal xs</c> is <c>return xs</c>. A parameter, <c>me</c>, and a <c>steal</c> outside a
     /// return keep the word. Strings and comments stay as they are.
     /// </summary>
     private static string RewriteReturnSteal(string file, string source, Language language, int lineOffset)
     {
-        if (language != Language.RazorForge)
+        if (language != Language.Revare)
         {
             return source;
         }

@@ -69,7 +69,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 _ => null
             } is { } carrierDef)
         {
-            // A Suflae entity a routine gives back is its shared handle (`Roamed[E]`), while a construction is typed
+            // A Mielia entity a routine gives back is its shared handle (`Roamed[E]`), while a construction is typed
             // as the entity itself: the variant's carrier holds the handle, and so does the value here.
             if (!ReferenceEquals(objA: held, objB: payload) &&
                 Builder.Verification.SemanticVerifier.Unroamed(type: held) is { } unroamed &&
@@ -474,9 +474,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// Whether a construction written in <paramref name="callFile"/> takes what the recovery variant of
-    /// <paramref name="creator"/> gives: the variant of a creator written where entities are shared handles (Suflae)
-    /// gives the handle it makes, while a construction in a file of the other model (a RazorForge library file that
-    /// builds a Suflae list) takes the entity itself. Such a construction stays the plain call.
+    /// <paramref name="creator"/> gives: the variant of a creator written where entities are shared handles (Mielia)
+    /// gives the handle it makes, while a construction in a file of the other model (a Revare library file that
+    /// builds a Mielia list) takes the entity itself. Such a construction stays the plain call.
     /// </summary>
     private static bool SameEntityModel(RoutineInfo creator, string? callFile, TypeRegistry registry)
     {
@@ -568,7 +568,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         // tag-based `when` over the inner's variant, TryBuildCarrierSafeCall/BuildCarrierPropagationWhen).
         // A kind left without the registry keeps its inner failable calls raw, and their failure then
         // crashes through the recovery the caller asked for.
-        // A routine that returns nothing may end without a `return` (Suflae never writes one). Reaching its end is
+        // A routine that returns nothing may end without a `return` (Mielia never writes one). Reaching its end is
         // success, so the try variant gets the `return` that becomes `true` here, instead of the closing return
         // added later, which would give the zero value of Bool.
         if (kind == ErrorHandlingVariantKind.TryBool && body is BlockStatement { Statements: var stmts } block &&
@@ -1336,7 +1336,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>), an element of
-    /// a collection (<c>xs[0] = xs[0] + 1</c>, which other jobs may share), or a Suflae module global, which
+    /// a collection (<c>xs[0] = xs[0] + 1</c>, which other jobs may share), or a Mielia module global, which
     /// becomes a member variable of the one shared globals entity later (<c>visits = visits + 1</c>).</summary>
     private static bool WritesMemberVariable(Statement stmt)
     {
@@ -1443,7 +1443,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             };
             // An entity the statement only calls a routine of (`me.transform(outer).to[List]()`) stays the temp's own,
             // so the scope tears the temp down. One that is handed on, or moved into a handle, is stolen from it. Where
-            // entities are shared handles (Suflae), the temp holds a handle and what it is handed to takes its own
+            // entities are shared handles (Mielia), the temp holds a handle and what it is handed to takes its own
             // hold of it, so the temp is read as it is and torn down with the scope.
             return stealsEntities && call.ResolvedType?.Category == TypeCategory.Entity && !StaysWithTemp(call: e)
                 ? new StealExpression(Operand: reference, Location: call.Location)

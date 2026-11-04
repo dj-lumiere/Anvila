@@ -9,7 +9,7 @@ namespace Builder.Verification;
 /// <summary>
 /// A member routine of a generic type may be written for some of the type's instances only, by a kind on the type's
 /// parameter (<c>routine List[T].sorted_by(...)</c> with <c>needs RecordType T</c>: it copies the elements). A call of
-/// one on an instance its kinds leave out (<c>sorted_by</c> on a <c>List</c> of entities) is RF-S151 at the call.
+/// one on an instance its kinds leave out (<c>sorted_by</c> on a <c>List</c> of entities) is RA-S151 at the call.
 /// Without it the call builds and the routine's body is never made for that instance. Runs over the analyzed user
 /// bodies.
 /// </summary>

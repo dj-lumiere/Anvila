@@ -11,7 +11,7 @@ namespace Builder.Lowering.Passes;
 /// field READ or WRITE through a <c>Roamed[E]</c> handle must be wrapped in
 /// <c>handle.lock_enter()</c> … <c>handle.lock_exit()</c> so that — once the object has ESCAPED to
 /// another worker — the field touch is serialized. The lock is a no-op while the object is LOCAL and a
-/// <b>reentrant</b>, task-keyed acquire once escaped (see <c>Roamed.rf</c>).
+/// <b>reentrant</b>, task-keyed acquire once escaped (see <c>Roamed.rr</c>).
 ///
 /// <para>Previously codegen inserted <c>call void @lock_enter/@lock_exit(handle)</c> itself, with NO
 /// surface AST call, bracketing each individual field read/write. This pass makes it a REAL AST rewrite
@@ -1109,7 +1109,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                     // A direct field access through a Roamed handle, OR a memberRoutine-dispatch deref (the
                     // `control`/`refer`/`raw_inner` coercion RoamedProjectionLoweringPass inserts on a
                     // Roamed receiver). Both must hold the access lock across the enclosing statement —
-                    // otherwise a memberRoutine call on a Roamed receiver (e.g. an SF wrapper's `xs.getitem!(i)`,
+                    // otherwise a memberRoutine call on a Roamed receiver (e.g. an MI wrapper's `xs.getitem!(i)`,
                     // whose bare-`me` inner is reached via the coercion) touches the object UNLOCKED,
                     // breaking escaped-mode serialization. Coarse (whole-statement) bracketing is exact for
                     // the reentrant, task-keyed lock.

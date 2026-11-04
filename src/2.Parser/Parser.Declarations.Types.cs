@@ -988,7 +988,7 @@ public partial class Parser
         List<(string Realm, string Name)>? realmImports = null;
 
         // Parse module path - could be multiple identifiers separated by slashes
-        // Dot marks a specific type within the module: import razorforge/System.Bool
+        // Dot marks a specific type within the module: import revare/System.Bool
         do
         {
             modulePathSb.Append(value: ConsumeIdentifier(errorMessage: "Expected module name"));

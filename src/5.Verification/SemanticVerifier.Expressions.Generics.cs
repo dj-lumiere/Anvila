@@ -20,7 +20,7 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol result = AnalyzeGenericMemberRoutineCallExpressionCore(generic: generic);
         // A generic call (`make_channel[S64](capacity: 4)`, `obj.method[T](..)`) resolves through a path distinct from
-        // the plain-call analyzer, so the Suflae unsafe-call gate is applied here too on its resolved routine.
+        // the plain-call analyzer, so the Mielia unsafe-call gate is applied here too on its resolved routine.
         EnforceUnsafeCallAllowed(resolved: generic.ResolvedRoutine, location: generic.Location);
         CheckKeepsLentEntities(receiver: generic.Object, objectType: generic.Object.ResolvedType,
             memberRoutine: generic.ResolvedRoutine, location: generic.Location);
@@ -197,7 +197,7 @@ public sealed partial class SemanticVerifier
                     location: generic.TypeArguments[index: i].Location) with
                 {
                     KnownType = full,
-                    // The completed argument names the same language's type as the written one (`RF::List`).
+                    // The completed argument names the same language's type as the written one (`RA::List`).
                     Realm = generic.TypeArguments[index: i].Realm
                 };
         }
@@ -298,7 +298,7 @@ public sealed partial class SemanticVerifier
             : written;
     }
 
-    /// <summary>The entity a shared-entity handle (<c>Roamed[E]</c>) stands for, else the type itself: a Suflae bracket
+    /// <summary>The entity a shared-entity handle (<c>Roamed[E]</c>) stands for, else the type itself: a Mielia bracket
     /// that names an entity (<c>to[Set]</c>) means the entity.</summary>
     internal static TypeSymbol Unroamed(TypeSymbol type)
     {
@@ -351,7 +351,7 @@ public sealed partial class SemanticVerifier
         }
 
         // A family of specializations (`routine S64.to[U8]()`, ...) is picked by the written type arguments.
-        // A Suflae entity is held through its handle (`Roamed[SkipIterable[...]]`): the family is the entity's. A
+        // A Mielia entity is held through its handle (`Roamed[SkipIterable[...]]`): the family is the entity's. A
         // type parameter's family is what the protocols it obeys write (`source.to[List]()` with
         // `TSource obeys Iterable[T]`): the member is bound to the protocol for now and picked again on the concrete
         // receiver when the body is made concrete.
@@ -433,7 +433,7 @@ public sealed partial class SemanticVerifier
             }
 
             // A member a protocol writes for every obeying type (`Iterable[T].to[List[T]]`) runs on the receiver
-            // itself: homed on the receiver's type, its `me` is that type (in Suflae the entity's handle).
+            // itself: homed on the receiver's type, its `me` is that type (in Mielia the entity's handle).
             if (chosen is { OwnerType: ProtocolTypeSymbol } && Unroamed(type: objectType) is var home &&
                 home is RecordTypeSymbol or EntityTypeSymbol && !home.IsGenericDefinition &&
                 _registry.SubstituteMemberRoutineForOwner(memberRoutine: chosen, resolvedOwner: home) is { } homed)
@@ -544,7 +544,7 @@ public sealed partial class SemanticVerifier
             // resolve to the FOREIGN routine, not the bare-name slot — which an ambient same-named free
             // routine may now own (the free `atan2(y, x)` vs the `LLVM::atan2` intrinsic). The realm-
             // qualified index and the generic-overload index both reach the intrinsic; the ambient
-            // `LookupRoutine(bareName)` would wrongly bind the ambient routine and then trip RF-S460.
+            // `LookupRoutine(bareName)` would wrongly bind the ambient routine and then trip RA-S460.
             // LookupGenericOverload covers generic free routines, which register only in the
             // generic-overload index — without it an explicit `gen_id[T](...)` call to a generic
             // routine in another module fails to resolve (concrete free routines resolve fine).
@@ -862,7 +862,7 @@ public sealed partial class SemanticVerifier
         // Tracks whether the routine is fully monomorphized below. When true, its ReturnType is
         // already the substituted form, so the typeSubs re-substitution further down must be
         // skipped — re-applying the map to an already-substituted return double-wraps nested
-        // type args (RF-S301).
+        // type args (RA-S301).
         bool routineMonomorphized = false;
         if (routine.IsGenericDefinition)
         {
@@ -1000,11 +1000,11 @@ public sealed partial class SemanticVerifier
         GenericMemberRoutineCallExpression generic, IdentifierExpression typeId, TypeSymbol typeSymbol,
         List<TypeSymbol> typeArgs)
     {
-        // Honor an explicit `RF::`/`SF::` realm on a generic construction (`RF::System.List[T]()`): the
-        // Object was resolved realm-blind (prefers the file's resolution realm), so inside an SF file
-        // `RF::System.List[T]()` would resolve to the SF-realm list and the SF wrapper's constructor
-        // `return List[T](inner: RF::System.List[T]())` would self-recurse. Swap the generic DEF to the
-        // qualified realm before resolving, so the inner construction reaches the RazorForge list.
+        // Honor an explicit `RA::`/`MI::` realm on a generic construction (`RA::System.List[T]()`): the
+        // Object was resolved realm-blind (prefers the file's resolution realm), so inside an MI file
+        // `RA::System.List[T]()` would resolve to the MI-realm list and the MI wrapper's constructor
+        // `return List[T](inner: RA::System.List[T]())` would self-recurse. Swap the generic DEF to the
+        // qualified realm before resolving, so the inner construction reaches the Revare list.
         if (typeId.Realm is { } genCtorRealm && typeSymbol.Realm != genCtorRealm &&
             _registry.ReResolveInRealm(type: typeSymbol, realm: genCtorRealm) is TypeSymbol
             {
@@ -1363,7 +1363,7 @@ public sealed partial class SemanticVerifier
 
 
     /// <summary>
-    /// Reports RF-S (FlagsMemberNotFound) for each name in <paramref name="flagNames"/> that is not a
+    /// Reports RA-S (FlagsMemberNotFound) for each name in <paramref name="flagNames"/> that is not a
     /// member of <paramref name="flagsType"/>.
     /// </summary>
     private void ValidateFlagNamesExist(FlagsTypeSymbol flagsType, IEnumerable<string> flagNames,

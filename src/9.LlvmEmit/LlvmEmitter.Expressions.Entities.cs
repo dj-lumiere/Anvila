@@ -50,8 +50,8 @@ public partial class LlvmEmitter
             EmitLine(sb: sb,
                 line: $"  store {memberVariableType} {value}, ptr {memberVariablePtr}");
 
-            // Roamed[T] field: MOVE the argument's reference into the field — NO retain here. In Suflae,
-            // SuflaeEntityLoweringPass.RetainConstructionArg has already turned every construction arg
+            // Roamed[T] field: MOVE the argument's reference into the field — NO retain here. In Mielia,
+            // MieliaEntityLoweringPass.RetainConstructionArg has already turned every construction arg
             // into an OWNED rvalue (a `.roam()` copy of a borrowed handle, or a fresh promote like
             // `List().roam()`), so the field simply takes ownership of that one reference. Retaining
             // again would double-count: the borrow path leaves the `.roam()` temp unreleased, and the
