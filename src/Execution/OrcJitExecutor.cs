@@ -189,6 +189,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         LeaveDataLayoutToJit(mod: mod);
+        CompileWithoutOptimizing(mod: mod);
         LLVMOrcOpaqueThreadSafeContext* tsCtx = _fromCtx(ctx);
         LLVMOrcOpaqueThreadSafeModule* tsm =
             LLVM.OrcCreateNewThreadSafeModule(M: mod, TSCtx: tsCtx);
@@ -252,46 +253,43 @@ internal static unsafe class OrcJitExecutor
     }
 
     /// <summary>
-    /// Makes the JIT compile the way a debug build wants: no optimizing code generation, so the fast instruction
-    /// selector runs and a module compiles in a fraction of the time. The default LLJIT optimizes its machine code,
-    /// which is the wrong trade for a program that runs once after each edit. When the host's target machine cannot
-    /// be described, the builder keeps the default.
+    /// Makes the JIT compile the module the way a debug build wants: every routine it defines is marked
+    /// <c>optnone noinline</c>, so code generation takes the fast instruction selector and skips its optimizing passes
+    /// for it, and a module compiles in a fraction of the time. A program run by the JIT runs once after each edit.
+    /// The JIT's own target machine stays the one it detects for the host: that one keeps emulated TLS (the Ingrid
+    /// object and the base object are compiled with <c>-femulated-tls</c>, and on Windows native TLS would ask for
+    /// <c>_tls_index</c>) and the init-array constructors, which a target machine made by hand does not.
+    /// A routine marked <c>alwaysinline</c>, <c>optsize</c> or <c>minsize</c> keeps its attributes (they cannot go
+    /// with <c>optnone</c>).
     /// </summary>
-    private static void UseFastInstructionSelection(LLVMOrcOpaqueLLJITBuilder* builder)
+    private static void CompileWithoutOptimizing(LLVMOpaqueModule* mod)
     {
-        LLVMOrcOpaqueJITTargetMachineBuilder* host;
-        LLVMOpaqueError* detectError = LLVM.OrcJITTargetMachineBuilderDetectHost(Result: &host);
-        if (detectError != null)
+        LLVMOpaqueContext* ctx = LLVM.GetModuleContext(M: mod);
+        uint optNone = AttributeKind(name: "optnone");
+        uint noInline = AttributeKind(name: "noinline");
+        uint[] incompatible = [AttributeKind(name: "alwaysinline"), AttributeKind(name: "optsize"), AttributeKind(name: "minsize")];
+        const LLVMAttributeIndex functionIndex = LLVMAttributeIndex.LLVMAttributeFunctionIndex;
+        for (LLVMOpaqueValue* fn = LLVM.GetFirstFunction(M: mod); fn != null; fn = LLVM.GetNextFunction(Fn: fn))
         {
-            LLVM.ConsumeError(Err: detectError);
-            return;
-        }
+            if (LLVM.IsDeclaration(Global: fn) != 0 ||
+                LLVM.GetEnumAttributeAtIndex(F: fn, Idx: functionIndex, KindID: optNone) != null ||
+                incompatible.Any(predicate: kind => LLVM.GetEnumAttributeAtIndex(F: fn, Idx: functionIndex, KindID: kind) != null))
+            {
+                continue;
+            }
 
-        sbyte* triple = LLVM.OrcJITTargetMachineBuilderGetTargetTriple(JTMB: host);
-        LLVMOpaqueTargetMachine* machine = null;
-        LLVMTarget* target;
-        sbyte* targetError;
-        if (triple != null && LLVM.GetTargetFromTriple(Triple: triple, T: &target, ErrorMessage: &targetError) == 0)
-        {
-            sbyte* cpu = LLVM.GetHostCPUName();
-            sbyte* features = LLVM.GetHostCPUFeatures();
-            machine = LLVM.CreateTargetMachine(T: target,
-                Triple: triple,
-                CPU: cpu,
-                Features: features,
-                Level: LLVMCodeGenOptLevel.LLVMCodeGenLevelNone,
-                Reloc: LLVMRelocMode.LLVMRelocDefault,
-                CodeModel: LLVMCodeModel.LLVMCodeModelJITDefault);
-            LLVM.DisposeMessage(Message: cpu);
-            LLVM.DisposeMessage(Message: features);
+            LLVM.AddAttributeAtIndex(F: fn, Idx: functionIndex, A: LLVM.CreateEnumAttribute(C: ctx, KindID: noInline, Val: 0));
+            LLVM.AddAttributeAtIndex(F: fn, Idx: functionIndex, A: LLVM.CreateEnumAttribute(C: ctx, KindID: optNone, Val: 0));
         }
+    }
 
-        LLVM.OrcDisposeJITTargetMachineBuilder(JTMB: host);
-        if (machine != null)
+    /// <summary>The kind number LLVM gives the attribute named <paramref name="name"/>.</summary>
+    private static uint AttributeKind(string name)
+    {
+        byte[] bytes = Encoding.ASCII.GetBytes(s: name);
+        fixed (byte* p = bytes)
         {
-            // The builder takes the machine's description and the machine itself.
-            LLVM.OrcLLJITBuilderSetJITTargetMachineBuilder(Builder: builder,
-                JTMB: LLVM.OrcJITTargetMachineBuilderCreateFromTargetMachine(TM: machine));
+            return LLVM.GetEnumAttributeKindForName(Name: (sbyte*)p, SLen: (nuint)bytes.Length);
         }
     }
 
@@ -299,7 +297,6 @@ internal static unsafe class OrcJitExecutor
     /// symbols made local before it is linked (see <see cref="OrcCoffConstantPools"/>).</summary>
     private static LLVMOrcOpaqueLLJIT* CreateLljit(LLVMOrcOpaqueLLJITBuilder* builder)
     {
-        UseFastInstructionSelection(builder: builder);
         LLVMOrcOpaqueLLJIT* jit;
         CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
         if (OperatingSystem.IsWindows())
@@ -474,6 +471,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         LeaveDataLayoutToJit(mod: mod);
+        CompileWithoutOptimizing(mod: mod);
         LLVMOrcOpaqueThreadSafeContext* tsCtx = _fromCtx(ctx);
         return LLVM.OrcCreateNewThreadSafeModule(M: mod, TSCtx: tsCtx);
     }
