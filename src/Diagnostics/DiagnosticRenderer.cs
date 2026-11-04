@@ -139,10 +139,39 @@ public static class DiagnosticRenderer
             : !Console.IsOutputRedirected;
     }
 
+    /// <summary>The diagnostics the current flow of work rendered, while a capture is open (<see cref="BeginCapture"/>).
+    /// A flow of its own per caller, so builds running side by side (tests in parallel) never see each other's lines,
+    /// which a capture of the shared console would.</summary>
+    private static readonly AsyncLocal<List<(string Severity, string Header)>?> _captured = new();
+
+    /// <summary>Starts recording every diagnostic this flow of work renders (and the work it starts), with its severity
+    /// (<c>error</c>, <c>warning</c>, <c>note</c>) and header line. The list fills as the build reports. End it with
+    /// <see cref="EndCapture"/>.</summary>
+    public static List<(string Severity, string Header)> BeginCapture()
+    {
+        var captured = new List<(string Severity, string Header)>();
+        _captured.Value = captured;
+        return captured;
+    }
+
+    /// <summary>Stops the recording <see cref="BeginCapture"/> started in this flow of work.</summary>
+    public static void EndCapture()
+    {
+        _captured.Value = null;
+    }
+
     private static void PrintDiagnostic(TextWriter writer, string severity,
         ConsoleColor severityColor, string header, SourceLocation location,
         string indent)
     {
+        if (_captured.Value is { } captured)
+        {
+            lock (captured)
+            {
+                captured.Add(item: (severity, header));
+            }
+        }
+
         bool useColor = UseColorFor(writer: writer);
 
         // Header line: the severity word is colored; the rest stays default so the
