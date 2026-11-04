@@ -684,6 +684,13 @@ public sealed partial class TypeRegistry
             return true;
         }
 
+        // A tuple compares and hashes its parts one by one, so it has what each part has.
+        if (type is TupleTypeSymbol tuple)
+        {
+            return tuple.ElementTypes.All(predicate: part => MemberVariableHasValueRoutine(type: part,
+                protocolName: protocolName));
+        }
+
         return protocolName == "Hashable" && type is RecordTypeSymbol record &&
                !RuntimeContract.WrapperTypes.Contains(item: record.GenericDefinition?.Name ?? record.Name) &&
                !IsEntityKind(type: record) && WritesOwnValueRoutine(type: record, protocolName: protocolName);

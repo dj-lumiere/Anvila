@@ -735,10 +735,32 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         {
             if (expr is CallExpression top && WaitsForWork(call: top))
             {
-                return expr;
+                return WorkIsHeld(call: top)
+                    ? HoistReadReceiver(call: top)
+                    : expr;
             }
 
             return VisitExpression(expr: expr);
+        }
+
+        /// <summary>A work read out of a container (<c>jobs[0].retrieve()</c>) is read first, under the container's lock,
+        /// which is released before the wait: the work it waits for may need the container.</summary>
+        private CallExpression HoistReadReceiver(CallExpression call)
+        {
+            if (call.Callee is not MemberExpression waitMember || waitMember.Object.ResolvedType == null ||
+                PeelCoercion(expr: waitMember.Object) is not CallExpression
+                    { Callee: MemberExpression { MemberName: "getitem" } })
+            {
+                return call;
+            }
+
+            List<Expression> readHandles = FieldAccessHandles(
+                    stmt: new ExpressionStatement(Expression: waitMember.Object, Location: call.Location))
+                .Where(predicate: h => IsHeldPlace(handle: h) && !IsSelfLocking(handle: h))
+                .ToList();
+            Expression read = pass.Spill(value: waitMember.Object, handles: readHandles, into: into,
+                readsHeldValue: true);
+            return call with { Callee = waitMember with { Object = read } };
         }
 
         protected override Expression VisitCall(CallExpression e)
@@ -751,6 +773,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 return visited;
             }
 
+            visited = HoistReadReceiver(call: visited);
             List<Expression> handles = FieldAccessHandles(
                     stmt: new ExpressionStatement(Expression: visited, Location: visited.Location))
                 .Where(predicate: h => IsHeldPlace(handle: h) && !IsSelfLocking(handle: h))

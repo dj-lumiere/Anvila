@@ -552,6 +552,11 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     // Dispatches all binary-expression lowering by operator and operand types.
+    private static bool IsFlagsOrChoice(TypeSymbol type)
+    {
+        return type is FlagsTypeSymbol or ChoiceTypeSymbol;
+    }
+
     private (List<Statement> Hoisted, Expression Expr) LowerBinaryExpr(BinaryExpression bin,
         Expression expr)
     {
@@ -575,6 +580,18 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                     or BinaryOperator.Equal or BinaryOperator.NotEqual,
                 Left.ResolvedType: ChoiceTypeSymbol ct
             } => LowerChoiceIsExpression(bin: bin, choiceType: ct),
+            // `x == none` / `x != none` on a carrier -> `x is None` / `x isnot None`
+            {
+                Operator: BinaryOperator.Equal or BinaryOperator.NotEqual,
+                Right: LiteralExpression { LiteralType: TokenType.NoneValue },
+                Left.ResolvedType: { } noneOperand
+            } when !IsFlagsOrChoice(type: noneOperand) => LowerIsPatternExpression(ipe: new IsPatternExpression(
+                Expression: bin.Left,
+                Pattern: new TypePattern(Type: new TypeExpression(Name: "None", GenericArguments: null,
+                        Location: bin.Location),
+                    VariableName: null, Bindings: null, Location: bin.Location),
+                IsNegated: bin.Operator == BinaryOperator.NotEqual,
+                Location: bin.Location) { ResolvedType = bin.ResolvedType }),
             // Step 1g: boolean And -> short-circuit ConditionalExpression
             { Operator: BinaryOperator.And, Left.ResolvedType: not FlagsTypeSymbol } =>
                 LowerBooleanAnd(bin: bin),

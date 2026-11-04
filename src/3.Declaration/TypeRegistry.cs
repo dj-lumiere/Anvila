@@ -2882,6 +2882,37 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// Gives the tuple types made before the conformance pass the <c>eq</c>, <c>ne</c> and <c>hash</c> they could not
+    /// get then: a record in a tuple (<c>pair: (Slot, S64)</c> in a member variable) only has <c>==</c> and a hash once
+    /// the pass has run. Runs to a fixed point, since a tuple may hold a tuple.
+    /// </summary>
+    internal void CompleteTupleValueRoutines()
+    {
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (TupleTypeSymbol tuple in _resolutions.Values.OfType<TupleTypeSymbol>()
+                                                          .Distinct()
+                                                          .ToList())
+            {
+                int before = GetMemberRoutinesForType(type: tuple).Count();
+                if (LookupMemberRoutine(type: tuple, memberRoutineName: "eq") == null)
+                {
+                    RegisterTupleEqualityRoutines(newType: tuple, elementTypes: tuple.ElementTypes.ToList());
+                }
+
+                if (LookupMemberRoutine(type: tuple, memberRoutineName: "hash") == null)
+                {
+                    RegisterTupleHashRoutine(newType: tuple, elementTypes: tuple.ElementTypes.ToList());
+                }
+
+                changed |= GetMemberRoutinesForType(type: tuple).Count() != before;
+            }
+        }
+    }
+
+    /// <summary>
     /// Auto-registers <c>eq</c> and <c>ne</c> if every element type has <c>eq</c> (option a: structural
     /// derivation iff all components support it). Component types whose owners haven't opted into
     /// Equatable simply won't have eq registered, so the tuple won't either.

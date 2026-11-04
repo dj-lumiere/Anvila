@@ -897,6 +897,15 @@ internal sealed class TypeResolver
         foreach (TypeExpression protoExpr in constraint.ConstraintTypes.Where(predicate: p =>
                      !_sa.ImplementsProtocol(type: typeArg, protocolName: p.Name)))
         {
+            // A record or entity gets `==` and a hash from its member variables only after every signature is
+            // resolved, so the verdict waits for that (ProtocolConformanceAnalyzer.ApplyImplicitMarkerConformance).
+            if (_sa.DefersValueProtocolChecks && protoExpr.Name is "Equatable" or "Hashable" &&
+                typeArg is RecordTypeSymbol or EntityTypeSymbol)
+            {
+                _sa.DeferredValueProtocolChecks.Add(item: (typeArg, protoExpr.Name, constraint.ParameterName, location));
+                continue;
+            }
+
             _sa.ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
                 message: _sa.ProtocolViolationMessage(type: typeArg, protocolName: protoExpr.Name,
                     parameterName: constraint.ParameterName),

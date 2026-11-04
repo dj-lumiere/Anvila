@@ -39,6 +39,7 @@ internal sealed class ProtocolConformanceAnalyzer
     /// </summary>
     internal void ApplyKindMarkerConformanceEarly()
     {
+        _sa.DefersValueProtocolChecks = true;
         foreach (TypeSymbol type in _sa._registry.GetTypesByCategory(category: TypeCategory.Choice)
                                      .Concat(second: _sa._registry.GetTypesByCategory(category: TypeCategory.Flags)))
         {
@@ -65,6 +66,7 @@ internal sealed class ProtocolConformanceAnalyzer
         ApplyAutoCopyableConformance();
         ApplyEverywhereConformance();
         ApplyAutoEquatableConformance();
+        _sa.ReportDeferredValueProtocolChecks();
     }
 
     /// <summary>
@@ -328,6 +330,7 @@ internal sealed class ProtocolConformanceAnalyzer
     {
         ApplyAutoValueConformance(protocolName: EquatableProtocol, entities: true);
         ApplyAutoValueConformance(protocolName: HashableProtocol, entities: false);
+        _sa._registry.CompleteTupleValueRoutines();
     }
 
     private void ApplyAutoValueConformance(string protocolName, bool entities)

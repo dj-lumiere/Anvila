@@ -917,7 +917,8 @@ public sealed partial class SemanticVerifier
             rightType = binary.Operator == BinaryOperator.Assign ||
                         binary is { Operator: BinaryOperator.Equal or BinaryOperator.NotEqual,
                             Right: LiteralExpression { LiteralType: TokenType.NoneValue } } &&
-                        (ValueTokenTarget(type: leftType) ?? leftType) is FlagsTypeSymbol
+                        ((ValueTokenTarget(type: leftType) ?? leftType) is FlagsTypeSymbol ||
+                         IsNoneCarrierSlot(type: ValueTokenTarget(type: leftType) ?? leftType))
                 ? AnalyzeExpression(expression: binary.Right,
                     expectedType: binary.Operator == BinaryOperator.Assign
                         ? leftType
@@ -958,6 +959,15 @@ public sealed partial class SemanticVerifier
                 targetType: leftType,
                 valueType: rightType,
                 location: binary.Location);
+        }
+
+        // `x == none` / `x != none` on a `T?` (or a variant with a None arm) asks only whether the value is absent and
+        // needs no equality on `T`. ExpressionLoweringPass turns it into `x is None` / `x isnot None`.
+        if (binary is { Operator: BinaryOperator.Equal or BinaryOperator.NotEqual,
+                Right: LiteralExpression { LiteralType: TokenType.NoneValue } } &&
+            IsNoneCarrierSlot(type: leftType))
+        {
+            return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
         }
 
         if (TryAnalyzeFlagsOperator(binary: binary,

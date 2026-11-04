@@ -755,6 +755,36 @@ public sealed partial class SemanticVerifier
         return true;
     }
 
+    /// <summary>True from the start of type and signature resolution until the conformance pass has run: a
+    /// <c>Set[P]</c> written in a signature asks <c>P</c> for a <c>==</c> and a hash that the pass gives it later.</summary>
+    internal bool DefersValueProtocolChecks { get; set; }
+
+    /// <summary>The <c>Equatable</c> / <c>Hashable</c> requirements met while <see cref="DefersValueProtocolChecks"/>
+    /// was on: the type, the protocol, the parameter that asks, and where.</summary>
+    internal List<(TypeSymbol Type, string ProtocolName, string ParameterName, SourceLocation Location)>
+        DeferredValueProtocolChecks { get; } = [];
+
+    /// <summary>Ends the deferral and reports each requirement the conformance pass left unmet.</summary>
+    internal void ReportDeferredValueProtocolChecks()
+    {
+        DefersValueProtocolChecks = false;
+        foreach ((TypeSymbol type, string protocolName, string parameterName, SourceLocation location) in
+                 DeferredValueProtocolChecks.ToList())
+        {
+            if (ImplementsProtocol(type: type, protocolName: protocolName))
+            {
+                continue;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
+                message: ProtocolViolationMessage(type: type, protocolName: protocolName,
+                    parameterName: parameterName),
+                location: location);
+        }
+
+        DeferredValueProtocolChecks.Clear();
+    }
+
     /// <summary>
     /// The error for a type that does not obey a protocol a place asks for: which routine of the protocol it lacks, or
     /// how its routine of that name differs. A parameter written with a protocol as its type (`shape: Shape`) is

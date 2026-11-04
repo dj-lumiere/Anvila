@@ -1116,7 +1116,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         TypeSymbol? fieldType = target.ResolvedType ?? DeclaredFieldOfMe(target: target);
         if (fieldType is null ||
             !(IsHandleOrOptionalHandle(type: fieldType) ||
-              OwnsReplacedEntity(fieldType: fieldType, location: original.Location)) ||
+              OwnsReplacedEntity(fieldType: fieldType, location: original.Location) ||
+              HoldsSharedHandles(fieldType: fieldType, location: original.Location)) ||
             !TryResolveDestroy(type: fieldType, destroy: out RoutineInfo? destroy) ||
             destroy is null)
         {
@@ -1180,6 +1181,36 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
         return fieldType is EntityTypeSymbol ||
                fieldType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [EntityTypeSymbol] };
+    }
+
+    /// <summary>
+    /// Whether a member variable of <paramref name="fieldType"/> is a record (or a tuple) that holds entity handles
+    /// of a program whose entities are shared, directly or through a member record. Writing a new record over it
+    /// (<c>holder.slot = again</c>) drops the old record's shares, which only its own teardown releases.
+    /// </summary>
+    private bool HoldsSharedHandles(TypeSymbol fieldType, SourceLocation location)
+    {
+        string file = location.FileName ?? "";
+        return !ctx.Registry.IsStandardLibraryFile(filePath: file) &&
+               ctx.Registry.EntitiesAreSharedIn(filePath: file) &&
+               fieldType is RecordTypeSymbol &&
+               RecordHoldsHandle(type: fieldType, depth: 0);
+    }
+
+    private static bool RecordHoldsHandle(TypeSymbol type, int depth)
+    {
+        if (depth > 8 || type is not RecordTypeSymbol record)
+        {
+            return false;
+        }
+
+        if (TypeRegistry.GetRcWrapperBaseName(type: record) == RuntimeContract.Roamed)
+        {
+            return true;
+        }
+
+        return (record.MemberVariables?.Any(predicate: member => RecordHoldsHandle(type: member.Type, depth: depth + 1)) ?? false) ||
+               (record.TypeArguments?.Any(predicate: arg => RecordHoldsHandle(type: arg, depth: depth + 1)) ?? false);
     }
 
     /// <summary>The declared type of the field <paramref name="target"/> names when it is a field of <c>me</c>.</summary>
