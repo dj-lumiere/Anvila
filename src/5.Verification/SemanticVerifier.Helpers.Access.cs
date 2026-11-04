@@ -980,10 +980,16 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Checks if the current access context reaches a <c>secret</c> member of <paramref name="memberModule"/>: code
     /// of that module or of a module under it (<c>Garden/Tools</c> reaches <c>Garden</c>'s secrets, not the other way
-    /// around).
+    /// around). Code of a standard library file reaches every secret member.
     /// </summary>
     private bool IsAccessingFromSameModule(string? memberModule)
     {
+        // A secret name of the standard library is seen by every standard library file.
+        if (IsStdlibFile(filePath: _currentFilePath))
+        {
+            return true;
+        }
+
         string? currentModuleName = GetCurrentModuleName();
 
         // If both are in no module, they're in the same module

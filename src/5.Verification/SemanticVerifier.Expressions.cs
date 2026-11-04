@@ -698,6 +698,7 @@ public sealed partial class SemanticVerifier
         foreach (TypeSymbol t in _registry.GetAllTypes())
         {
             if (t is { Visibility: VisibilityModifier.Secret } && t.Name == name &&
+                !IsStdlibFile(filePath: _currentFilePath) &&
                 !(_currentModuleName != null &&
                   Builder.Declaration.StandardModules.IsUnder(module: _currentModuleName, parent: t.Module)))
             {

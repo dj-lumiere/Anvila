@@ -112,8 +112,10 @@ internal sealed class TypeResolver
     }
 
     /// <summary>Whether the code being analyzed reaches a <c>secret</c> type of <paramref name="owner"/>: it is
-    /// in that module or in a module under it.</summary>
+    /// in that module or in a module under it, or is a standard library file (a secret name of the library is seen by
+    /// every library file).</summary>
     private bool SecretReaches(string? owner) =>
+        _sa.IsStdlibFile(filePath: _sa._currentFilePath) ||
         _sa._currentModuleName != null && owner != null &&
         StandardModules.IsUnder(module: _sa._currentModuleName, parent: owner);
 

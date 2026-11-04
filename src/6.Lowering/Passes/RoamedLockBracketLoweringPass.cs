@@ -141,6 +141,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             }
 
             Statement current = ReadFieldsBeforeCalls(stmt: PromoteStoredHandle(stmt: stmt, into: rewritten), into: rewritten);
+            current = WaitBeforeStatement(stmt: current, into: rewritten);
             // One bracket per entity: a statement that reads and writes the same member variable (`c.n = c.n + 1`)
             // names the handle twice, and the lock is reentrant, so a second enter and exit only cost calls.
             var seenPlaces = new HashSet<string>(comparer: StringComparer.Ordinal);
@@ -263,7 +264,8 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     /// makes those entities reachable from another task as well. The value is computed into a name first (unless it
     /// is one already), <c>admit_stored_into(value, holder.controller_address())</c> escapes the entities it holds when
     /// the holder has, and the store then reads the name. Returns the statement to store with, or null when the value
-    /// holds no handle.
+    /// holds no handle. The name is the value the holder keeps from now on, so scope teardown, which runs after this
+    /// pass on recovery variant bodies, leaves it alone (it marks the declaration like a view of held state).
     /// </summary>
     private Statement? AdmitStoredValue(Statement stmt, Expression value, Expression holder, TypeSymbol fieldType,
         List<Statement> into)
@@ -290,7 +292,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                     Type: null,
                     Initializer: value,
                     Visibility: VisibilityModifier.Secret,
-                    Location: value.Location),
+                    Location: value.Location) { ReadsHeldValue = true },
                 Location: value.Location));
             stored = new IdentifierExpression(Name: tmp, Location: value.Location) { ResolvedType = valueType };
         }
@@ -660,8 +662,122 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         }
     }
 
+    /// <summary>
+    /// A call that waits for another job (<c>work.retrieve()</c>) inside a larger statement would hold the access lock
+    /// of every entity the statement reaches while it waits, and the job it waits for may need one of them
+    /// (<c>show(f"{job.retrieve()} {holder.count}")</c> held <c>holder</c> while the job read it). So an eagerly
+    /// evaluated wait that is not the whole value of its statement is computed first into a temp inside its own
+    /// bracket, which holds the work's handle only, and the statement reads the temp. Returns <paramref name="stmt"/>
+    /// with the waits replaced, after adding the temps to <paramref name="into"/>.
+    /// </summary>
+    private Statement WaitBeforeStatement(Statement stmt, List<Statement> into)
+    {
+        var mover = new WaitMover(pass: this, into: into);
+        return stmt switch
+        {
+            ExpressionStatement es => es with { Expression = mover.VisitTop(expr: es.Expression) },
+            AssignmentStatement a => a with { Value = mover.VisitTop(expr: a.Value) },
+            DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } init } v } d =>
+                d with { Declaration = v with { Initializer = mover.VisitTop(expr: init) } },
+            ReturnStatement { Value: { } rv } r => r with { Value = mover.VisitTop(expr: rv) },
+            _ => stmt
+        };
+    }
+
+    /// <summary>Whether the work <paramref name="call"/> waits for is a handle held in a place (a name or a member
+    /// variable path), reached directly or through the coercion the projection pass put on the receiver.</summary>
+    private static bool WorkIsHeld(CallExpression call)
+    {
+        Expression? receiver = (call.Callee as MemberExpression)?.Object;
+        if (receiver is CallExpression { Callee: MemberExpression coercion } && RoamedCoercionReceiver(member: coercion) is { } handle)
+        {
+            receiver = handle;
+        }
+
+        return receiver != null && IsHeldPlace(handle: receiver);
+    }
+
+    /// <summary>Whether <paramref name="call"/> waits for a <c>Work</c> to finish.</summary>
+    private static bool WaitsForWork(CallExpression call)
+    {
+        return call.ResolvedRoutine is { Name: "retrieve", OwnerType: { } owner } &&
+               (TypeRegistry.GetRcWrapperBaseName(type: owner) ?? owner.BareName) == "Work";
+    }
+
+    /// <summary>Replaces the eagerly evaluated waits nested in an expression with temps computed just before the
+    /// statement (see <see cref="WaitBeforeStatement"/>). The right side of <c>and</c>/<c>or</c>/<c>??</c>, the
+    /// branches of a conditional, a <c>when</c> expression and a routine value stay as they are.</summary>
+    private sealed class WaitMover(RoamedLockBracketLoweringPass pass, List<Statement> into) : AstRewriter
+    {
+        /// <summary>Visits the whole value of a statement: a wait that is the value itself stays where it is.</summary>
+        public Expression VisitTop(Expression expr)
+        {
+            if (expr is CallExpression top && WaitsForWork(call: top))
+            {
+                return expr;
+            }
+
+            return VisitExpression(expr: expr);
+        }
+
+        protected override Expression VisitCall(CallExpression e)
+        {
+            var visited = (CallExpression)base.VisitCall(e: e);
+            // A work a call has just produced (`racers.next_finished().retrieve()`) is nobody else's yet, and naming
+            // the call again in a bracket would run it twice, so only a work held in a place moves.
+            if (!WaitsForWork(call: visited) || !WorkIsHeld(call: visited))
+            {
+                return visited;
+            }
+
+            List<Expression> handles = FieldAccessHandles(
+                    stmt: new ExpressionStatement(Expression: visited, Location: visited.Location))
+                .Where(predicate: h => IsHeldPlace(handle: h) && !IsSelfLocking(handle: h))
+                .ToList();
+            return pass.Spill(value: visited, handles: handles, into: into);
+        }
+
+        protected override Expression VisitBinary(BinaryExpression e)
+        {
+            if (e.Operator is BinaryOperator.And or BinaryOperator.Or or BinaryOperator.NoneCoalesce)
+            {
+                Expression left = VisitExpression(expr: e.Left);
+                return ReferenceEquals(objA: left, objB: e.Left)
+                    ? e
+                    : e with { Left = left };
+            }
+
+            return base.VisitBinary(e: e);
+        }
+
+        protected override Expression VisitConditional(ConditionalExpression e)
+        {
+            Expression condition = VisitExpression(expr: e.Condition);
+            return ReferenceEquals(objA: condition, objB: e.Condition)
+                ? e
+                : e with { Condition = condition };
+        }
+
+        protected override Expression VisitWhenExpression(WhenExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitClosureValue(ClosureValueExpression e)
+        {
+            return e;
+        }
+    }
+
+    /// <summary>
+    /// Brackets <paramref name="stmt"/> with the locks of <paramref name="handles"/>. A handle read through another
+    /// one (<c>holder.slot.box</c> through <c>holder</c>) is read only once the outer one is locked, or a store into
+    /// the outer entity could replace it between the read and the lock. So the locks are taken from the outermost
+    /// place inwards and released in the opposite order.
+    /// </summary>
     private void AddBracketed(List<Statement> into, List<Expression> handles, Statement stmt)
     {
+        handles = handles.OrderBy(keySelector: h => PlaceKey(place: h)?.Count(predicate: c => c == '.') ?? 0).ToList();
         foreach (Expression h in handles)
         {
             AddBracket(into: into,
@@ -670,7 +786,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         }
 
         into.Add(item: stmt);
-        foreach (Expression h in handles)
+        foreach (Expression h in Enumerable.Reverse(source: handles))
         {
             AddBracket(into: into,
                 handle: h,
