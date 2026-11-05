@@ -13,6 +13,49 @@ partial class TypeRegistry
     /// Immutable snapshot of the registry state after stdlib loading and body analysis.
     /// Used by tests to restore pre-analyzed stdlib state instead of re-parsing 168 files per test.
     /// </summary>
+    /// <summary>The indexes a registry keeps beside its routine table, as a snapshot holds them.</summary>
+    public sealed class RoutineIndexes
+    {
+        public Dictionary<string, List<string>> KeysByBaseName { get; init; } = null!;
+        public Dictionary<string, List<RoutineInfo>> RoutinesByName { get; init; } = null!;
+        public Dictionary<RoutineInfo, int> KeyCounts { get; init; } = null!;
+
+        /// <summary>The indexes of a routine table, made as <see cref="SetRoutineEntry"/> keeps them while the table's
+        /// entries are stored in order.</summary>
+        public static RoutineIndexes Of(Dictionary<string, RoutineInfo> routines)
+        {
+            var keysByBaseName = new Dictionary<string, List<string>>(comparer: StringComparer.Ordinal);
+            var routinesByName = new Dictionary<string, List<RoutineInfo>>(comparer: StringComparer.Ordinal);
+            var keyCounts = new Dictionary<RoutineInfo, int>(comparer: ReferenceEqualityComparer.Instance);
+            foreach ((string key, RoutineInfo routine) in routines)
+            {
+                int hash = key.IndexOf(value: '#');
+                string baseName = hash < 0 ? key : key[..hash];
+                if (!keysByBaseName.TryGetValue(key: baseName, value: out List<string>? keys))
+                {
+                    keys = [];
+                    keysByBaseName[key: baseName] = keys;
+                }
+
+                keys.Add(item: key);
+                int count = keyCounts.GetValueOrDefault(key: routine) + 1;
+                keyCounts[key: routine] = count;
+                if (count == 1)
+                {
+                    if (!routinesByName.TryGetValue(key: routine.Name, value: out List<RoutineInfo>? named))
+                    {
+                        named = [];
+                        routinesByName[key: routine.Name] = named;
+                    }
+
+                    named.Add(item: routine);
+                }
+            }
+
+            return new RoutineIndexes { KeysByBaseName = keysByBaseName, RoutinesByName = routinesByName, KeyCounts = keyCounts };
+        }
+    }
+
     public sealed class StdlibSnapshot
     {
         /// <summary>The language (Revare or Mielia) this snapshot was built for.</summary>
@@ -37,6 +80,11 @@ partial class TypeRegistry
 
         /// <summary>Routines keyed by qualified name.</summary>
         public Dictionary<string, RoutineInfo> RoutinesByQualifiedName { get; init; } = null!;
+
+        /// <summary>The routine indexes the registry keeps beside <see cref="Routines"/> (keys by base name, routines by
+        /// name, keys per routine), copied on restore instead of being built entry by entry. Null in a snapshot written
+        /// before they were kept: the restore builds them then.</summary>
+        public RoutineIndexes? RoutineIndexes { get; init; }
 
         /// <summary>Routines grouped by owner type full name, then by memberRoutine name → overloads (a bare
         /// generic-param owner is stored under the canonical GenericOwnerKey).</summary>
@@ -137,6 +185,15 @@ partial class TypeRegistry
                 new Dictionary<string, TypeSymbol>(dictionary: _entitySpecializations),
             TypesByShortName = new Dictionary<string, TypeSymbol>(dictionary: _typesByShortName),
             Routines = new Dictionary<string, RoutineInfo>(dictionary: _routines),
+            RoutineIndexes = new RoutineIndexes
+            {
+                KeysByBaseName = _routineKeysByBaseName.ToDictionary(keySelector: kv => kv.Key,
+                    elementSelector: kv => new List<string>(collection: kv.Value), comparer: StringComparer.Ordinal),
+                RoutinesByName = _routinesByName.ToDictionary(keySelector: kv => kv.Key,
+                    elementSelector: kv => new List<RoutineInfo>(collection: kv.Value), comparer: StringComparer.Ordinal),
+                KeyCounts = new Dictionary<RoutineInfo, int>(dictionary: _routineKeyCounts,
+                    comparer: ReferenceEqualityComparer.Instance)
+            },
             RoutinesByQualifiedName =
                 new Dictionary<string, RoutineInfo>(dictionary: _routinesByQualifiedName),
             RoutinesByOwner =
@@ -237,12 +294,45 @@ partial class TypeRegistry
     /// mutations don't leak back into the shared snapshot.</summary>
     private void RestoreRoutineStorage(StdlibSnapshot snapshot)
     {
-        foreach (KeyValuePair<string, RoutineInfo> kv in snapshot.Routines)
+        if (snapshot.RoutineIndexes is { } indexes && _routines.Count == 0)
         {
-            SetRoutineEntry(key: kv.Key, routine: kv.Value);
-            if (kv.Value.IsRecoveryVariant)
+            // The table and its indexes as the snapshot holds them, copied whole: entry by entry, the restore spent most
+            // of its time keeping the indexes in step.
+            TypeShapeVersion.Bump();
+            _routines.EnsureCapacity(capacity: snapshot.Routines.Count);
+            foreach (KeyValuePair<string, RoutineInfo> kv in snapshot.Routines)
             {
-                IndexRecoveryVariant(variant: kv.Value);
+                _routines[key: kv.Key] = kv.Value;
+                if (kv.Value.IsRecoveryVariant)
+                {
+                    IndexRecoveryVariant(variant: kv.Value);
+                }
+            }
+
+            foreach (KeyValuePair<string, List<string>> kv in indexes.KeysByBaseName)
+            {
+                _routineKeysByBaseName[key: kv.Key] = new List<string>(collection: kv.Value);
+            }
+
+            foreach (KeyValuePair<string, List<RoutineInfo>> kv in indexes.RoutinesByName)
+            {
+                _routinesByName[key: kv.Key] = new List<RoutineInfo>(collection: kv.Value);
+            }
+
+            foreach (KeyValuePair<RoutineInfo, int> kv in indexes.KeyCounts)
+            {
+                _routineKeyCounts[key: kv.Key] = kv.Value;
+            }
+        }
+        else
+        {
+            foreach (KeyValuePair<string, RoutineInfo> kv in snapshot.Routines)
+            {
+                SetRoutineEntry(key: kv.Key, routine: kv.Value);
+                if (kv.Value.IsRecoveryVariant)
+                {
+                    IndexRecoveryVariant(variant: kv.Value);
+                }
             }
         }
 

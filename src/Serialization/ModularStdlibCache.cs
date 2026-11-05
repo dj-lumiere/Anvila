@@ -600,6 +600,8 @@ public static class ModularStdlibCache
             EntitySpecializations = merged.EntitySpecializations,
             TypesByShortName = merged.TypesByShortName,
             Routines = merged.Routines,
+            // Made once here, so each build's restore copies them instead of building them entry by entry.
+            RoutineIndexes = TypeRegistry.RoutineIndexes.Of(routines: merged.Routines),
             RoutinesByQualifiedName = merged.RoutinesByQualifiedName,
             RoutinesByOwner = merged.RoutinesByOwner,
             RoutineResolutions = merged.RoutineResolutions,
