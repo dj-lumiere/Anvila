@@ -35,16 +35,28 @@ internal sealed class DerivedOperatorPass
     /// <summary>
     /// Generates derived comparison operators from eq and compare routines.
     /// </summary>
-    public void Run()
+    /// <param name="alreadyDerived">The types whose derived operators and bodies are in place already (a warm build's
+    /// snapshot types), passed over.</param>
+    public void Run(Func<TypeSymbol, bool>? alreadyDerived = null)
     {
         foreach (TypeSymbol type in _registry.GetTypesWithMemberRoutines())
         {
+            if (alreadyDerived?.Invoke(arg: type) == true)
+            {
+                continue;
+            }
+
             GenerateDerivedOperatorsForType(type: type);
         }
 
         // Synthesize crash_title() bodies for all crashable types
         foreach (TypeSymbol type in _registry.GetTypesByCategory(category: TypeCategory.Crashable))
         {
+            if (alreadyDerived?.Invoke(arg: type) == true)
+            {
+                continue;
+            }
+
             RoutineInfo? titleMemberRoutine = _registry.GetMemberRoutinesForType(type: type)
                                                        .FirstOrDefault(predicate: m =>
                                                             m.Name == "crash_title");

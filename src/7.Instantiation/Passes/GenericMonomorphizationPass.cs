@@ -70,7 +70,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             ctx.Registry.StdlibPrograms.Concat(second: ctx.Registry.UserPrograms);
         foreach ((Program program, string _, string _) in allPrograms)
         {
-            IndexProgram(program: program);
+            List<(string Key, RoutineDeclaration Decl)> entries = ctx.RoutineIndexCache is { } cache
+                ? cache.EntriesOf(program: program, shape: IndexShape, read: IndexEntries)
+                : IndexEntries(program: program);
+            AddEntries(program: program, entries: entries);
         }
     }
 
@@ -78,10 +81,40 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     // _indexedByProgram so ReindexProgram can later remove exactly them.
     private void IndexProgram(Program program)
     {
+        AddEntries(program: program, entries: IndexEntries(program: program));
+    }
+
+    private void AddEntries(Program program, List<(string Key, RoutineDeclaration Decl)> entries)
+    {
+        foreach ((string key, RoutineDeclaration decl) in entries)
+        {
+            AddDeclToIndex(key: key, decl: decl);
+        }
+
+        _indexedByProgram[key: program] = entries;
+    }
+
+    // What IndexEntries reads a program's entries from: each declaration, and a routine's registered info (a creator's
+    // second key comes from it).
+    private static object?[] IndexShape(Program program)
+    {
+        var shape = new object?[program.Declarations.Count * 2];
+        for (int i = 0; i < program.Declarations.Count; i++)
+        {
+            ISyntaxTreeNode decl = program.Declarations[index: i];
+            shape[i * 2] = decl;
+            shape[i * 2 + 1] = (decl as RoutineDeclaration)?.ResolvedInfo;
+        }
+
+        return shape;
+    }
+
+    // The (key, decl) entries of ONE program's routine decls.
+    private static List<(string Key, RoutineDeclaration Decl)> IndexEntries(Program program)
+    {
         var entries = new List<(string, RoutineDeclaration)>();
         foreach (RoutineDeclaration decl in program.Declarations.OfType<RoutineDeclaration>())
         {
-            AddDeclToIndex(key: decl.QualifiedName, decl: decl);
             entries.Add(item: (decl.QualifiedName, decl));
 
             // A constructor `routine T(...)` / `routine T[params](...)` is registered as a creator
@@ -94,12 +127,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             {
                 string creatorKey =
                     BuildAstName(genDef: ctorOwner, routineName: RoutineInfo.CreatorName);
-                AddDeclToIndex(key: creatorKey, decl: decl);
                 entries.Add(item: (creatorKey, decl));
             }
         }
 
-        _indexedByProgram[key: program] = entries;
+        return entries;
     }
 
     // Re-index a SINGLE program after the demand analyzer re-desugared it: remove exactly the entries it had

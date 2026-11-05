@@ -1692,11 +1692,9 @@ internal partial class Program
         var userFilePaths = orderedFiles.Select(selector: f => f.FilePath)
                                         .ToHashSet(comparer: StringComparer.OrdinalIgnoreCase);
         bool hasStartRoutine = result.Registry
-                                     .GetAllRoutines()
+                                     .GetRoutinesNamed(name: Builder.Collection.EntryPoint.Start)
                                      .Any(predicate: r =>
                                           r.OwnerType == null &&
-                                          (r.Name == "start" ||
-                                           r.BaseName.EndsWith(value: ".start")) &&
                                           r.Location != null &&
                                           userFilePaths.Contains(item: r.Location.FileName));
         if (!hasStartRoutine)

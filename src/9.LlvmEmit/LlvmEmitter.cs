@@ -1573,7 +1573,7 @@ public partial class LlvmEmitter
     private string? ResolveEntryStartSymbol()
     {
         RoutineInfo? start = Builder.Collection.EntryPoint.StartOf(
-            defined: _registry.GetAllRoutines(requireLive: false)
+            defined: _registry.GetRoutinesNamed(name: Builder.Collection.EntryPoint.Start, requireLive: false)
                               .Where(predicate: r => _generatedRoutineDefs.Contains(item: MangleRoutineName(routine: r))),
             entryModule: EntryModule);
         return start is null

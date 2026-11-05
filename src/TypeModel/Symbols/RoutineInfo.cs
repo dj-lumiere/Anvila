@@ -19,16 +19,17 @@ public sealed class RoutineInfo
     {
         get
         {
-            if (OwnerType != null)
-            {
-                return $"{OwnerType.Name}.{Name}";
-            }
-
-            return string.IsNullOrEmpty(value: Module)
-                ? Name
-                : $"{Module}.{Name}";
+            // Every part is set once, when the routine is made, so the text is kept after the first read.
+            return _baseName ??= OwnerType != null
+                ? $"{OwnerType.Name}.{Name}"
+                : string.IsNullOrEmpty(value: Module)
+                    ? Name
+                    : $"{Module}.{Name}";
         }
     }
+
+    [NonSerialized]
+    private string? _baseName;
 
     /// <summary>
     /// Rich signature name for display and identity.

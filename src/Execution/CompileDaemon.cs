@@ -976,14 +976,18 @@ internal partial class Program
                 return false;
             }
 
-            if (!OrcJitExecutor.TryInitialize(error: out string? initErr))
+            // LLVM and the ORC JIT start on another thread while the daemon builds the program: neither needs the
+            // other, and starting them took about 25 ms of every run. The daemon's dev loop checks they started right
+            // before it runs the program, every other path checks here.
+            StartJitInitialization();
+            bool daemonDevLoop = resolved.Incremental && resolved.UseDaemon &&
+                                 Builder.Backends.BuilderBackends.Get(name: resolved.Backend).SupportsLazyJit;
+            if (!daemonDevLoop && !JitReady())
             {
-                Console.Error.WriteLine(
-                    value: $"[jit] unavailable ({initErr}); falling back to AOT build.");
                 return false;
             }
 
-            ClientClock.Mark(label: "LLVM/ORC initialized");
+            ClientClock.Mark(label: daemonDevLoop ? "LLVM/ORC initialization started" : "LLVM/ORC initialized");
 
             // Resident-JIT incremental (B) M3: `[target] incremental` runs the program via the FULLY-LAZY JIT +
             // per-routine disk IR cache instead of a single eager module — @main is materialized on demand and
@@ -1054,6 +1058,39 @@ internal partial class Program
             }
         }
 
+        /// <summary>The start of LLVM and the ORC JIT on another thread: the error when they cannot start, or null.</summary>
+        private static Task<string?>? _jitInitialization;
+
+        /// <summary>Whether the message that the JIT cannot start was printed already.</summary>
+        private static bool _jitUnavailableReported;
+
+        private static void StartJitInitialization()
+        {
+            _jitInitialization ??= Task.Run(function: () => OrcJitExecutor.TryInitialize(error: out string? error)
+                ? null
+                : error ?? "it did not start");
+        }
+
+        /// <summary>Waits for the JIT to start. False, after saying so once, when it cannot: the caller falls back to an
+        /// AOT build.</summary>
+        private static bool JitReady()
+        {
+            StartJitInitialization();
+            string? error = _jitInitialization!.GetAwaiter().GetResult();
+            if (error == null)
+            {
+                return true;
+            }
+
+            if (!_jitUnavailableReported)
+            {
+                _jitUnavailableReported = true;
+                Console.Error.WriteLine(value: $"[jit] unavailable ({error}); falling back to AOT build.");
+            }
+
+            return false;
+        }
+
         /// <summary>The `[target] incremental` JIT path (resident-JIT incremental (B) M3): analyze in-process,
         /// then JIT-run @main with a fully-lazy ORC generator that materializes each reached routine on demand
         /// — served from / written to the per-routine disk IR cache (keyed by stdlib+builder fingerprint), so
@@ -1075,6 +1112,11 @@ internal partial class Program
                 TryRunDaemonBaseDelta(resolved: resolved, entryFull: entryFull, exitCode: out exitCode))
             {
                 return true;
+            }
+
+            if (!JitReady())
+            {
+                return false;
             }
 
             // The IR-cache fingerprint is stdlib+builder-only (program-INVARIANT), so it is known before the
@@ -1166,6 +1208,11 @@ internal partial class Program
             {
                 exitCode = daemonRc;
                 return true;
+            }
+
+            if (!JitReady())
+            {
+                return false;
             }
 
             try

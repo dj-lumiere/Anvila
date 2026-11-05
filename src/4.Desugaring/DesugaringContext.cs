@@ -127,6 +127,10 @@ public sealed class DesugaringContext
     public HashSet<string> LiveOwnerTypeNames { get; init; } =
         new(comparer: StringComparer.Ordinal);
 
+    /// <summary>The routine-declaration index entries of each program, kept across the demand collector's rounds (see
+    /// <see cref="ProgramIndexCache{TEntry}"/>). Null outside the collector: the index is read from scratch.</summary>
+    internal ProgramIndexCache<(string Key, RoutineDeclaration Decl)>? RoutineIndexCache { get; set; }
+
     /// <summary>
     /// Initializes shared state for passes that rewrite verified syntax before instantiation.
     /// </summary>

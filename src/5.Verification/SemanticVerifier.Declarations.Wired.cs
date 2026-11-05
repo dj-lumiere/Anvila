@@ -276,7 +276,7 @@ public sealed partial class SemanticVerifier
     {
         new DerivedOperatorPass(registry: _registry,
             synthesizedBodies: _synthesizedBodies,
-            errors: _errors).Run();
+            errors: _errors).Run(alreadyDerived: AlreadyRegisteredInSnapshot());
     }
 
     #endregion

@@ -5,7 +5,7 @@ namespace Builder.Collection;
 /// <summary>The routine a program starts in, chosen the same way for every backend.</summary>
 internal static class EntryPoint
 {
-    private const string Start = "start";
+    public const string Start = "start";
 
     /// <summary>
     /// The entry module's <c>start()</c> among <paramref name="defined"/>, else the only <c>start()</c> there when

@@ -1,6 +1,7 @@
 using SyntaxTree;
 using Builder.Instantiation;
 using Builder.Declaration;
+using TypeModel.Types;
 
 namespace Builder.Verification;
 
@@ -39,7 +40,31 @@ public sealed partial class SemanticVerifier
 
         new AutoWiredRegistrationPass(registry: _registry,
                 implicitConformances: _implicitProtocolConformances)
-           .Run(builderServiceImported: builderServiceImported);
+           .Run(builderServiceImported: builderServiceImported, alreadyRegistered: AlreadyRegisteredInSnapshot());
+    }
+
+    /// <summary>
+    /// The types whose wired and derived routines (and their bodies) the stdlib snapshot already holds: a type taken
+    /// from the snapshot,
+    /// whose protocols were settled before it was taken, that no user program writes member routines for. The pass
+    /// would register the same routines for it again on every build.
+    /// </summary>
+    private Func<TypeSymbol, bool> AlreadyRegisteredInSnapshot()
+    {
+        var userOwners = new HashSet<string>(comparer: StringComparer.Ordinal);
+        foreach ((Program program, _, _) in _registry.UserPrograms)
+        {
+            foreach (ISyntaxTreeNode declaration in program.Declarations)
+            {
+                if (declaration is RoutineDeclaration { OwnerName: { } owner })
+                {
+                    userOwners.Add(item: owner);
+                }
+            }
+        }
+
+        return type => _registry.IsSharedSnapshotType(type: type) && !userOwners.Contains(item: type.BareName) &&
+                       !userOwners.Contains(item: type.Name);
     }
 
     /// <summary>

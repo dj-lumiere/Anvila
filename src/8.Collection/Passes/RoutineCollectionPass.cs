@@ -69,7 +69,8 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
                 AnalyzeMaterializedDeriveBody = ctx.AnalyzeMaterializedDeriveBody,
                 AnalyzePerUseBody = ctx.AnalyzePerUseBody,
                 CheckInstanceBody = ctx.CheckInstanceBody,
-                BuildVariantArmExtractorBody = ctx.BuildVariantArmExtractorBody
+                BuildVariantArmExtractorBody = ctx.BuildVariantArmExtractorBody,
+                RoutineIndexCache = new ProgramIndexCache<(string Key, RoutineDeclaration Decl)>()
             };
 
         List<(string Key, Statement Body)> entrySeeds = CollectEntrySeeds();
@@ -894,30 +895,20 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     /// <c>decl.ResolvedInfo.RegistryKey</c>. These are the fully-lowered bodies, so walking one (e.g.
     /// <c>Bytes.create(from_list:)</c>) exposes the concrete calls it makes (<c>List[Byte].getitem/count</c>).
     /// </summary>
+    /// <summary>Each program's body-index entries, kept across this collection's rounds while the program's routines
+    /// and their bodies stay the same objects.</summary>
+    private readonly ProgramIndexCache<(string Key, Statement Body)> _bodyIndexCache = new();
+
     private Dictionary<string, Statement> BuildProgramBodyIndex()
     {
         var idx = new Dictionary<string, Statement>(comparer: StringComparer.Ordinal);
 
         void AddProgram(Program program)
         {
-            foreach (ISyntaxTreeNode d in program.Declarations)
+            foreach ((string key, Statement body) in _bodyIndexCache.EntriesOf(program: program, shape: BodyShape,
+                         read: BodyEntries))
             {
-                switch (d)
-                {
-                    case RoutineDeclaration { ResolvedInfo: { } ri, Body: { } body }:
-                        idx[key: ri.RegistryKey] = body;
-                        break;
-                    case CrashableDeclaration crashable:
-                        foreach (SyntaxTree.Declaration m in crashable.Members)
-                        {
-                            if (m is RoutineDeclaration { ResolvedInfo: { } mri, Body: { } mbody })
-                            {
-                                idx[key: mri.RegistryKey] = mbody;
-                            }
-                        }
-
-                        break;
-                }
+                idx[key: key] = body;
             }
         }
 
@@ -932,5 +923,61 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         }
 
         return idx;
+    }
+
+    /// <summary>The routines of a program (a crashable's own included) with their registered info and bodies, in
+    /// order.</summary>
+    private static IEnumerable<RoutineDeclaration> RoutinesWithBodies(Program program)
+    {
+        foreach (ISyntaxTreeNode d in program.Declarations)
+        {
+            switch (d)
+            {
+                case RoutineDeclaration routine:
+                    yield return routine;
+                    break;
+                case CrashableDeclaration crashable:
+                    foreach (RoutineDeclaration member in crashable.Members.OfType<RoutineDeclaration>())
+                    {
+                        yield return member;
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    // What BodyEntries reads: every declaration, and each routine's registered info and body.
+    private static object?[] BodyShape(Program program)
+    {
+        var shape = new List<object?>(capacity: program.Declarations.Count * 3);
+        foreach (ISyntaxTreeNode d in program.Declarations)
+        {
+            shape.Add(item: d);
+        }
+
+        foreach (RoutineDeclaration routine in RoutinesWithBodies(program: program))
+        {
+            shape.Add(item: routine);
+            shape.Add(item: routine.ResolvedInfo);
+            shape.Add(item: routine.Body);
+        }
+
+        return shape.ToArray();
+    }
+
+    // The (registry key, body) entries of one program, in the order the index takes them.
+    private static List<(string Key, Statement Body)> BodyEntries(Program program)
+    {
+        var entries = new List<(string, Statement)>();
+        foreach (RoutineDeclaration routine in RoutinesWithBodies(program: program))
+        {
+            if (routine is { ResolvedInfo: { } ri, Body: { } body })
+            {
+                entries.Add(item: (ri.RegistryKey, body));
+            }
+        }
+
+        return entries;
     }
 }

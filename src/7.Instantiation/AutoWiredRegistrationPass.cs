@@ -47,7 +47,10 @@ internal sealed class AutoWiredRegistrationPass
         _ = implicitConformances;
     }
 
-    public void Run(bool builderServiceImported = true)
+    /// <param name="builderServiceImported">Whether a user program imports BuilderQuery.</param>
+    /// <param name="alreadyRegistered">The types whose routines are registered already (a warm build's snapshot
+    /// types), passed over.</param>
+    public void Run(bool builderServiceImported = true, Func<TypeSymbol, bool>? alreadyRegistered = null)
     {
         // Look up required types (bail on each if not available)
         TypeSymbol? textType = _registry.LookupType(name: "Text");
@@ -91,6 +94,11 @@ internal sealed class AutoWiredRegistrationPass
 
         foreach (TypeSymbol type in _registry.GetTypesWithMemberRoutines())
         {
+            if (alreadyRegistered?.Invoke(arg: type) == true)
+            {
+                continue;
+            }
+
             RegisterForType(type: type, bundle: bundle);
         }
 
