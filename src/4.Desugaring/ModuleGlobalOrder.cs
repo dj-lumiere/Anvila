@@ -253,10 +253,65 @@ public static class ModuleGlobalOrder
         }
     }
 
+    /// <summary>The member routines of the program's files by member name, each with the type it is on, its module and
+    /// its body, so the dependency scan can follow `x.foo()` into the body before any types are known.</summary>
+    private sealed class MemberRoutineIndex
+    {
+        private readonly Dictionary<string, List<(string Owner, string? Module, Statement Body)>> _byMember =
+            new(comparer: StringComparer.Ordinal);
+
+        public void Add(string owner, string member, string? module, Statement body)
+        {
+            if (!_byMember.TryGetValue(key: member, value: out var list))
+            {
+                list = [];
+                _byMember[key: member] = list;
+            }
+
+            list.Add(item: (owner, module, body));
+        }
+
+        /// <summary>The routines `member` names on `owner`, or on every type when the owner is not known or has none of
+        /// that name written on it (a protocol's routine it takes).</summary>
+        public IEnumerable<(string Owner, string? Module, Statement Body)> Find(string member, string? owner)
+        {
+            List<(string Owner, string? Module, Statement Body)> all = _byMember.GetValueOrDefault(key: member) ?? [];
+            List<(string Owner, string? Module, Statement Body)> own =
+                owner == null ? [] : all.Where(predicate: r => r.Owner == owner).ToList();
+            return own.Count > 0 ? own : all;
+        }
+
+        public bool HasOwner(string owner, string member)
+        {
+            return _byMember.GetValueOrDefault(key: member)?.Any(predicate: r => r.Owner == owner) == true;
+        }
+
+        public static MemberRoutineIndex Of(List<(SyntaxTree.Program Program, string FilePath)> orderedFiles)
+        {
+            var index = new MemberRoutineIndex();
+            foreach ((SyntaxTree.Program program, string _) in orderedFiles)
+            {
+                string? module = ModuleOf(program: program);
+                foreach (ISyntaxTreeNode node in program.Declarations)
+                {
+                    if (node is RoutineDeclaration
+                        {
+                            Body: { } body, OwnerName: { } owner, MemberRoutineName: { } member
+                        })
+                    {
+                        index.Add(owner: owner, member: member, module: module, body: body);
+                    }
+                }
+            }
+
+            return index;
+        }
+    }
+
     /// <summary>Computes, for each global, the set of OTHER globals it (transitively) depends on. A global's
-    /// initializer reading another global is a dependency; a free-routine call is followed once into the
-    /// callee's body so a hidden read (`global a = compute()` where `compute` reads `b`) counts too.
-    /// (Member-routine calls are not followed — a global read hidden behind `x.foo()` is the residual.)</summary>
+    /// initializer reading another global is a dependency, and every call is followed once into the callee's body so
+    /// a hidden read counts too: `global a = compute()` where `compute` reads `b`, and `global a = holder.sum()`
+    /// where `sum` does.</summary>
     private static List<HashSet<int>> ComputeGlobalDependencies(
         List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
         List<ModuleGlobal> globals)
@@ -278,13 +333,16 @@ public static class ModuleGlobalOrder
             }
         }
 
+        var memberBodies = MemberRoutineIndex.Of(orderedFiles: orderedFiles);
         var deps = new List<HashSet<int>>(capacity: n);
         for (int i = 0; i < n; i++)
         {
             deps.Add(item: ComputeSingleGlobalDeps(init: globals[index: i].Init,
                 module: globals[index: i].Module,
                 index: index,
-                routineBodies: routineBodies));
+                routineBodies: routineBodies,
+                memberBodies: memberBodies,
+                globals: globals));
         }
 
         return deps;
@@ -297,6 +355,7 @@ public static class ModuleGlobalOrder
     {
         var index = new GlobalIndex(globals: globals);
         var routineBodies = new RoutineIndex();
+        var memberBodies = MemberRoutineIndex.Of(orderedFiles: orderedFiles);
         var memberTypes = new Dictionary<string, List<string>>(comparer: StringComparer.Ordinal);
         var typeModules = new Dictionary<string, string?>(comparer: StringComparer.Ordinal);
         foreach ((SyntaxTree.Program program, string _) in orderedFiles)
@@ -351,7 +410,8 @@ public static class ModuleGlobalOrder
                         bodyModule: out string? destructModule))
                 {
                     foreach (int j in ComputeSingleGlobalDeps(init: destruct, module: destructModule, index: index,
-                                 routineBodies: routineBodies))
+                                 routineBodies: routineBodies, memberBodies: memberBodies, globals: globals,
+                                 owner: type))
                     {
                         if (j != i)
                         {
@@ -368,19 +428,20 @@ public static class ModuleGlobalOrder
         }
     }
 
-    /// <summary>BFS over AST expressions from the given initializer (written in <paramref name="module"/>);
-    /// collects indices of globals this global directly or transitively depends on by following free-routine call
-    /// bodies, a name read in a routine meaning that routine's module's global first.</summary>
+    /// <summary>BFS over AST expressions from the given initializer (written in <paramref name="module"/>, inside a
+    /// member routine of <paramref name="owner"/> when it is one); collects indices of globals this global directly or
+    /// transitively depends on by following the bodies of the routines it calls, a name read in a routine meaning that
+    /// routine's module's global first.</summary>
     private static HashSet<int> ComputeSingleGlobalDeps(object init, string? module, GlobalIndex index,
-        RoutineIndex routineBodies)
+        RoutineIndex routineBodies, MemberRoutineIndex memberBodies, List<ModuleGlobal> globals, string? owner = null)
     {
         var d = new HashSet<int>();
         var visitedRoutines = new HashSet<(string?, string)>();
-        var toScan = new Queue<(object Root, string? Module)>();
-        toScan.Enqueue(item: (init, module));
+        var toScan = new Queue<(object Root, string? Module, string? Owner)>();
+        toScan.Enqueue(item: (init, module, owner));
         while (toScan.Count > 0)
         {
-            (object root, string? rootModule) = toScan.Dequeue();
+            (object root, string? rootModule, string? rootOwner) = toScan.Dequeue();
             AstWalker.WalkExpressions(root: root,
                 visit: e =>
                 {
@@ -396,12 +457,49 @@ public static class ModuleGlobalOrder
                             bodyModule: out string? calleeModule) &&
                         visitedRoutines.Add(item: (calleeModule, callee.Name)))
                     {
-                        toScan.Enqueue(item: (calleeBody, calleeModule));
+                        toScan.Enqueue(item: (calleeBody, calleeModule, null));
+                    }
+
+                    // Follow a member routine call into the body of each routine it may name: the one on the receiver's
+                    // type when the receiver tells it, every routine of that name otherwise.
+                    if (e is CallExpression { Callee: MemberExpression { Object: var receiver, MemberName: var member } })
+                    {
+                        string? receiverType = ReceiverTypeName(receiver: receiver, member: member, module: rootModule,
+                            owner: rootOwner, index: index, memberBodies: memberBodies, globals: globals);
+                        foreach ((string memberOwner, string? memberModule, Statement memberBody) in
+                                 memberBodies.Find(member: member, owner: receiverType))
+                        {
+                            if (visitedRoutines.Add(item: (memberModule, $"{memberOwner}.{member}")))
+                            {
+                                toScan.Enqueue(item: (memberBody, memberModule, memberOwner));
+                            }
+                        }
                     }
                 });
         }
 
         return d;
+    }
+
+    /// <summary>The type a member routine call's receiver has, when the syntax tells it: a global (its written type),
+    /// `me` (the routine's own type), a type name (`Box.make()`) or a creator (`Box(n: 1).sum()`). Null otherwise.</summary>
+    private static string? ReceiverTypeName(Expression receiver, string member, string? module, string? owner,
+        GlobalIndex index, MemberRoutineIndex memberBodies, List<ModuleGlobal> globals)
+    {
+        switch (receiver)
+        {
+            case IdentifierExpression { Name: "me" }:
+                return owner;
+            case IdentifierExpression id when index.TryFind(module: module, name: id.Name, index: out int j):
+                return globals[index: j].Type.Name;
+            case IdentifierExpression typeName when memberBodies.HasOwner(owner: typeName.Name, member: member):
+                return typeName.Name;
+            case CallExpression { Callee: IdentifierExpression created }
+                when memberBodies.HasOwner(owner: created.Name, member: member):
+                return created.Name;
+            default:
+                return null;
+        }
     }
 
     /// <summary>Kahn's topological sort over the dependency edges (dependency j before dependent i), stable
