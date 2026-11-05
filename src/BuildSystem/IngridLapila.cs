@@ -141,6 +141,7 @@ internal static class IngridLapila
         {
             if (File.Exists(path: obj) && File.GetLastWriteTimeUtc(path: obj) >= File.GetLastWriteTimeUtc(path: ir))
             {
+                EnsureSharedLibrary(obj: obj);
                 return obj;
             }
 
@@ -173,7 +174,24 @@ internal static class IngridLapila
                 }
             }
 
+            EnsureSharedLibrary(obj: obj);
             return obj;
+        }
+    }
+
+    /// <summary>Links the shared library the JIT loads in place of the object, when the JIT loads shared libraries
+    /// and the library is missing or older than the object.</summary>
+    private static void EnsureSharedLibrary(string obj)
+    {
+        if (!NativeToolchain.JitLoadsSharedLibraries)
+        {
+            return;
+        }
+
+        string so = NativeToolchain.JitSharedLibraryPath(objFile: obj);
+        if (!File.Exists(path: so) || File.GetLastWriteTimeUtc(path: so) < File.GetLastWriteTimeUtc(path: obj))
+        {
+            NativeToolchain.LinkJitSharedLibrary(objFile: obj);
         }
     }
 

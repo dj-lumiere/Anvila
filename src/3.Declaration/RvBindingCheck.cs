@@ -340,8 +340,8 @@ internal static class RvBindingCheck
             // instance of a generic type (`Iterable[Text].join`), is not among the type's own: look for it by owner.
             if (named.Count == 0)
             {
-                named = registry.GetAllRoutines(requireLive: false)
-                                .Where(predicate: r => r.Name == name && r.OwnerType?.BareName == owner.BareName)
+                named = registry.GetRoutinesNamed(name: name, requireLive: false)
+                                .Where(predicate: r => r.OwnerType?.BareName == owner.BareName)
                                 .ToList();
             }
             what = $"{target[..dot]}.{name}";
@@ -360,8 +360,8 @@ internal static class RvBindingCheck
             string? routineModule = dot > 0
                 ? target[..dot]
                 : null;
-            named = registry.GetAllRoutines(requireLive: false)
-                            .Where(predicate: r => r.OwnerType == null && r.Name == name &&
+            named = registry.GetRoutinesNamed(name: name, requireLive: false)
+                            .Where(predicate: r => r.OwnerType == null &&
                                                    (routineModule == null || r.Module == routineModule))
                             .ToList();
             what = target;
@@ -373,8 +373,8 @@ internal static class RvBindingCheck
         {
             string ownerName = target[..dot];
             string name = target[(dot + 1)..];
-            named = registry.GetAllRoutines(requireLive: false)
-                            .Where(predicate: r => r.Name == name && r.OwnerType?.BareName == ownerName)
+            named = registry.GetRoutinesNamed(name: name, requireLive: false)
+                            .Where(predicate: r => r.OwnerType?.BareName == ownerName)
                             .ToList();
             what = target;
         }

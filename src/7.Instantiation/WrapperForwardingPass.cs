@@ -856,16 +856,20 @@ internal sealed class WrapperForwardingPass
         string controllerName = viaRoamManager
             ? "RoamManager"
             : "RetainManager";
+        // RoamManager is one controller for every Roamed[T]: it gives the entity's address, which is made a Hijacked[T]
+        // here. RetainManager[T] gives the Hijacked[T] itself.
         string dataRevealName = viaRoamManager
-            ? "data_ptr"
+            ? "data_address"
             : RuntimeContract.RefCount.RawData;
         var controllerTypeExpr = new TypeExpression(Name: controllerName,
-            GenericArguments:
-            [
-                new TypeExpression(Name: genericParamName,
-                    GenericArguments: null,
-                    Location: _synthLoc)
-            ],
+            GenericArguments: viaRoamManager
+                ? null
+                :
+                [
+                    new TypeExpression(Name: genericParamName,
+                        GenericArguments: null,
+                        Location: _synthLoc)
+                ],
             Location: _synthLoc);
         var hijackedCtrlCtor = new CreatorExpression(TypeName: RuntimeContract.Hijacked,
             TypeArguments: [controllerTypeExpr],
@@ -937,22 +941,37 @@ internal sealed class WrapperForwardingPass
                 {
                     ResolvedType = retainControllerType
                 },
-                MemberName: RuntimeContract.RefCount.RawData,
+                MemberName: dataRevealName,
                 Location: _synthLoc),
             Arguments: [],
             Location: _synthLoc)
         {
-            ResolvedRoutine = borrowDataMemberRoutine, ResolvedType = hijackedInnerType
+            ResolvedRoutine = borrowDataMemberRoutine, ResolvedType = borrowDataMemberRoutine?.ReturnType ?? hijackedInnerType
         };
-        var innerRevealCall = new CallExpression(
-            Callee: new MemberExpression(Object: borrowCall,
-                MemberName: RuntimeContract.RawPointer.AsEntity,
-                Location: _synthLoc),
-            Arguments: [],
-            Location: _synthLoc)
-        {
-            ResolvedRoutine = innerRevealMemberRoutine, ResolvedType = innerType
-        };
+        // A Roamed handle reaches its entity with raw_inner(): the controller is shared by every entity type, so the
+        // entity type is the handle's to give.
+        var innerRevealCall = viaRoamManager
+            ? new CallExpression(
+                Callee: new MemberExpression(
+                    Object: new IdentifierExpression(Name: "me", Location: _synthLoc) { ResolvedType = wrapperType },
+                    MemberName: RuntimeContract.RoamedMemberRoutine.RawInner,
+                    Location: _synthLoc),
+                Arguments: [],
+                Location: _synthLoc)
+            {
+                ResolvedRoutine = _registry.LookupMemberRoutine(type: wrapperType,
+                    memberRoutineName: RuntimeContract.RoamedMemberRoutine.RawInner),
+                ResolvedType = innerType
+            }
+            : new CallExpression(
+                Callee: new MemberExpression(Object: borrowCall,
+                    MemberName: RuntimeContract.RawPointer.AsEntity,
+                    Location: _synthLoc),
+                Arguments: [],
+                Location: _synthLoc)
+            {
+                ResolvedRoutine = innerRevealMemberRoutine, ResolvedType = innerType
+            };
         var innerCall = new CallExpression(
             Callee: new MemberExpression(Object: innerRevealCall,
                 MemberName: ctx.CallPropertyName,

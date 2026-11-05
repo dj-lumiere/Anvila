@@ -216,10 +216,12 @@ public static class PbrfSerializer
         var fields = new List<FieldInfo>();
         for (Type? t = type; t != null && t != typeof(object); t = t.BaseType)
         {
+            // A [NonSerialized] field is a cache the object fills again on first use.
             fields.AddRange(collection: t.GetFields(bindingAttr: BindingFlags.Instance |
                                                                  BindingFlags.Public |
                                                                  BindingFlags.NonPublic |
-                                                                 BindingFlags.DeclaredOnly));
+                                                                 BindingFlags.DeclaredOnly)
+                                         .Where(predicate: f => !f.IsNotSerialized));
         }
 
         // Deterministic order independent of reflection's return order: by declaring-type name then field name.

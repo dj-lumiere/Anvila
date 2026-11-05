@@ -86,21 +86,68 @@ public abstract class TypeSymbol
     {
         get
         {
-            string baseName = string.IsNullOrEmpty(value: Module)
-                ? Name
-                : $"{Module}.{Name}";
-
-            // Generic resolutions already have type args in Name (e.g., "Hijacked[U8]"),
-            // so only append TypeArguments for generic definitions where Name is bare
-            if (TypeArguments is not { Count: > 0 } || Name.Contains(value: '['))
+            // Asked very often: the text is kept and made again only when the module or the arguments changed.
+            if (_fullName != null && ReferenceEquals(objA: _fullNameModule, objB: Module) &&
+                SameArguments(kept: _fullNameArguments, now: TypeArguments))
             {
-                return baseName;
+                return _fullName;
             }
 
-            string args = string.Join(separator: ", ",
-                values: TypeArguments.Select(selector: t => t.FullName));
-            return $"{baseName}[{args}]";
+            string made = MakeFullName();
+            _fullName = made;
+            _fullNameModule = Module;
+            _fullNameArguments = TypeArguments?.ToArray();
+            return made;
         }
+    }
+
+    [NonSerialized]
+    private string? _fullName;
+    [NonSerialized]
+    private string? _fullNameModule;
+    [NonSerialized]
+    private TypeSymbol[]? _fullNameArguments;
+
+    /// <summary>Whether the arguments a kept text was made from are still the ones in place.</summary>
+    private static bool SameArguments(TypeSymbol[]? kept, List<TypeSymbol>? now)
+    {
+        if (kept == null || now == null)
+        {
+            return kept == null && now == null;
+        }
+
+        if (kept.Length != now.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < kept.Length; i++)
+        {
+            if (!ReferenceEquals(objA: kept[i], objB: now[index: i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private string MakeFullName()
+    {
+        string baseName = string.IsNullOrEmpty(value: Module)
+            ? Name
+            : $"{Module}.{Name}";
+
+        // Generic resolutions already have type args in Name (e.g., "Hijacked[U8]"),
+        // so only append TypeArguments for generic definitions where Name is bare
+        if (TypeArguments is not { Count: > 0 } || Name.Contains(value: '['))
+        {
+            return baseName;
+        }
+
+        string args = string.Join(separator: ", ",
+            values: TypeArguments.Select(selector: t => t.FullName));
+        return $"{baseName}[{args}]";
     }
 
     /// <summary>

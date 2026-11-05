@@ -174,6 +174,29 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// Adds the work routines written while a builder-made body was analyzed (a recovery variant's, after every
+    /// program's own bodies) to the program of their module, and analyzes them. Nothing else would: they waited for the
+    /// next program whose bodies are analyzed, and a warm build analyzes no program after that, so they were declared
+    /// but never defined.
+    /// </summary>
+    private void AnalyzeWorkRoutinesOfGeneratedBodies()
+    {
+        while (_pendingWorkRoutines.Count > 0)
+        {
+            string? module = _pendingWorkRoutines[index: 0].Module;
+            Program? home = _registry.UserPrograms.FirstOrDefault(predicate: p => p.Module == module).Program ??
+                            _registry.StdlibPrograms.FirstOrDefault(predicate: p => p.Module == module).Program ??
+                            _registry.UserPrograms.FirstOrDefault().Program;
+            if (home == null)
+            {
+                return;
+            }
+
+            AnalyzeWorkRoutines(program: home);
+        }
+    }
+
+    /// <summary>
     /// Analyzes the bodies of the routines written for this program's <c>to[Work]</c> conversions, and adds them to the
     /// program so every later pass lowers and emits them like the program's own. A work routine may itself make
     /// <c>to[Work]</c> conversions, so this runs until no more are written.

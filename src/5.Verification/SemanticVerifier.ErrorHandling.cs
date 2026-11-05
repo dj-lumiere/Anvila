@@ -1054,10 +1054,9 @@ public sealed partial class SemanticVerifier
             ? bareName
             : $"{moduleName}.{bareName}";
 
-        var standaloneCandidates = _registry.GetAllRoutines()
+        var standaloneCandidates = _registry.GetRoutinesNamed(name: bareName)
                                             .Where(predicate: routine =>
                                                  routine.OwnerType == null &&
-                                                 routine.Name == bareName &&
                                                  (string.IsNullOrEmpty(value: moduleName) ||
                                                   routine.Module == moduleName ||
                                                   routine.BaseName == qualifiedName))

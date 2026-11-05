@@ -628,9 +628,9 @@ public static class RuntimeContract
 
     /// <summary>
     /// The controller a pointer-backed wrapper points at, or null when the wrapper holds the entity (or a
-    /// value) directly. The controller takes the wrapper's type arguments unchanged
-    /// (<c>Guarded[T, P]</c> → <c>GuardManager[T, P]</c>). The entity itself lives in the controller's
-    /// <c>data</c> field.
+    /// value) directly. A generic controller takes the wrapper's type arguments unchanged
+    /// (<c>Guarded[T, P]</c> → <c>GuardManager[T, P]</c>), and <c>RoamManager</c> is one controller for every
+    /// <c>Roamed[T]</c>. The entity itself lives in the controller's <c>data</c> field.
     /// </summary>
     public static string? ControllerOf(string wrapperBaseName)
     {

@@ -143,6 +143,7 @@ public sealed class BaseObjectCache
         if (File.Exists(path: objPath))
         {
             wasCached = true;
+            EnsureSharedLibrary(objPath: objPath);
             return objPath;
         }
 
@@ -169,6 +170,18 @@ public sealed class BaseObjectCache
         }
 
         File.Move(sourceFileName: tmpObj, destFileName: objPath, overwrite: true);
+        EnsureSharedLibrary(objPath: objPath);
         return objPath;
+    }
+
+    /// <summary>Links the shared library the JIT loads in place of <paramref name="objPath"/>, when the JIT loads
+    /// shared libraries and it is not there yet (an object cached by an earlier builder has none).</summary>
+    private static void EnsureSharedLibrary(string objPath)
+    {
+        if (Builder.NativeToolchain.JitLoadsSharedLibraries &&
+            !File.Exists(path: Builder.NativeToolchain.JitSharedLibraryPath(objFile: objPath)))
+        {
+            Builder.NativeToolchain.LinkJitSharedLibrary(objFile: objPath);
+        }
     }
 }

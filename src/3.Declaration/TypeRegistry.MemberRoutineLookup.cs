@@ -3642,28 +3642,20 @@ public sealed partial class TypeRegistry
                        b: Builder.Verification.SemanticVerifier.FamilyTarget(routine: b, index: i)));
     }
 
-    private Dictionary<string, List<RoutineInfo>>? _universalSpecializations;
-    private int _universalSpecializationsStamp = -1;
-
-    /// <summary>The specializations named <paramref name="name"/> written for any type (<c>routine T.to[S32]()</c>),
-    /// indexed once per set of registered routines.</summary>
+    /// <summary>The specializations named <paramref name="name"/> written for any type (<c>routine T.to[S32]()</c>).</summary>
     private List<RoutineInfo> UniversalSpecializations(string name)
     {
-        if (_universalSpecializations == null || _universalSpecializationsStamp != _routines.Count)
+        if (!_routinesByName.TryGetValue(key: name, value: out List<RoutineInfo>? named))
         {
-            _universalSpecializations = GetAllRoutines(requireLive: false)
-                                       .Where(predicate: r => r is
-                                        {
-                                            IsSpecialization: true, IsRecoveryVariant: false,
-                                            OwnerType: GenericParameterTypeSymbol
-                                        })
-                                       .GroupBy(keySelector: r => r.Name, comparer: StringComparer.Ordinal)
-                                       .ToDictionary(keySelector: g => g.Key, elementSelector: g => g.ToList(),
-                                            comparer: StringComparer.Ordinal);
-            _universalSpecializationsStamp = _routines.Count;
+            return [];
         }
 
-        return _universalSpecializations.GetValueOrDefault(key: name) ?? [];
+        return named.Where(predicate: r => r is
+                     {
+                         IsSpecialization: true, IsRecoveryVariant: false,
+                         OwnerType: GenericParameterTypeSymbol
+                     } && IsListedRoutine(r: r, requireLive: false))
+                    .ToList();
     }
 
     /// <summary>The specialization of <paramref name="name"/> on <paramref name="owner"/> written for exactly
@@ -4075,11 +4067,26 @@ public sealed partial class TypeRegistry
         // every consumer (codegen, synthesis passes, the registered-count) sees each routine once
         // instead of ~2x — the inflated count that made a trivial program look like it had 12k
         // routines when it actually has ~6.6k.
-        IEnumerable<RoutineInfo> all = _prunedGenericBases.Count == 0
-            ? _routines.Values.Distinct()
-            : _routines.Values
-                       .Distinct()
-                       .Where(predicate: r => !_prunedGenericBases.Contains(item: r.BaseName));
+        return _routines.Values.Distinct().Where(predicate: r => IsListedRoutine(r: r, requireLive: requireLive));
+    }
+
+    /// <summary>The routines <see cref="GetAllRoutines"/> lists whose <see cref="RoutineInfo.Name"/> is
+    /// <paramref name="name"/>, read from the by-name index instead of every routine.</summary>
+    public IEnumerable<RoutineInfo> GetRoutinesNamed(string name, bool requireLive = true)
+    {
+        return _routinesByName.TryGetValue(key: name, value: out List<RoutineInfo>? named)
+            ? named.Where(predicate: r => IsListedRoutine(r: r, requireLive: requireLive))
+            : [];
+    }
+
+    /// <summary>Whether <see cref="GetAllRoutines"/> lists <paramref name="r"/>.</summary>
+    private bool IsListedRoutine(RoutineInfo r, bool requireLive)
+    {
+        if (_prunedGenericBases.Count > 0 && _prunedGenericBases.Contains(item: r.BaseName))
+        {
+            return false;
+        }
+
         // Exclude four categories of routines from codegen output:
         // - Innate routines: buildtime-only stubs (type_name, module_name, etc.) that
         //   BuilderQueryInliningPass folds to literals; they have no body and must never reach codegen.
@@ -4090,7 +4097,7 @@ public sealed partial class TypeRegistry
         // When requireLive is false (base build): keep every concrete non-generic-def routine regardless
         // of liveness, so the resident base materializes the full stdlib generic closure ahead of time.
         // Normal builds pass requireLive as true for byte-identical output.
-        return all.Where(predicate: r =>
+        return
             !r.Annotations.Contains(value: "innate") && (r.OwnerType == null ||
                                                          !r.OwnerType.IsNone &&
                                                          !r.OwnerType.IsGenericDefinition &&
@@ -4098,7 +4105,7 @@ public sealed partial class TypeRegistry
                                                           r.OwnerType.TypeArguments.All(
                                                               predicate: a => !a.IsNone)) &&
                                                          (!requireLive ||
-                                                          IsConcreteTypeLive(t: r.OwnerType))));
+                                                          IsConcreteTypeLive(t: r.OwnerType)));
     }
 
     /// <summary>
@@ -4407,6 +4414,34 @@ public sealed partial class TypeRegistry
             return new Lifecycle(Store: null, Destroy: null, IsBorrow: true);
         }
 
+        // Asked for the same types again and again by the lowering passes and the emitter. The answer depends on
+        // what the asking code sees and on what the registry and the types hold, as a member lookup does.
+        var key = new SpecializedMemberRoutinesKey(Owner: type,
+            Name: "",
+            SurfaceViewSet: _surfaceViewSet,
+            SurfaceView: _surfaceView,
+            InStdlibSource: _stdlibSourceScopes != 0,
+            Realm: ResolutionRealm,
+            Version: TypeShapeVersion.Current);
+        if (_lifecycles.TryGetValue(key: key, value: out Lifecycle known))
+        {
+            return known;
+        }
+
+        Lifecycle found = FindLifecycle(type: type);
+        if (key.Version == TypeShapeVersion.Current)
+        {
+            _lifecycles[key: key] = found;
+        }
+
+        return found;
+    }
+
+    private readonly Dictionary<SpecializedMemberRoutinesKey, Lifecycle> _lifecycles = [];
+
+    /// <summary>The work of <see cref="GetLifecycle"/>, without the memo.</summary>
+    private Lifecycle FindLifecycle(TypeSymbol type)
+    {
         var own = GetOwnMemberRoutinesResolved(type: type)
            .ToList();
         RoutineInfo? destroy = own

@@ -934,10 +934,14 @@ internal sealed class LapilaRoutineWriter
                 EntityTypeSymbol controller = projection.Controller ??
                                               throw Unsupported(what: "a controller projection without its controller");
                 string block = Receiver(operand: wrapper);
+                // A controller that keeps the entity's address (RoamManager) holds the entity value itself: an entity
+                // is an address in Lapila. One that keeps a Hijacked[T] is read through it.
+                bool keepsAddress = controller.MemberVariables.Any(predicate: mv =>
+                    mv.Name == Declaration.RuntimeContract.ControllerData && mv.Type.BareName == "Addr");
                 return new Operand(
                     Text: Temp(type: inner,
                         expression: $"{block}.to[@{_module.EntityRecord(entity: controller)}]()." +
-                                    $"{Declaration.RuntimeContract.ControllerData}.peek()"),
+                                    Declaration.RuntimeContract.ControllerData + (keepsAddress ? "" : ".peek()")),
                     Type: inner, IsPlace: false);
             }
             default:

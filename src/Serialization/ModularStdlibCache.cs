@@ -807,10 +807,12 @@ public static class ModularStdlibCache
         var list = new List<FieldInfo>();
         for (Type? x = t; x != null && x != typeof(object); x = x.BaseType)
         {
+            // A [NonSerialized] field is a cache the object fills again on first use.
             list.AddRange(collection: x.GetFields(bindingAttr: BindingFlags.Instance |
                                                                BindingFlags.Public |
                                                                BindingFlags.NonPublic |
-                                                               BindingFlags.DeclaredOnly));
+                                                               BindingFlags.DeclaredOnly)
+                                       .Where(predicate: f => !f.IsNotSerialized));
         }
 
         return _fields[key: t] = list.ToArray();

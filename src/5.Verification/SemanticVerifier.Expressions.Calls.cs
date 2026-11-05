@@ -2720,9 +2720,9 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
-        List<RoutineInfo> fitting = _registry.GetAllRoutines(requireLive: false)
+        List<RoutineInfo> fitting = _registry.GetRoutinesNamed(name: callName, requireLive: false)
                                              .Where(predicate: r =>
-                                                  r.OwnerType == null && !r.IsGenericDefinition && r.Name == callName &&
+                                                  r.OwnerType == null && !r.IsGenericDefinition &&
                                                   IsFreeRoutineVisible(routine: r) &&
                                                   RoutineCanAcceptArgCount(routine: r, argCount: call.Arguments.Count) &&
                                                   TakesArgumentsWithNumbers(call: call, routine: r))

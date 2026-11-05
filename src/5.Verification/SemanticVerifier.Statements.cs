@@ -2245,7 +2245,7 @@ public sealed partial class SemanticVerifier
     #endregion
 
     /// <summary>
-    /// Puts <c>me.hijack().invalidate()</c> (give back the entity's own box) right before every <c>return</c> of a
+    /// Puts <c>C::rf_invalidate(ptr: me.get_address())</c> (give back the entity's own box) right before every <c>return</c> of a
     /// written entity <c>destruct</c>/<c>roam_free</c>. A return already preceded by it is left alone, so running this
     /// twice, or over a body that still frees its box by hand, frees the box once.
     /// </summary>
@@ -2306,18 +2306,13 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>The statement <c>if me.hijack().is_hollow() then return</c>: a <c>destruct</c> leaves a hollow entity (one
-    /// whose reference is all zero) alone.</summary>
+    /// <summary>The statement <c>if me.get_address().is_hollow() then return</c>: a <c>destruct</c> leaves a hollow entity
+    /// (one whose reference is all zero) alone. It asks the address, so no <c>Hijacked[T]</c> is built for the type.</summary>
     private static IfStatement HollowGuard(SourceLocation location)
     {
-        var me = new IdentifierExpression(Name: "me", Location: location);
-        var hijack = new CallExpression(
-            Callee: new MemberExpression(Object: me, MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
-                Location: location),
-            Arguments: [],
-            Location: location) { IsSynthesizedLowering = true };
         var isHollow = new CallExpression(
-            Callee: new MemberExpression(Object: hijack, MemberName: Declaration.RuntimeContract.RawPointer.IsHollow,
+            Callee: new MemberExpression(Object: MeAddress(location: location),
+                MemberName: Declaration.RuntimeContract.RawPointer.IsHollow,
                 Location: location),
             Arguments: [],
             Location: location) { IsSynthesizedLowering = true };
@@ -2328,6 +2323,32 @@ public sealed partial class SemanticVerifier
             Location: location);
     }
 
+    /// <summary>The expression <c>me.get_address()</c>.</summary>
+    private static CallExpression MeAddress(SourceLocation location)
+    {
+        return new CallExpression(
+            Callee: new MemberExpression(Object: new IdentifierExpression(Name: "me", Location: location),
+                MemberName: GetAddressName,
+                Location: location),
+            Arguments: [],
+            Location: location) { IsSynthesizedLowering = true };
+    }
+
+    private const string GetAddressName = "get_address";
+
+    /// <summary>The runtime routine that gives back a box.</summary>
+    private const string InvalidateRuntimeRoutine = "rf_invalidate";
+
+    /// <summary>Whether <paramref name="expression"/> is <c>me.get_address()</c>.</summary>
+    private static bool IsMeAddress(Expression expression)
+    {
+        return expression is CallExpression
+        {
+            Arguments.Count: 0,
+            Callee: MemberExpression { MemberName: GetAddressName, Object: IdentifierExpression { Name: "me" } }
+        };
+    }
+
     /// <summary>Whether <paramref name="statement"/> is the guard <see cref="HollowGuard"/> makes.</summary>
     private static bool IsHollowGuard(Statement statement)
     {
@@ -2336,35 +2357,18 @@ public sealed partial class SemanticVerifier
             ElseStatement: null,
             Condition: CallExpression
             {
-                Callee: MemberExpression
-                {
-                    MemberName: Declaration.RuntimeContract.RawPointer.IsHollow,
-                    Object: CallExpression
-                    {
-                        Callee: MemberExpression
-                        {
-                            MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
-                            Object: IdentifierExpression { Name: "me" }
-                        }
-                    }
-                }
+                Callee: MemberExpression { MemberName: Declaration.RuntimeContract.RawPointer.IsHollow, Object: { } on }
             }
-        };
+        } && IsMeAddress(expression: on);
     }
 
-    /// <summary>The statement <c>me.hijack().invalidate()</c>.</summary>
+    /// <summary>The statement <c>C::rf_invalidate(ptr: me.get_address())</c>: the entity's box is given back through its
+    /// address, so no <c>Hijacked[T]</c> is built for the type.</summary>
     private static ExpressionStatement BoxGiveBack(SourceLocation location)
     {
-        var me = new IdentifierExpression(Name: "me", Location: location);
-        var hijack = new CallExpression(
-            Callee: new MemberExpression(Object: me, MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
-                Location: location),
-            Arguments: [],
-            Location: location) { IsSynthesizedLowering = true };
         var invalidate = new CallExpression(
-            Callee: new MemberExpression(Object: hijack, MemberName: Declaration.RuntimeContract.RawPointer.Invalidate,
-                Location: location),
-            Arguments: [],
+            Callee: new IdentifierExpression(Name: InvalidateRuntimeRoutine, Location: location, Realm: "C"),
+            Arguments: [new NamedArgumentExpression(Name: "ptr", Value: MeAddress(location: location), Location: location)],
             Location: location) { IsSynthesizedLowering = true };
         return new ExpressionStatement(Expression: invalidate, Location: location);
     }
@@ -2392,27 +2396,17 @@ public sealed partial class SemanticVerifier
         };
     }
 
-    /// <summary>Whether <paramref name="statement"/> is <c>me.hijack().invalidate()</c>.</summary>
+    /// <summary>Whether <paramref name="statement"/> is the statement <see cref="BoxGiveBack"/> makes.</summary>
     private static bool IsBoxGiveBack(Statement statement)
     {
         return statement is ExpressionStatement
         {
             Expression: CallExpression
             {
-                Callee: MemberExpression
-                {
-                    MemberName: Declaration.RuntimeContract.RawPointer.Invalidate,
-                    Object: CallExpression
-                    {
-                        Callee: MemberExpression
-                        {
-                            MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
-                            Object: IdentifierExpression { Name: "me" }
-                        }
-                    }
-                }
+                Callee: IdentifierExpression { Name: InvalidateRuntimeRoutine, Realm: "C" },
+                Arguments: [NamedArgumentExpression { Name: "ptr", Value: { } address }]
             }
-        };
+        } && IsMeAddress(expression: address);
     }
 
     private void ValidateDestroyDeclaration(RoutineDeclaration routine)

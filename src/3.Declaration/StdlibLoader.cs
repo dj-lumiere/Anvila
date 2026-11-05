@@ -42,7 +42,21 @@ public sealed partial class StdlibLoader
     /// When this flag is set, <see cref="AllLoadedPrograms"/> excludes <see cref="_corePrograms"/> so those
     /// stale System copies never re-enter <c>FreshlyLoadedStdlibPrograms</c> and get re-lowered (which throws
     /// on any never-analyzed node, e.g. a D128 ternary — the warm-restore crash this guards).</summary>
-    public bool CoreResident { get; set; }
+    public bool CoreResident
+    {
+        get => _coreResident;
+        set
+        {
+            _coreResident = value;
+            ProgramsVersion++;
+        }
+    }
+
+    private bool _coreResident;
+
+    /// <summary>Counts the changes to what <see cref="AllLoadedPrograms"/> holds, so a caller can keep a list made
+    /// from it until it moves.</summary>
+    public int ProgramsVersion { get; private set; }
 
     /// <summary>Tracks modules that have been loaded on-demand.</summary>
     private readonly HashSet<string> _loadedModules =
@@ -403,6 +417,7 @@ public sealed partial class StdlibLoader
                 if (StandardModules.IsSystem(module: fileModule))
                 {
                     _corePrograms.Add(item: (ast, filePath, fileModule));
+                    ProgramsVersion++;
                 }
                 else
                 {
@@ -416,6 +431,7 @@ public sealed partial class StdlibLoader
                     }
 
                     programs.Add(item: (ast, filePath, fileModule));
+                    ProgramsVersion++;
                 }
             }
             catch (Exception ex)
@@ -673,6 +689,8 @@ public sealed partial class StdlibLoader
             return true;
         }
 
+        ProgramsVersion++;
+
         LoadModuleImports(registry: registry, programs: programs);
         RunModuleRegistrationPasses(registry: registry, programs: programs);
         return true;
@@ -809,6 +827,7 @@ public sealed partial class StdlibLoader
             }
 
             progs.Add(item: (ast, filePath, effectiveModule));
+            ProgramsVersion++;
 
             // Load the file's imports FIRST, so a field or signature naming a type from an imported module
             // (a member variable typed `Moment`, declared by the module it imports) finds it registered. The

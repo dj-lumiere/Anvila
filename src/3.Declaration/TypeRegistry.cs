@@ -796,6 +796,7 @@ public sealed partial class TypeRegistry
         TypeShapeVersion.Bump();
         if (_routines.TryAdd(key: key, value: routine))
         {
+            CountRoutineKey(routine: routine, by: 1);
             int hash = key.IndexOf(value: '#');
             string baseName = hash < 0 ? key : key[..hash];
             if (!_routineKeysByBaseName.TryGetValue(key: baseName, value: out List<string>? keys))
@@ -808,7 +809,49 @@ public sealed partial class TypeRegistry
             return;
         }
 
+        RoutineInfo replaced = _routines[key: key];
         _routines[key: key] = routine;
+        if (!ReferenceEquals(objA: replaced, objB: routine))
+        {
+            CountRoutineKey(routine: replaced, by: -1);
+            CountRoutineKey(routine: routine, by: 1);
+        }
+    }
+
+    /// <summary>How many keys of <see cref="_routines"/> hold each routine. One routine is often stored under two
+    /// keys (its registry key and its base name).</summary>
+    private readonly Dictionary<RoutineInfo, int> _routineKeyCounts = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>The routines of <see cref="_routines"/> by <see cref="RoutineInfo.Name"/>, each once, in the order they
+    /// were first stored. Kept in step by <see cref="SetRoutineEntry"/>, so a question about one name reads one short
+    /// list instead of every routine.</summary>
+    private readonly Dictionary<string, List<RoutineInfo>> _routinesByName = new(comparer: StringComparer.Ordinal);
+
+    private void CountRoutineKey(RoutineInfo routine, int by)
+    {
+        int count = _routineKeyCounts.GetValueOrDefault(key: routine) + by;
+        if (count > 0)
+        {
+            _routineKeyCounts[key: routine] = count;
+            if (count == 1 && by > 0)
+            {
+                if (!_routinesByName.TryGetValue(key: routine.Name, value: out List<RoutineInfo>? named))
+                {
+                    named = [];
+                    _routinesByName[key: routine.Name] = named;
+                }
+
+                named.Add(item: routine);
+            }
+
+            return;
+        }
+
+        _routineKeyCounts.Remove(key: routine);
+        if (_routinesByName.TryGetValue(key: routine.Name, value: out List<RoutineInfo>? list))
+        {
+            list.RemoveAll(match: r => ReferenceEquals(objA: r, objB: routine));
+        }
     }
 
     /// <summary>The keys of <see cref="_routines"/> that are <paramref name="baseName"/> itself or
@@ -1135,7 +1178,30 @@ public sealed partial class TypeRegistry
             // (last-write-wins) while FindInStdlib's template index picks the other, un-lowered — a monomorphized
             // body then reaches codegen with a never-analyzed node (e.g. RotatableList.grow's ternary). Drop any
             // freshly-loaded program whose file the restored set already holds; keep only genuinely-new modules.
-            : [.. _restoredStdlibPrograms, .. FreshlyLoadedNotShadowedByRestored()];
+            : RestoredAndFreshPrograms();
+
+    /// <summary>The restored programs and then the fresh ones they do not shadow, kept until either set changes:
+    /// <see cref="StdlibPrograms"/> is read very often in a build.</summary>
+    private List<(Program Program, string FilePath, string Module)> RestoredAndFreshPrograms()
+    {
+        (int, int) version = (_restoredStdlibPrograms!.Count, _stdlibLoader?.ProgramsVersion ?? -1);
+        if (_stdlibProgramsKept is { } kept && ReferenceEquals(objA: _stdlibProgramsKeptFrom, objB: _restoredStdlibPrograms) &&
+            _stdlibProgramsKeptVersion == version)
+        {
+            return kept;
+        }
+
+        List<(Program Program, string FilePath, string Module)> made =
+            [.. _restoredStdlibPrograms, .. FreshlyLoadedNotShadowedByRestored()];
+        _stdlibProgramsKept = made;
+        _stdlibProgramsKeptFrom = _restoredStdlibPrograms;
+        _stdlibProgramsKeptVersion = version;
+        return made;
+    }
+
+    private List<(Program Program, string FilePath, string Module)>? _stdlibProgramsKept;
+    private List<(Program Program, string FilePath, string Module)>? _stdlibProgramsKeptFrom;
+    private (int, int) _stdlibProgramsKeptVersion;
 
     /// <summary>Lowered stdlib program ASTs restored from a warm-compile snapshot. When set, these
     /// (already fully desugared/lowered) programs are served as <see cref="StdlibPrograms"/> instead of
@@ -1173,6 +1239,11 @@ public sealed partial class TypeRegistry
     public List<(Program Program, string FilePath, string Module)> FreshlyLoadedStdlibPrograms =>
         FreshlyLoadedNotShadowedByRestored();
 
+    /// <summary>The restored programs' file paths, kept for the restored set they were read from.</summary>
+    private HashSet<string>? _restoredPaths;
+    private List<(Program Program, string FilePath, string Module)>? _restoredPathsFor;
+    private int _restoredPathsCount;
+
     /// <summary>The loader's freshly-parsed programs MINUS any whose file the restored snapshot already
     /// holds. In a cold compile (<see cref="_restoredStdlibPrograms"/> == null) this is every loaded
     /// program. In a warm compile the restored (canonical, per-build-cloned) copy supersedes a fresh
@@ -1188,9 +1259,15 @@ public sealed partial class TypeRegistry
             return loaded;
         }
 
-        var restoredPaths = new HashSet<string>(
-            collection: _restoredStdlibPrograms.Select(selector: p => p.FilePath),
-            comparer: StringComparer.OrdinalIgnoreCase);
+        if (_restoredPathsFor != _restoredStdlibPrograms || _restoredPathsCount != _restoredStdlibPrograms.Count)
+        {
+            _restoredPaths = new HashSet<string>(collection: _restoredStdlibPrograms.Select(selector: p => p.FilePath),
+                comparer: StringComparer.OrdinalIgnoreCase);
+            _restoredPathsFor = _restoredStdlibPrograms;
+            _restoredPathsCount = _restoredStdlibPrograms.Count;
+        }
+
+        HashSet<string> restoredPaths = _restoredPaths!;
         return loaded.Where(predicate: p => !restoredPaths.Contains(item: p.FilePath)).ToList();
     }
 
@@ -2123,7 +2200,8 @@ public sealed partial class TypeRegistry
     /// The concrete controller entity behind a pointer-backed wrapper (<c>Retained[E]</c> →
     /// <c>RetainManager[E]</c>, <c>Guarded[E, P]</c> → <c>GuardManager[E, P]</c>), derived from the
     /// wrapper's structure: its base name picks the controller (<see cref="RuntimeContract.ControllerOf"/>)
-    /// and its type arguments instantiate it. Null when the wrapper has no controller.
+    /// and its type arguments instantiate it, unless the controller is not generic. Null when the wrapper has no
+    /// controller.
     /// </summary>
     public EntityTypeSymbol? GetControllerType(TypeSymbol wrapper)
     {
@@ -2142,6 +2220,12 @@ public sealed partial class TypeRegistry
                                           throw new InvalidOperationException(
                                               message:
                                               $"The stdlib controller '{controllerBase}' behind '{wrapper.Name}' is not registered.");
+        // One controller may serve every type argument (Roamed's RoamManager): it is the controller as it is.
+        if (!controllerDefinition.IsGenericDefinition)
+        {
+            return controllerDefinition as EntityTypeSymbol;
+        }
+
         return GetOrCreateResolution(genericDef: controllerDefinition, typeArguments: typeArguments.ToList()) as
             EntityTypeSymbol;
     }

@@ -853,10 +853,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         var worklist = new Queue<MonomorphizedBody>();
         int totalBuilt = 0;
 
-        // SEED: the entity self-free tail (`me.hijack().invalidate()`) is CODEGEN-INJECTED with no
-        // ResolvedRoutine, so the call-driven closure can't discover it — enumerate it per concrete entity.
-        SeedEntitySelfFreeTail(worklist: worklist, totalBuilt: ref totalBuilt);
-
         // SEED the per-type LIFECYCLE HOOKS on EVERY REGISTERED instance. Codegen synthesizes a body per
         // type for each of these hooks — the teardown `destruct`/`roam_free` (field-walk `me.f.destruct()`
         // + entity self-free) and the cycle-tracer `roam_trace` (field-walk `me.f.cyclic_visit()` /
@@ -880,39 +876,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // nothing calls). Bounded by the finite lifecycle call graph; a visited set walks each body once.
         DriveCallClosureWorklist(worklist: worklist, totalBuilt: ref totalBuilt);
         return totalBuilt;
-    }
-
-    /// <summary>
-    /// Seeds the isolation worklist with hijack and Hijacked.invalidate for each concrete entity.
-    /// These are codegen-injected with no ResolvedRoutine, so the call-driven closure cannot discover them.
-    /// </summary>
-    private void SeedEntitySelfFreeTail(Queue<MonomorphizedBody> worklist, ref int totalBuilt)
-    {
-        foreach (TypeSymbol t in ctx.Registry.AllConcreteGenericInstancesUnfiltered.ToArray())
-        {
-            if (t is not EntityTypeSymbol { IsGenericDefinition: false } entity)
-            {
-                continue;
-            }
-
-            if (BuildOneInIsolation(r: ctx.Registry.LookupMemberRoutine(type: entity,
-                        memberRoutineName: RuntimeContract.RawPointer.Hijack),
-                    totalBuilt: ref totalBuilt) is { } hb)
-            {
-                worklist.Enqueue(item: hb);
-            }
-
-            TypeSymbol hijacked = ctx.Registry.GetOrCreateWrapperType(
-                wrapperName: RuntimeContract.Hijacked,
-                innerType: entity,
-                isReadOnly: false);
-            if (BuildOneInIsolation(r: ctx.Registry.LookupMemberRoutine(type: hijacked,
-                        memberRoutineName: RuntimeContract.RawPointer.Invalidate),
-                    totalBuilt: ref totalBuilt) is { } ib)
-            {
-                worklist.Enqueue(item: ib);
-            }
-        }
     }
 
     /// <summary>
@@ -1898,7 +1861,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
             SeedNonCallDrivenWiredRoutines(type: type);
             SeedImplicitCodegenInserts(type: type);
-            SeedEntitySelfFreeIfApplicable(type: type);
+            SeedTextReplaceIfApplicable(type: type);
             SeedLifecycleHooksIfApplicable(type: type);
             SeedCommonWidthHelpers(type: type);
         }
@@ -1984,36 +1947,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             }
         }
 
-        // (3) Entity self-free tail (hijack / Hijacked[E].invalidate — zero-arg universal, no AST call).
-        // Skip a type that still carries a generic parameter: GetOrCreateWrapperType would mint
-        // `Hijacked[RangeEmittable[T]]` recursively → unbounded monomorphization. Only fully-concrete entities.
-        // (4) Text.replace — FStringLoweringPass synthesizes it for `:?`/`?` in-flight-entity interpolation.
-        private void SeedEntitySelfFreeIfApplicable(TypeSymbol type)
+        // (3) Text.replace — FStringLoweringPass synthesizes it for `:?`/`?` in-flight-entity interpolation. (An entity
+        // gives back its box through `C::rf_invalidate(ptr: me.get_address())`, a call in its `destruct`, so nothing is
+        // seeded for that.)
+        private void SeedTextReplaceIfApplicable(TypeSymbol type)
         {
             if (type is { Name: "Text", Module: "System" })
             {
                 Discover(r: _ctx.Registry.LookupMemberRoutine(type: type,
                     memberRoutineName: RuntimeContract.Collection.Replace));
             }
-
-            if (type is not EntityTypeSymbol { IsGenericDefinition: false })
-            {
-                return;
-            }
-
-            if (ContainsGenericParam(t: type))
-            {
-                return;
-            }
-
-            Discover(r: _ctx.Registry.LookupMemberRoutine(type: type,
-                memberRoutineName: RuntimeContract.RawPointer.Hijack));
-            TypeSymbol hijacked = _ctx.Registry.GetOrCreateWrapperType(
-                wrapperName: RuntimeContract.Hijacked,
-                innerType: type,
-                isReadOnly: false);
-            Discover(r: _ctx.Registry.LookupMemberRoutine(type: hijacked,
-                memberRoutineName: RuntimeContract.RawPointer.Invalidate));
         }
 
         // (3b) Per-type destroy. Codegen synthesizes teardown calls per reached type with NO source AST call (a

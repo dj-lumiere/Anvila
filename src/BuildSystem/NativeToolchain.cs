@@ -1131,6 +1131,57 @@ internal static class NativeToolchain
         return rc;
     }
 
+    /// <summary>Whether the in-process JIT loads its prebuilt code (Ingrid, the resident base and its layers) as
+    /// shared libraries next to their objects. Linking an object in the JIT took about 150 ms on every run, in a new
+    /// process each time, while the system loader maps a shared library in a few milliseconds. Linux only: the other
+    /// systems load the objects.</summary>
+    internal static bool JitLoadsSharedLibraries => OperatingSystem.IsLinux();
+
+    /// <summary>The shared library made from a JIT object by <see cref="LinkJitSharedLibrary"/>.</summary>
+    internal static string JitSharedLibraryPath(string objFile)
+    {
+        return Path.ChangeExtension(path: objFile, extension: ".so");
+    }
+
+    /// <summary>
+    /// Links a JIT object into a shared library at <see cref="JitSharedLibraryPath"/>, written to a file of this
+    /// process's own first so another process never loads it half written. Its undefined symbols stay undefined: the
+    /// runtime library and the libraries loaded before it define them when the JIT loads it. Returns false when it
+    /// can't be linked, and the JIT then loads the object. Calls inside the library go straight to its own routines
+    /// (<c>-Bsymbolic-functions</c>): no other code defines them, as the JIT never allowed a second definition.
+    /// </summary>
+    internal static bool LinkJitSharedLibrary(string objFile)
+    {
+        if (!JitLoadsSharedLibraries)
+        {
+            return false;
+        }
+
+        string so = JitSharedLibraryPath(objFile: objFile);
+        string tmp = $"{so}.{Environment.ProcessId}.tmp";
+        int rc = RunToolCapture(toolPath: ClangTool.Value,
+            args: $"-shared{LldFlagFragment()} -Wl,-z,undefs -Wl,-Bsymbolic-functions -o \"{tmp}\" \"{objFile}\"",
+            stderr: out string err);
+        if (rc != 0)
+        {
+            Console.Error.Write(value: err);
+            Console.Error.WriteLine(value: $"JIT shared library link failed (clang exited with code {rc})");
+            try
+            {
+                File.Delete(path: tmp);
+            }
+            catch (IOException)
+            {
+                // Left for the next build to overwrite.
+            }
+
+            return false;
+        }
+
+        File.Move(sourceFileName: tmp, destFileName: so, overwrite: true);
+        return true;
+    }
+
     /// <summary>
     /// For IR that names its traced routines (<c>!lapila.trace</c>): writes the IR with each traced call's chain, then
     /// its assembly with the return addresses marked and the table (Lapila's <see cref="Lapila.TraceTable"/>), and

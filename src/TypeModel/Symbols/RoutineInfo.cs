@@ -84,70 +84,135 @@ public sealed class RoutineInfo
     {
         get
         {
-            string baseName;
-            if (OwnerType != null)
+            // Asked very often: the key is kept and made again only when the parameters or the type arguments
+            // changed (every other part is set once, when the routine is made).
+            if (_registryKey != null && SameParameters(kept: _registryKeyParameters, now: Parameters) &&
+                SameTypeArguments(kept: _registryKeyTypeArguments, now: TypeArguments))
             {
-                // A creator carries NO member name (identity is Kind==Creator). Its key is the owner
-                // type identity + params — never `Owner.create`.
-                baseName = IsCreator
-                    ? GetTypeIdentity(type: OwnerType)
-                    : $"{GetTypeIdentity(type: OwnerType)}.{Name}";
-            }
-            else
-            {
-                baseName = string.IsNullOrEmpty(value: Module)
-                    ? Name
-                    : $"{Module}.{Name}";
+                return _registryKey;
             }
 
-            // A wrapper's forwarder of one inner type's routine and of another's can share name and parameters
-            // (`key_get(i: U64)` of two node types): the inner type tells them apart.
-            if (WrapperForwarderInnerGenericDef is { } forwardedType && OwnerType is { IsGenericDefinition: true })
-            {
-                baseName = $"{baseName}>{GetTypeIdentity(type: forwardedType)}";
-            }
-
-            // A recovery variant shares its failable routine's name and parameters: its kind tells the two
-            // apart (`?` cannot appear in a routine name).
-            if (Recovery is { } recovery)
-            {
-                baseName = $"{baseName}?{RecoveryKeyword(kind: recovery)}";
-            }
-
-            if (TypeArguments is { Count: > 0 })
-            {
-                string typeArgs = string.Join(separator: ",",
-                    values: TypeArguments.Select(selector: GetTypeArgumentIdentity));
-                baseName = $"{baseName}[{typeArgs}]";
-            }
-
-            string key = Parameters.Count == 0
-                ? baseName
-                : $"{baseName}#{string.Join(separator: ",", values: Parameters.Select(selector: p => GetTypeIdentity(type: p.Type)))}";
-
-            // A surface routine of one realm keys apart from the shared routine it stands in for.
-            if (SurfaceRealm is { } surface)
-            {
-                key = $"{surface}~{key}";
-            }
-
-            // Bridged-realm owner → realm-prefixed key (ambient realm "RV" stays bare = RV byte-identical).
-            if (OwnerType is { Realm: not Realms.Shared and { } r })
-            {
-                return $"{r}::{key}";
-            }
-
-            // A free (owner-less) FOREIGN routine (C extern / LLVM intrinsic) gets a realm-prefixed key
-            // too, so it never collides with an ambient same-signature free routine: e.g. the
-            // `LLVM::atan2` intrinsic and the free `atan2(y, x)` both key distinctly and coexist, each
-            // resolved through its own realm (bare call → ambient, `LLVM::` call → the intrinsic).
-            if (OwnerType == null && Realm is RoutineRealm.C or RoutineRealm.LLVM)
-            {
-                return $"{(Realm == RoutineRealm.C ? "C" : "LLVM")}::{key}";
-            }
-
-            return key;
+            string made = MakeRegistryKey();
+            _registryKey = made;
+            _registryKeyParameters = Parameters.ToArray();
+            _registryKeyTypeArguments = TypeArguments?.ToArray();
+            return made;
         }
+    }
+
+    [NonSerialized]
+    private string? _registryKey;
+    [NonSerialized]
+    private ParamInfo[]? _registryKeyParameters;
+    [NonSerialized]
+    private TypeSymbol[]? _registryKeyTypeArguments;
+
+    private static bool SameParameters(ParamInfo[]? kept, List<ParamInfo> now)
+    {
+        if (kept == null || kept.Length != now.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < kept.Length; i++)
+        {
+            if (!ReferenceEquals(objA: kept[i], objB: now[index: i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SameTypeArguments(TypeSymbol[]? kept, List<TypeSymbol>? now)
+    {
+        if (kept == null || now == null)
+        {
+            return kept == null && now == null;
+        }
+
+        if (kept.Length != now.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < kept.Length; i++)
+        {
+            if (!ReferenceEquals(objA: kept[i], objB: now[index: i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private string MakeRegistryKey()
+    {
+        string baseName;
+        if (OwnerType != null)
+        {
+            // A creator carries NO member name (identity is Kind==Creator). Its key is the owner
+            // type identity + params — never `Owner.create`.
+            baseName = IsCreator
+                ? GetTypeIdentity(type: OwnerType)
+                : $"{GetTypeIdentity(type: OwnerType)}.{Name}";
+        }
+        else
+        {
+            baseName = string.IsNullOrEmpty(value: Module)
+                ? Name
+                : $"{Module}.{Name}";
+        }
+
+        // A wrapper's forwarder of one inner type's routine and of another's can share name and parameters
+        // (`key_get(i: U64)` of two node types): the inner type tells them apart.
+        if (WrapperForwarderInnerGenericDef is { } forwardedType && OwnerType is { IsGenericDefinition: true })
+        {
+            baseName = $"{baseName}>{GetTypeIdentity(type: forwardedType)}";
+        }
+
+        // A recovery variant shares its failable routine's name and parameters: its kind tells the two
+        // apart (`?` cannot appear in a routine name).
+        if (Recovery is { } recovery)
+        {
+            baseName = $"{baseName}?{RecoveryKeyword(kind: recovery)}";
+        }
+
+        if (TypeArguments is { Count: > 0 })
+        {
+            string typeArgs = string.Join(separator: ",",
+                values: TypeArguments.Select(selector: GetTypeArgumentIdentity));
+            baseName = $"{baseName}[{typeArgs}]";
+        }
+
+        string key = Parameters.Count == 0
+            ? baseName
+            : $"{baseName}#{string.Join(separator: ",", values: Parameters.Select(selector: p => GetTypeIdentity(type: p.Type)))}";
+
+        // A surface routine of one realm keys apart from the shared routine it stands in for.
+        if (SurfaceRealm is { } surface)
+        {
+            key = $"{surface}~{key}";
+        }
+
+        // Bridged-realm owner → realm-prefixed key (ambient realm "RV" stays bare = RV byte-identical).
+        if (OwnerType is { Realm: not Realms.Shared and { } r })
+        {
+            return $"{r}::{key}";
+        }
+
+        // A free (owner-less) FOREIGN routine (C extern / LLVM intrinsic) gets a realm-prefixed key
+        // too, so it never collides with an ambient same-signature free routine: e.g. the
+        // `LLVM::atan2` intrinsic and the free `atan2(y, x)` both key distinctly and coexist, each
+        // resolved through its own realm (bare call → ambient, `LLVM::` call → the intrinsic).
+        if (OwnerType == null && Realm is RoutineRealm.C or RoutineRealm.LLVM)
+        {
+            return $"{(Realm == RoutineRealm.C ? "C" : "LLVM")}::{key}";
+        }
+
+        return key;
     }
 
     /// <summary>

@@ -892,6 +892,7 @@ public sealed partial class SemanticVerifier
         // only ADDS user variants here — the seeded restored ones survive for codegen.
         _variantBodies = ctx.VariantBodies;
         AnalyzeVariantBodies();
+        AnalyzeWorkRoutinesOfGeneratedBodies();
         LowerLanguageEntitiesInVariantBodies(bodies: _variantBodies);
         SubMark(label: nameof(AnalyzeVariantBodies));
 

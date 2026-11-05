@@ -552,15 +552,27 @@ internal static unsafe class OrcJitExecutor
         LLVMOrcOpaqueLLJIT* jit;
         jit = CreateLljit(builder: builder);
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
-        AddIngridLapila(jit: jit, dylib: dylib);
-
-        // Load the precompiled stdlib base object — linked into the dylib, NOT JIT-compiled.
-        AddObjectFile(jit: jit, dylib: dylib, objectPath: baseObjectPath);
-        // The daemon's resident layers: stdlib routines earlier builds needed beyond the base, AOT'd the
-        // same way, so the delta extern-declares them too.
-        foreach (string layerObjectPath in layerObjectPaths ?? [])
+        if (SharedLibrariesFor(baseObjectPath: baseObjectPath, layerObjectPaths: layerObjectPaths) is { } libraries)
         {
-            AddObjectFile(jit: jit, dylib: dylib, objectPath: layerObjectPath);
+            // The system loader maps them, and the process search above finds their symbols.
+            LoadRuntimeGlobally();
+            foreach (string library in libraries)
+            {
+                LoadSharedLibraryGlobally(path: library);
+            }
+        }
+        else
+        {
+            AddIngridLapila(jit: jit, dylib: dylib);
+
+            // Load the precompiled stdlib base object — linked into the dylib, NOT JIT-compiled.
+            AddObjectFile(jit: jit, dylib: dylib, objectPath: baseObjectPath);
+            // The daemon's resident layers: stdlib routines earlier builds needed beyond the base, AOT'd the
+            // same way, so the delta extern-declares them too.
+            foreach (string layerObjectPath in layerObjectPaths ?? [])
+            {
+                AddObjectFile(jit: jit, dylib: dylib, objectPath: layerObjectPath);
+            }
         }
 
         JitStage(s: "base object loaded");
@@ -571,6 +583,67 @@ internal static unsafe class OrcJitExecutor
         JitStage(s: "delta module added — resolving main");
 
         return RunMain(jit: jit, programName: programName, programArgs: programArgs);
+    }
+
+    /// <summary>
+    /// The shared libraries made from the base, the layers and Ingrid's object (see
+    /// <see cref="Builder.NativeToolchain.LinkJitSharedLibrary"/>), in the order they are loaded, or null when the JIT
+    /// links the objects instead (another system, or a library missing or older than its object). The order lets every
+    /// library's data references resolve while it is loaded: Ingrid reads the trace tables the base defines.
+    /// </summary>
+    private static List<string>? SharedLibrariesFor(string baseObjectPath, IReadOnlyList<string>? layerObjectPaths)
+    {
+        if (!Builder.NativeToolchain.JitLoadsSharedLibraries ||
+            (DaemonIngridObjectPath ?? Builder.IngridLapila.ObjectPath(exeDir: AppContext.BaseDirectory)) is not
+            { } ingridObjectPath)
+        {
+            return null;
+        }
+
+        var libraries = new List<string>();
+        foreach (string objectPath in (IEnumerable<string>)[baseObjectPath, .. layerObjectPaths ?? [], ingridObjectPath])
+        {
+            string library = Builder.NativeToolchain.JitSharedLibraryPath(objFile: objectPath);
+            if (!File.Exists(path: library) ||
+                File.GetLastWriteTimeUtc(path: library) < File.GetLastWriteTimeUtc(path: objectPath))
+            {
+                return null;
+            }
+
+            libraries.Add(item: library);
+        }
+
+        return libraries;
+    }
+
+    private const int RtldLazy = 0x1;
+    private const int RtldNoload = 0x4;
+    private const int RtldGlobal = 0x100;
+
+    [DllImport(dllName: "libc.so.6", EntryPoint = "dlopen")]
+    private static extern nint DlOpen(string file, int mode);
+
+    [DllImport(dllName: "libc.so.6", EntryPoint = "dlerror")]
+    private static extern nint DlError();
+
+    /// <summary>Puts the runtime library, which .NET loaded for this process only, in the global scope, where the
+    /// shared libraries loaded next look up the runtime routines they call.</summary>
+    private static void LoadRuntimeGlobally()
+    {
+        if (_runtimePath != null && DlOpen(file: _runtimePath, mode: RtldLazy | RtldNoload | RtldGlobal) == 0)
+        {
+            throw new InvalidOperationException(
+                message: $"dlopen({_runtimePath}): {Marshal.PtrToStringUTF8(ptr: DlError())}");
+        }
+    }
+
+    /// <summary>Loads a shared library into the global scope. Its routines are bound when first called.</summary>
+    private static void LoadSharedLibraryGlobally(string path)
+    {
+        if (DlOpen(file: path, mode: RtldLazy | RtldGlobal) == 0)
+        {
+            throw new InvalidOperationException(message: $"dlopen({path}): {Marshal.PtrToStringUTF8(ptr: DlError())}");
+        }
     }
 
     /// <summary>Loads a native object file from disk into the given JITDylib (relocated + linked, not
