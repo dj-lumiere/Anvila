@@ -1532,7 +1532,7 @@ public sealed partial class TypeRegistry
             }
 
             // An overload with exactly this many parameters is the one meant. One whose later parameters have
-            // defaults (`show(value: Bytes, end: Text = "\n")` for `show(bytes)`) takes the call otherwise,
+            // defaults (`show(value: Text, end: Text = "\n")` for `show(text)`) takes the call otherwise,
             // before a routine of its own generic parameters (`show[T]`) does.
             if (routine.Parameters.Count == argTypes.Count)
             {
