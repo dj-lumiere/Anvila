@@ -10,41 +10,26 @@ namespace Builder.Instantiation;
 /// <typeparam name="TEntry">One entry of the index.</typeparam>
 internal sealed class ProgramIndexCache<TEntry>
 {
+
     private readonly Dictionary<Program, (object?[] Shape, List<TEntry> Entries)> _byProgram =
         new(comparer: ReferenceEqualityComparer.Instance);
 
     /// <summary>The entries of <paramref name="program"/>, read with <paramref name="read"/> when its declarations
     /// changed since they were kept. <paramref name="shape"/> lists the objects the entries are made from: the same
-    /// objects in the same order mean the same entries.</summary>
-    public List<TEntry> EntriesOf(Program program, Func<Program, object?[]> shape, Func<Program, List<TEntry>> read)
+    /// objects in the same order mean the same entries. <paramref name="sameShape"/> tells whether the kept list still
+    /// matches, without making a new one (a build checks every stdlib program each round).</summary>
+    public List<TEntry> EntriesOf(Program program, Func<Program, object?[]> shape, Func<Program, object?[], bool> sameShape,
+        Func<Program, List<TEntry>> read)
     {
-        object?[] now = shape(arg: program);
         if (_byProgram.TryGetValue(key: program, value: out (object?[] Shape, List<TEntry> Entries) kept) &&
-            SameObjects(a: kept.Shape, b: now))
+            sameShape(arg1: program, arg2: kept.Shape))
         {
             return kept.Entries;
         }
 
         List<TEntry> entries = read(arg: program);
-        _byProgram[key: program] = (now, entries);
+        _byProgram[key: program] = (shape(arg: program), entries);
         return entries;
     }
 
-    private static bool SameObjects(object?[] a, object?[] b)
-    {
-        if (a.Length != b.Length)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < a.Length; i++)
-        {
-            if (!ReferenceEquals(objA: a[i], objB: b[i]))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 }

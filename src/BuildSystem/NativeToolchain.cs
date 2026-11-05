@@ -447,7 +447,7 @@ internal static class NativeToolchain
             }
         }
 
-        string bundled = Path.Combine(path1: AppContext.BaseDirectory,
+        string bundled = Path.Combine(path1: BuilderLocation.Directory,
             path2: "toolchain",
             path3: "bin",
             path4: exeName);

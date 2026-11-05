@@ -1295,6 +1295,8 @@ public sealed partial class SemanticVerifier
         // lowering (RunPhase8Postprocessing), where user bodies have their subscript/operator calls lowered
         // to real getitem/member CallExpressions — the entry-point walk needs those to follow start()'s chain.
         _shadowCtx = ctx;
+        ctx.PreparedRoutineIndex = _preparedRoutineIndex;
+        ctx.PreparedBodyIndex = _preparedBodyIndex;
         // Stage-2 (pull/(B)): bind the demand-resolution hook so the collector can analyze a reached
         // stdlib file on first touch. No-op until the Stage-5 flip (guarded by _eagerStdlibAnalyzed).
         ctx.AnalyzeRoutineOnDemand = AnalyzeStdlibProgramOnDemand;
@@ -2061,6 +2063,12 @@ public sealed partial class SemanticVerifier
     /// <summary>This build's copies of the cached files' analyzed routine bodies, by registry key
     /// (<see cref="CachedFileAnalysis.AnalyzedBodies"/>). Empty outside a warm build.</summary>
     private readonly Dictionary<string, Statement> _warmCachedBodies = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The demand collector's index entries of this warm build's stdlib programs, read before the build began
+    /// (<see cref="PreparedRestore"/>). Null in a cold build.</summary>
+    private readonly Builder.Instantiation.ProgramIndexCache<(string Key, RoutineDeclaration Decl)>? _preparedRoutineIndex;
+
+    private readonly Builder.Instantiation.ProgramIndexCache<(string Key, Statement Body)>? _preparedBodyIndex;
 
     /// <summary>Set once the EAGER <see cref="AnalyzeStdlibBodies"/> sweep has run — while true, the
     /// demand hook is a no-op (the eager pass already analyzed every stdlib file). The Stage-5 flip stops

@@ -455,7 +455,7 @@ internal partial class Program
         {
             try
             {
-                if (Builder.IngridLapila.ObjectPath(exeDir: AppContext.BaseDirectory) == null)
+                if (Builder.IngridLapila.ObjectPath(exeDir: BuilderLocation.Directory) == null)
                 {
                     Console.Error.WriteLine(value: "[daemon] Ingrid's library could not be compiled to an object");
                 }
@@ -872,7 +872,7 @@ internal partial class Program
         {
             try
             {
-                return Builder.IngridLapila.WatchedObjectPath(exeDir: AppContext.BaseDirectory);
+                return Builder.IngridLapila.WatchedObjectPath(exeDir: BuilderLocation.Directory);
             }
             catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
             {
@@ -1651,7 +1651,10 @@ internal partial class Program
         /// launched. Returns null when the host/DLL paths can't be resolved or the process fails to start.</summary>
         private static System.Diagnostics.Process? SpawnDaemonProcess()
         {
-            string? host = Environment.ProcessPath;
+            // A NativeAOT builder starts the managed daemon beside it, which analyzes faster once its code is warm.
+            bool nativeBuilder = BuilderLocation.EntryDll == null && !BuilderLocation.RunsThroughDotnetHost;
+            string? managedDaemon = nativeBuilder ? BuilderLocation.ManagedDaemonExecutable : null;
+            string? host = managedDaemon ?? Environment.ProcessPath;
             string? dll = BuilderLocation.EntryDll;
             if (string.IsNullOrEmpty(value: host) || (BuilderLocation.RunsThroughDotnetHost && dll == null))
             {
@@ -1681,6 +1684,10 @@ internal partial class Program
             // The spawned daemon redirects its own console to this file (see RunServer), so it is fully
             // detached from this short-lived client's console and survives the client exiting.
             psi.Environment[key: DaemonLogEnvVar] = logPath;
+            if (managedDaemon != null)
+            {
+                psi.Environment[key: BuilderLocation.HomeEnvVar] = BuilderLocation.Directory;
+            }
 
             var proc = System.Diagnostics.Process.Start(startInfo: psi);
             if (proc == null)

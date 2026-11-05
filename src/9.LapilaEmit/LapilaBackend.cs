@@ -186,7 +186,7 @@ public sealed class LapilaBackend : IBuilderBackend
             return fromEnvironment;
         }
 
-        string shipped = Path.Combine(path1: AppContext.BaseDirectory, path2: "lapila-stdlib");
+        string shipped = Path.Combine(path1: BuilderLocation.Directory, path2: "lapila-stdlib");
         return Directory.Exists(path: shipped)
             ? shipped
             : throw new InvalidOperationException(

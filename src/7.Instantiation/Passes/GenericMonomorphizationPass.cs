@@ -71,7 +71,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         foreach ((Program program, string _, string _) in allPrograms)
         {
             List<(string Key, RoutineDeclaration Decl)> entries = ctx.RoutineIndexCache is { } cache
-                ? cache.EntriesOf(program: program, shape: IndexShape, read: IndexEntries)
+                ? cache.EntriesOf(program: program, shape: IndexShape, sameShape: SameIndexShape, read: IndexEntries)
                 : IndexEntries(program: program);
             AddEntries(program: program, entries: entries);
         }
@@ -96,7 +96,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
     // What IndexEntries reads a program's entries from: each declaration, and a routine's registered info (a creator's
     // second key comes from it).
-    private static object?[] IndexShape(Program program)
+    internal static object?[] IndexShape(Program program)
     {
         var shape = new object?[program.Declarations.Count * 2];
         for (int i = 0; i < program.Declarations.Count; i++)
@@ -109,8 +109,30 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         return shape;
     }
 
+    // Whether IndexShape of the program would still be `kept`.
+    internal static bool SameIndexShape(Program program, object?[] kept)
+    {
+        List<ISyntaxTreeNode> declarations = program.Declarations;
+        if (kept.Length != declarations.Count * 2)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < declarations.Count; i++)
+        {
+            ISyntaxTreeNode decl = declarations[index: i];
+            if (!ReferenceEquals(objA: kept[i * 2], objB: decl) ||
+                !ReferenceEquals(objA: kept[i * 2 + 1], objB: (decl as RoutineDeclaration)?.ResolvedInfo))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // The (key, decl) entries of ONE program's routine decls.
-    private static List<(string Key, RoutineDeclaration Decl)> IndexEntries(Program program)
+    internal static List<(string Key, RoutineDeclaration Decl)> IndexEntries(Program program)
     {
         var entries = new List<(string, RoutineDeclaration)>();
         foreach (RoutineDeclaration decl in program.Declarations.OfType<RoutineDeclaration>())

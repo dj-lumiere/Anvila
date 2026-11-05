@@ -99,7 +99,9 @@ public partial class SemanticVerifier
         List<(Program Program, string FilePath, string Module)> Programs,
         List<string> CachedFiles,
         Dictionary<string, Statement> TemplateBodies,
-        Dictionary<string, Statement> CachedBodies);
+        Dictionary<string, Statement> CachedBodies,
+        Builder.Instantiation.ProgramIndexCache<(string Key, RoutineDeclaration Decl)> RoutineIndex,
+        Builder.Instantiation.ProgramIndexCache<(string Key, Statement Body)> BodyIndex);
 
     /// <summary>
     /// Builds the next warm build's program copies ahead of time. Cloning every stdlib program costs ~60-90 ms
@@ -171,11 +173,29 @@ public partial class SemanticVerifier
             }
         }
 
+        // The demand collector's indexes of these programs, read here between requests: the collector would read
+        // every stdlib program in its first round, on the critical path. A program changed before then is read again.
+        var routineIndex = new Builder.Instantiation.ProgramIndexCache<(string Key, RoutineDeclaration Decl)>();
+        var bodyIndex = new Builder.Instantiation.ProgramIndexCache<(string Key, Statement Body)>();
+        foreach ((Program program, string _, string _) in programs)
+        {
+            routineIndex.EntriesOf(program: program,
+                shape: Builder.Instantiation.Passes.GenericMonomorphizationPass.IndexShape,
+                sameShape: Builder.Instantiation.Passes.GenericMonomorphizationPass.SameIndexShape,
+                read: Builder.Instantiation.Passes.GenericMonomorphizationPass.IndexEntries);
+            bodyIndex.EntriesOf(program: program,
+                shape: Builder.Collection.Passes.RoutineCollectionPass.BodyShape,
+                sameShape: Builder.Collection.Passes.RoutineCollectionPass.SameBodyShape,
+                read: Builder.Collection.Passes.RoutineCollectionPass.BodyEntries);
+        }
+
         return new PreparedRestore(CacheVersion: warm.AnalyzedFileCacheVersion,
             Programs: programs,
             CachedFiles: cachedFiles,
             TemplateBodies: templateBodies,
-            CachedBodies: cachedBodies);
+            CachedBodies: cachedBodies,
+            RoutineIndex: routineIndex,
+            BodyIndex: bodyIndex);
     }
 
     /// <summary>
@@ -316,6 +336,8 @@ public partial class SemanticVerifier
         }
 
         _warmCachedBodies = restore.CachedBodies;
+        _preparedRoutineIndex = restore.RoutineIndex;
+        _preparedBodyIndex = restore.BodyIndex;
         // Re-lazy the primed whole-stdlib instance closure so this warm compile re-discovers only what the
         // USER program reaches (like cold), instead of GMP re-processing all ~638 primed instances (cold
         // reaches ~378, codegen keeps ~122). User-reachability un-lazies via MaterializeIfLazy. The lazy set is

@@ -7,8 +7,41 @@ namespace Builder;
 /// </summary>
 internal static class BuilderLocation
 {
-    /// <summary>The folder the builder runs from: the standard library, the native runtime and LLVM sit in or above it.</summary>
-    internal static string Directory => Path.TrimEndingDirectorySeparator(path: AppContext.BaseDirectory);
+    /// <summary>The folder the builder runs from: the standard library, the native runtime and LLVM sit in or above it. A
+    /// managed daemon started by a NativeAOT builder runs from its own folder below it, and is told the builder's
+    /// (<see cref="HomeEnvVar"/>).</summary>
+    internal static string Directory =>
+        Environment.GetEnvironmentVariable(variable: HomeEnvVar) is { Length: > 0 } home && System.IO.Directory.Exists(path: home)
+            ? Path.TrimEndingDirectorySeparator(path: home)
+            : Path.TrimEndingDirectorySeparator(path: AppContext.BaseDirectory);
+
+    /// <summary>Set by a NativeAOT builder on the managed daemon it starts: the builder's folder.</summary>
+    internal const string HomeEnvVar = "REVARE_BUILDER_HOME";
+
+    /// <summary>The folder a NativeAOT builder keeps its managed daemon in. The daemon is managed code: under the JIT it
+    /// analyzes about 1.6 times as fast as the NativeAOT build, and it runs for the whole session, while the
+    /// builder a command starts is NativeAOT so it starts in milliseconds.</summary>
+    internal const string DaemonFolder = "daemon";
+
+    /// <summary>The name of the builder's executable (`revare`, `mielia`), the same for the NativeAOT builder and its
+    /// managed daemon.</summary>
+    internal static string ExecutableName =>
+        Path.GetFileNameWithoutExtension(path: EntryDll ?? Environment.ProcessPath ?? "");
+
+    /// <summary>The managed daemon a NativeAOT builder starts (<see cref="DaemonFolder"/>), or null when there is none
+    /// beside it.</summary>
+    internal static string? ManagedDaemonExecutable
+    {
+        get
+        {
+            string name = ExecutableName + (OperatingSystem.IsWindows() ? ".exe" : "");
+            string path = Path.Combine(path1: Directory, path2: DaemonFolder, path3: name);
+            return File.Exists(path: path) &&
+                   File.Exists(path: Path.Combine(path1: Directory, path2: DaemonFolder, path3: ExecutableName + ".dll"))
+                ? path
+                : null;
+        }
+    }
 
     /// <summary>Whether this process is the `dotnet` host running a managed builder dll (<c>dotnet Revare.dll</c>).</summary>
     internal static bool RunsThroughDotnetHost =>
@@ -33,6 +66,15 @@ internal static class BuilderLocation
     /// host), the entry dll, and the dll of each assembly that holds one of <paramref name="parts"/> beside it.</summary>
     internal static IEnumerable<string> BuildFiles(params Type[] parts)
     {
+        // A NativeAOT builder with its managed daemon: the builder and the daemon each count both, so they agree on
+        // which build runs.
+        string pairedDll = Path.Combine(path1: Directory, path2: DaemonFolder, path3: ExecutableName + ".dll");
+        string pairedExe = Path.Combine(path1: Directory, path2: ExecutableName + (OperatingSystem.IsWindows() ? ".exe" : ""));
+        if (File.Exists(path: pairedDll) && File.Exists(path: pairedExe))
+        {
+            return [pairedExe, pairedDll];
+        }
+
         var files = new List<string>();
         if (!RunsThroughDotnetHost && Environment.ProcessPath is { Length: > 0 } process)
         {

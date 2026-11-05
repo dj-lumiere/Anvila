@@ -70,7 +70,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
                 AnalyzePerUseBody = ctx.AnalyzePerUseBody,
                 CheckInstanceBody = ctx.CheckInstanceBody,
                 BuildVariantArmExtractorBody = ctx.BuildVariantArmExtractorBody,
-                RoutineIndexCache = new ProgramIndexCache<(string Key, RoutineDeclaration Decl)>()
+                RoutineIndexCache = ctx.PreparedRoutineIndex ?? new ProgramIndexCache<(string Key, RoutineDeclaration Decl)>()
             };
 
         List<(string Key, Statement Body)> entrySeeds = CollectEntrySeeds();
@@ -897,7 +897,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     /// </summary>
     /// <summary>Each program's body-index entries, kept across this collection's rounds while the program's routines
     /// and their bodies stay the same objects.</summary>
-    private readonly ProgramIndexCache<(string Key, Statement Body)> _bodyIndexCache = new();
+    private readonly ProgramIndexCache<(string Key, Statement Body)> _bodyIndexCache = ctx.PreparedBodyIndex ?? new();
 
     private Dictionary<string, Statement> BuildProgramBodyIndex()
     {
@@ -906,7 +906,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         void AddProgram(Program program)
         {
             foreach ((string key, Statement body) in _bodyIndexCache.EntriesOf(program: program, shape: BodyShape,
-                         read: BodyEntries))
+                         sameShape: SameBodyShape, read: BodyEntries))
             {
                 idx[key: key] = body;
             }
@@ -948,7 +948,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     }
 
     // What BodyEntries reads: every declaration, and each routine's registered info and body.
-    private static object?[] BodyShape(Program program)
+    internal static object?[] BodyShape(Program program)
     {
         var shape = new List<object?>(capacity: program.Declarations.Count * 3);
         foreach (ISyntaxTreeNode d in program.Declarations)
@@ -966,8 +966,66 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         return shape.ToArray();
     }
 
+    // Whether BodyShape of the program would still be `kept`, walked in the same order without making it.
+    internal static bool SameBodyShape(Program program, object?[] kept)
+    {
+        List<ISyntaxTreeNode> declarations = program.Declarations;
+        if (kept.Length < declarations.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < declarations.Count; i++)
+        {
+            if (!ReferenceEquals(objA: kept[i], objB: declarations[index: i]))
+            {
+                return false;
+            }
+        }
+
+        int at = declarations.Count;
+        foreach (ISyntaxTreeNode d in declarations)
+        {
+            switch (d)
+            {
+                case RoutineDeclaration routine:
+                    if (!SameRoutine(routine: routine))
+                    {
+                        return false;
+                    }
+
+                    break;
+                case CrashableDeclaration crashable:
+                    foreach (SyntaxTree.Declaration member in crashable.Members)
+                    {
+                        if (member is RoutineDeclaration routine && !SameRoutine(routine: routine))
+                        {
+                            return false;
+                        }
+                    }
+
+                    break;
+            }
+        }
+
+        return at == kept.Length;
+
+        bool SameRoutine(RoutineDeclaration routine)
+        {
+            if (at + 3 > kept.Length || !ReferenceEquals(objA: kept[at], objB: routine) ||
+                !ReferenceEquals(objA: kept[at + 1], objB: routine.ResolvedInfo) ||
+                !ReferenceEquals(objA: kept[at + 2], objB: routine.Body))
+            {
+                return false;
+            }
+
+            at += 3;
+            return true;
+        }
+    }
+
     // The (registry key, body) entries of one program, in the order the index takes them.
-    private static List<(string Key, Statement Body)> BodyEntries(Program program)
+    internal static List<(string Key, Statement Body)> BodyEntries(Program program)
     {
         var entries = new List<(string, Statement)>();
         foreach (RoutineDeclaration routine in RoutinesWithBodies(program: program))

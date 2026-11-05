@@ -1028,7 +1028,102 @@ public partial class LlvmEmitter
         // TBAA first (tags loads/stores), then line-tables debug info (tags instructions + define
         // headers). Both are text post-passes that append their own metadata block; DI numbers itself
         // above TBAA's fixed !0..!22. ApplyDebugInfo is a no-op outside debug builds.
-        return ApplyLargeAggregateFieldReads(ir: ApplyLargeAggregateBuilds(ir: ApplyLargeAggregateCopies(ir: ApplyDebugInfo(ir: ApplyTbaa(ir: normalized)))));
+        return DropUnusedDeclarations(ir: ApplyLargeAggregateFieldReads(ir: ApplyLargeAggregateBuilds(
+            ir: ApplyLargeAggregateCopies(ir: ApplyDebugInfo(ir: ApplyTbaa(ir: normalized))))));
+    }
+
+    /// <summary>
+    /// The module without the <c>declare</c> lines no other line refers to. Every routine the registry knows and has no
+    /// body here is declared up front, about 800 of them for a one-line program, and the JIT parsed them all on every
+    /// run. A declaration nothing uses changes nothing in the module.
+    /// </summary>
+    private static string DropUnusedDeclarations(string ir)
+    {
+        var used = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var declared = new List<(int Start, int End, string Symbol)>();
+        int lineStart = 0;
+        while (lineStart < ir.Length)
+        {
+            int lineEnd = ir.IndexOf(value: '\n', startIndex: lineStart);
+            if (lineEnd < 0)
+            {
+                lineEnd = ir.Length;
+            }
+
+            bool isDeclare = string.CompareOrdinal(strA: ir, indexA: lineStart, strB: "declare ", indexB: 0, length: 8) == 0;
+            // Metadata lines name no routine.
+            if (lineEnd > lineStart && ir[index: lineStart] != '!')
+            {
+                bool first = true;
+                for (int at = ir.IndexOf(value: '@', startIndex: lineStart, count: lineEnd - lineStart);
+                     at >= 0;
+                     at = at + 1 < lineEnd ? ir.IndexOf(value: '@', startIndex: at + 1, count: lineEnd - at - 1) : -1)
+                {
+                    (string symbol, int after) = SymbolAt(ir: ir, at: at, end: lineEnd);
+                    if (symbol.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    if (isDeclare && first)
+                    {
+                        declared.Add(item: (lineStart, lineEnd, symbol));
+                    }
+                    else
+                    {
+                        used.Add(item: symbol);
+                    }
+
+                    first = false;
+                    at = after - 1;
+                }
+            }
+
+            lineStart = lineEnd + 1;
+        }
+
+        if (declared.All(predicate: d => used.Contains(item: d.Symbol)))
+        {
+            return ir;
+        }
+
+        var kept = new StringBuilder(capacity: ir.Length);
+        int copied = 0;
+        foreach ((int start, int end, string symbol) in declared)
+        {
+            if (used.Contains(item: symbol))
+            {
+                continue;
+            }
+
+            kept.Append(value: ir, startIndex: copied, count: start - copied);
+            copied = Math.Min(val1: end + 1, val2: ir.Length);
+        }
+
+        kept.Append(value: ir, startIndex: copied, count: ir.Length - copied);
+        return kept.ToString();
+    }
+
+    /// <summary>The symbol named at <paramref name="at"/> (an <c>@</c>): a quoted name or a bare one, and where it
+    /// ends. Empty when no name follows.</summary>
+    private static (string Symbol, int After) SymbolAt(string ir, int at, int end)
+    {
+        int i = at + 1;
+        if (i < end && ir[index: i] == '"')
+        {
+            int close = ir.IndexOf(value: '"', startIndex: i + 1, count: end - i - 1);
+            return close < 0
+                ? ("", i)
+                : (ir.Substring(startIndex: i + 1, length: close - i - 1), close + 1);
+        }
+
+        int j = i;
+        while (j < end && (char.IsLetterOrDigit(c: ir[index: j]) || ir[index: j] is '_' or '.' or '$' or '-'))
+        {
+            j++;
+        }
+
+        return (ir.Substring(startIndex: i, length: j - i), j);
     }
 
     /// <summary>

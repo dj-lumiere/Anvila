@@ -32,7 +32,7 @@ public static class RuntimeShadowLoader
             return;
         }
 
-        string canonical = Path.Combine(path1: AppContext.BaseDirectory,
+        string canonical = Path.Combine(path1: BuilderLocation.Directory,
             path2: $"{RuntimeLib}.dll");
         if (!File.Exists(path: canonical))
         {

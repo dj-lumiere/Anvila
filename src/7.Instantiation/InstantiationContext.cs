@@ -30,6 +30,14 @@ public sealed class InstantiationContext
     /// </summary>
     public TypeRegistry Registry { get; }
 
+    /// <summary>The demand collector's routine-index entries of the stdlib programs, read between builds by the daemon
+    /// (see <see cref="ProgramIndexCache{TEntry}"/>). Null: the collector reads them itself.</summary>
+    internal ProgramIndexCache<(string Key, SyntaxTree.RoutineDeclaration Decl)>? PreparedRoutineIndex { get; set; }
+
+    /// <summary>The demand collector's body-index entries of the stdlib programs, read between builds by the daemon.
+    /// Null: the collector reads them itself.</summary>
+    internal ProgramIndexCache<(string Key, SyntaxTree.Statement Body)>? PreparedBodyIndex { get; set; }
+
     /// <summary>
     /// User programs that seed reachable generic type and routine discovery.
     /// </summary>
