@@ -493,6 +493,83 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private readonly HashSet<string> _movedNames = new(comparer: StringComparer.Ordinal);
 
     /// <summary>
+    /// Bindings whose name is in <see cref="_movedNames"/> only because another binding of the same name in this
+    /// routine moved: <c>else as tree =&gt; show(tree.value)</c> followed later by <c>var tree = make()</c> and
+    /// <c>drop tree</c>. The moves are recorded by name, so without this the first <c>tree</c> is never torn down.
+    /// </summary>
+    private readonly HashSet<VariableDeclaration> _keptByOtherBinding = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>Whether <paramref name="v"/> has moved out, so its scope does not tear it down.</summary>
+    private bool HasMoved(VariableDeclaration v)
+    {
+        return _movedNames.Contains(item: v.Name) && !_keptByOtherBinding.Contains(item: v);
+    }
+
+    /// <summary>
+    /// Fills <see cref="_keptByOtherBinding"/>: a moved name declared more than once in the routine, at a declaration
+    /// whose statements after it (to the end of its block) never use the name in a way that could move it. Only a
+    /// member variable read (<c>tree.value</c>) counts as not moving it, so any doubt leaves the binding moved.
+    /// </summary>
+    private void CollectBindingsKeptByOtherBinding(RoutineDeclaration r)
+    {
+        _keptByOtherBinding.Clear();
+        if (_movedNames.Count == 0)
+        {
+            return;
+        }
+
+        var declared = new Dictionary<string, int>(comparer: StringComparer.Ordinal);
+        foreach (Parameter p in r.Parameters)
+        {
+            declared[key: p.Name] = declared.GetValueOrDefault(key: p.Name) + 1;
+        }
+
+        AstWalker.Walk(root: r.Body, visit: node =>
+        {
+            if (node is VariableDeclaration v)
+            {
+                declared[key: v.Name] = declared.GetValueOrDefault(key: v.Name) + 1;
+            }
+        });
+
+        AstWalker.Walk(root: r.Body, visit: node =>
+        {
+            if (node is not BlockStatement block)
+            {
+                return;
+            }
+
+            for (int i = 0; i < block.Statements.Count; i++)
+            {
+                if (block.Statements[index: i] is DeclarationStatement { Declaration: VariableDeclaration v } &&
+                    _movedNames.Contains(item: v.Name) &&
+                    declared.GetValueOrDefault(key: v.Name) > 1 &&
+                    !block.Statements.Skip(count: i + 1).Any(predicate: s => MayMove(node: s, name: v.Name)))
+                {
+                    _keptByOtherBinding.Add(item: v);
+                }
+            }
+        });
+    }
+
+    /// <summary>Whether <paramref name="node"/> uses <paramref name="name"/> other than to read a member variable.</summary>
+    private static bool MayMove(object node, string name)
+    {
+        switch (node)
+        {
+            case CallExpression { Callee: MemberExpression { Object: IdentifierExpression receiver } }
+                when receiver.Name == name:
+                return true;
+            case MemberExpression { Object: IdentifierExpression }:
+                return false;
+            case IdentifierExpression id:
+                return id.Name == name;
+        }
+
+        return AstWalker.EnumerateChildren(node: node).Any(predicate: child => MayMove(node: child, name: name));
+    }
+
+    /// <summary>
     /// The locals a recovery variant made to hold what an emitter's <c>emit</c> gave (<c>var __rf_prop_1 =
     /// me.source.emit()</c>), by name, with that call: a local that then reads the item out of it
     /// (<c>var item = __rf_prop_1.value</c>) holds what the emitter gave.
@@ -525,6 +602,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         MarkMovedPatternSubjects(stmt: r.Body);
         CollectRefillable(r: r);
         _movedNames.ExceptWith(other: _refillable);
+        CollectBindingsKeptByOtherBinding(r: r);
 
         // THREE-RULES param model (Rule 2): passing into a routine param is either 먹튀 (`steal`, move
         // ownership in — a bare ENTITY the caller relinquished) OR handing over a borrow. A RECORD param
@@ -887,7 +965,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
 
         TypeSymbol? t = v.Type?.ResolvedType ?? v.Initializer?.ResolvedType;
-        if (t != null && !_movedNames.Contains(item: v.Name) && !IsUsingBinding(v: v) &&
+        if (t != null && !HasMoved(v: v) && !IsUsingBinding(v: v) &&
             !IsViewBinding(v: v) && !IsLoopElementEntityPart(v: v, type: t) &&
             TryResolveDestroy(type: t, destroy: out RoutineInfo? d) && d != null)
         {
@@ -1467,7 +1545,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             return marked == null || TypeContainsGenericParameter(type: marked);
         }
 
-        if (!_late && TakesSourceItem(v: v) && !_movedNames.Contains(item: v.Name))
+        if (!_late && TakesSourceItem(v: v) && !HasMoved(v: v))
         {
             return true;
         }
@@ -1476,7 +1554,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // ErrorHandlingVariantPass) and owns it as the routine's own `var x = f(y)` does.
         bool takenFromCarrier = v is { OwnsItsValue: true, Initializer: StealExpression or IdentifierExpression };
         if (_late || v.Initializer is not (CallExpression or CreatorExpression) && !takenFromCarrier ||
-            _movedNames.Contains(item: v.Name) || IsUsingBinding(v: v) || IsViewBinding(v: v) ||
+            HasMoved(v: v) || IsUsingBinding(v: v) || IsViewBinding(v: v) ||
             ctx.Registry.EntitiesAreSharedIn(filePath: v.Location?.FileName))
         {
             return false;
@@ -1588,7 +1666,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             return;
         }
 
-        if (!v.OwesTeardown || _movedNames.Contains(item: v.Name) || IsViewBinding(v: v) ||
+        if (!v.OwesTeardown || HasMoved(v: v) || IsViewBinding(v: v) ||
             v.Initializer is not (CallExpression or CreatorExpression) &&
             v is not { OwnsItsValue: true, Initializer: StealExpression or IdentifierExpression } ||
             v.Initializer is CallExpression { ResolvedRoutine.ReturnType: { } returned } &&
@@ -1642,7 +1720,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private void RegisterHandedOverItem(VariableDeclaration v, List<Owned> live)
     {
         TypeSymbol? t = v.Type?.ResolvedType ?? v.Initializer?.ResolvedType;
-        if (!v.OwesTeardown || _movedNames.Contains(item: v.Name) || t == null || TypeContainsGenericParameter(type: t) ||
+        if (!v.OwesTeardown || HasMoved(v: v) || t == null || TypeContainsGenericParameter(type: t) ||
             SourceStepOf(v: v) is not { } step ||
             !EmitterWalk.EmitHandsOver(emit: step.ResolvedRoutine,
                 receiver: (step.Callee as MemberExpression)?.Object.ResolvedType,
@@ -1707,9 +1785,11 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // `when`s), and a move of one of them says nothing about the other's matched value. A binding moves its
         // matched value out when a statement after it in its own block moves its name. A name moved where no
         // block shows it (a `steal` analysis recorded but lowering no longer spells) keeps every matched value its
-        // bindings read.
+        // bindings read, except a binding whose block uses the name only to read member variables after it: that
+        // binding moved nothing, and the name is moved by another binding of the same name.
         var movedSources = new HashSet<string>(comparer: StringComparer.Ordinal);
         var placed = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var unmovedSources = new Dictionary<string, HashSet<string>>(comparer: StringComparer.Ordinal);
         AstWalker.Walk(root: stmt, visit: node =>
         {
             if (node is not BlockStatement block)
@@ -1734,6 +1814,26 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                         }
                     });
                 }
+                else if (block.Statements[index: i] is DeclarationStatement
+                         {
+                             Declaration: VariableDeclaration { IsPatternBinding: true, Initializer: { } kept } unmoved
+                         } && _movedNames.Contains(item: unmoved.Name) &&
+                         !block.Statements.Skip(count: i + 1).Any(predicate: s => MayMove(node: s, name: unmoved.Name)))
+                {
+                    if (!unmovedSources.TryGetValue(key: unmoved.Name, value: out HashSet<string>? reads))
+                    {
+                        reads = new HashSet<string>(comparer: StringComparer.Ordinal);
+                        unmovedSources[key: unmoved.Name] = reads;
+                    }
+
+                    AstWalker.WalkExpressions(root: kept, visit: e =>
+                    {
+                        if (e is IdentifierExpression id)
+                        {
+                            reads.Add(item: id.Name);
+                        }
+                    });
+                }
             }
         });
 
@@ -1741,7 +1841,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             if (_movedNames.Contains(item: bound) && !placed.Contains(item: bound))
             {
-                movedSources.UnionWith(other: sources);
+                movedSources.UnionWith(other: unmovedSources.TryGetValue(key: bound, value: out HashSet<string>? unmoved)
+                    ? sources.Except(second: unmoved)
+                    : sources);
             }
         }
 
