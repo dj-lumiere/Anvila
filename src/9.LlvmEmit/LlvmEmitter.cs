@@ -1212,17 +1212,21 @@ public partial class LlvmEmitter
     {
         // Ingrid's library reads a trace from the stack through Lapila's table, which only a build that reads the
         // trace from the stack writes (the native toolchain). Elsewhere (the JIT, a shadow stack) an empty table
-        // stands in, weak, so its unused readers still link. The table's zero section count keeps the reader off the
+        // stands in, so its unused readers still link. The table's zero section count keeps the reader off the
         // chains and frames, yet each holds one zeroed entry instead of none: the resident base object is compiled
         // with -fdata-sections, which gives each global its own section, and on Windows the JIT's linker (RuntimeDyld)
         // does not load a COFF section of size zero, so a symbol defined in one resolves to address 0 and the link
         // of Ingrid's object, which refers to it, stops with "Program used external function ... which could not be
-        // resolved".
+        // resolved". The base or the whole module defines them and a delta refers to the base's. They are not weak:
+        // COFF names a weak definition's default after the first external symbol of the object, and when that is a
+        // thread-local's emulated TLS variable (`__emutls_v._rf_trace_depth`) the Windows JIT can't materialize it.
         if (!_traceFromStack)
         {
-            output.AppendLine(value: "@lapila_trace_table = weak constant [2 x i32] zeroinitializer");
-            output.AppendLine(value: "@lapila_trace_chains = weak constant [1 x { i32, i32 }] zeroinitializer");
-            output.AppendLine(value: "@lapila_trace_frames = weak constant [1 x { ptr, ptr, i32, i32 }] zeroinitializer");
+            string linkage = deltaMode ? "external" : "";
+            string init = deltaMode ? "" : " zeroinitializer";
+            output.AppendLine(value: $"@lapila_trace_table = {linkage} constant [2 x i32]{init}");
+            output.AppendLine(value: $"@lapila_trace_chains = {linkage} constant [1 x {{ i32, i32 }}]{init}");
+            output.AppendLine(value: $"@lapila_trace_frames = {linkage} constant [1 x {{ ptr, ptr, i32, i32 }}]{init}");
         }
 
         if (deltaMode)
