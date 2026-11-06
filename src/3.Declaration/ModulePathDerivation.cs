@@ -9,10 +9,10 @@ internal static class ModulePathDerivation
 {
     /// <summary>
     /// Derives a module path for a file with no <c>module</c> header, from its location relative to
-    /// the project root (the config.toml directory). Path segments are PascalCased (whitespace
-    /// removed, each word's first letter capitalized), <c>.</c>/<c>..</c> segments are dropped, the
+    /// the project root (the config.toml directory). Path segments are PascalCased (<c>_</c>, <c>-</c> and
+    /// whitespace removed, each word's first letter capitalized), <c>.</c>/<c>..</c> segments are dropped, the
     /// file extension is stripped, and segments are joined with <c>/</c>. E.g.
-    /// <c>../SomeFolder/SomeMoreFolder/file a.rvr</c> -> <c>SomeFolder/SomeMoreFolder/FileA</c>.
+    /// <c>../SomeFolder/some_more-folder/file a.rvr</c> -> <c>SomeFolder/SomeMoreFolder/FileA</c>.
     /// </summary>
     internal static string FromFile(string projectRoot, string filePath)
     {
@@ -51,13 +51,14 @@ internal static class ModulePathDerivation
     }
 
     /// <summary>
-    /// PascalCases one path segment: splits on whitespace, capitalizes the first letter of each word
-    /// (preserving the rest), and concatenates. <c>file a</c> -> <c>FileA</c>; an already-cased
-    /// <c>SomeFolder</c> stays <c>SomeFolder</c>.
+    /// PascalCases one path segment: splits on whitespace, <c>_</c> and <c>-</c> (which are dropped), capitalizes the
+    /// first letter of each word (preserving the rest), and concatenates. <c>tax_rules</c> -> <c>TaxRules</c>,
+    /// <c>file a</c> -> <c>FileA</c>; an already-cased <c>SomeFolder</c> stays <c>SomeFolder</c>. The same rule as
+    /// Lapila's <c>Manifest.ModuleByPlace</c>.
     /// </summary>
     private static string PascalCaseSegment(string segment)
     {
-        string[] words = segment.Split(separator: (char[]?)null,
+        string[] words = segment.Split(separator: [' ', '\t', '_', '-'],
             options: StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 0)
         {
