@@ -156,16 +156,40 @@ public partial class SourceLexer
             char c = Advance();
             if (bitWidth == 8 && c > '\x7F')
             {
-                throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
-                    message: $"Non-ASCII character '{c}' (U+{(int)c:X4}) in byte literal. " +
-                             "Byte literals only accept ASCII (0x00-0x7F). Use \"text\".encode_as_utf8() instead.",
-                    fileName: _fileName,
-                    line: _line,
-                    column: _column,
-                    language: _language);
+                AppendUtf8Bytes(first: c, content: content);
+                return;
             }
 
             content.Append(value: c);
+        }
+    }
+
+    /// <summary>
+    /// Appends the UTF-8 bytes of the non-ASCII character that starts with <paramref name="first"/> to a byte
+    /// string's value, one char per byte (a byte string's token text holds each byte as a char from U+0000 to U+00FF).
+    /// </summary>
+    private void AppendUtf8Bytes(char first, StringBuilder content)
+    {
+        string character = first.ToString();
+        if (char.IsHighSurrogate(c: first) && !IsAtEnd() && char.IsLowSurrogate(c: Peek()))
+        {
+            character += Advance();
+        }
+
+        if (char.IsSurrogate(c: first) && character.Length == 1)
+        {
+            throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
+                message: $"The character U+{(int)first:X4} in this byte string is half of a surrogate pair and has no " +
+                         "UTF-8 bytes. Write the whole character, or its bytes with \\xHH escapes.",
+                fileName: _fileName,
+                line: _line,
+                column: _column,
+                language: _language);
+        }
+
+        foreach (byte b in Encoding.UTF8.GetBytes(s: character))
+        {
+            content.Append(value: (char)b);
         }
     }
 
@@ -739,8 +763,8 @@ public partial class SourceLexer
             {
                 throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
                     message:
-                    "Hex escape \\x is not valid in character literals. Use \\u for Unicode " +
-                    "codepoints.",
+                    "A character has no \\x escape. Write the character with \\u followed by six hex digits " +
+                    "(\\u0000E9), or write a byte with b'\\xE9'.",
                     fileName: _fileName,
                     line: _line,
                     column: _column,
@@ -756,7 +780,8 @@ public partial class SourceLexer
             {
                 throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
                     message: $"Non-ASCII character '{c}' (U+{(int)c:X4}) in byte literal. " +
-                             "Byte literals only accept ASCII (0x00-0x7F).",
+                             "A byte character holds one byte, so write a non-ASCII byte as \\xHH (b'\\xE9'), " +
+                             "or write the character in a byte string b\"...\" to get its UTF-8 bytes.",
                     fileName: _fileName,
                     line: _line,
                     column: _column,
@@ -811,6 +836,18 @@ public partial class SourceLexer
                 Advance();
                 break;
             case 'x':
+                if (bitWidth != 8)
+                {
+                    throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
+                        message:
+                        "Text has no \\x escape. Write the character with \\u followed by six hex digits " +
+                        "(\\u0000FF), or write a byte string b\"...\" if you want the byte 0xFF.",
+                        fileName: _fileName,
+                        line: _line,
+                        column: _column,
+                        language: _language);
+                }
+
                 Advance(); // consume 'x'
                 ScanHexByteEscape();
                 break;
@@ -819,7 +856,7 @@ public partial class SourceLexer
                 {
                     throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
                         message:
-                        "Unicode escape \\u is not valid in byte literals. Use \\x for hex byte values.",
+                        "A byte string has no \\u escape. Write a byte as \\xHH, or write the character itself to get its UTF-8 bytes.",
                         fileName: _fileName,
                         line: _line,
                         column: _column,
@@ -888,6 +925,7 @@ public partial class SourceLexer
     /// </summary>
     private void ScanUnicodeEscape()
     {
+        int digitsStart = _position;
         for (int i = 0; i < 6; i += 1)
         {
             if (!IsHexDigit(c: Peek()))
@@ -901,6 +939,29 @@ public partial class SourceLexer
             }
 
             Advance();
+        }
+
+        int codePoint = Convert.ToInt32(value: _source.Substring(startIndex: digitsStart, length: 6), fromBase: 16);
+        if (codePoint > 0x10FFFF)
+        {
+            throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
+                message: $"U+{codePoint:X} is above U+10FFFF, the last Unicode code point. Write a code point " +
+                         "from \\u000000 to \\u10FFFF.",
+                fileName: _fileName,
+                line: _line,
+                column: _column,
+                language: _language);
+        }
+
+        if (codePoint is >= 0xD800 and <= 0xDFFF)
+        {
+            throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
+                message: $"U+{codePoint:X4} is a surrogate, not a character. Write a code point outside " +
+                         "U+D800 to U+DFFF.",
+                fileName: _fileName,
+                line: _line,
+                column: _column,
+                language: _language);
         }
     }
 
@@ -924,21 +985,9 @@ public partial class SourceLexer
             string hexStr = _source.Substring(startIndex: escapeStart + 2, length: 6);
             int codePoint = Convert.ToInt32(value: hexStr, fromBase: 16);
 
-            if (codePoint > 0x10FFFF)
-            {
-                throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
-                    message: $"Unicode escape value U+{codePoint:X} exceeds valid Unicode range",
-                    fileName: _fileName,
-                    line: _line,
-                    column: _column,
-                    language: _language);
-            }
-
-            // A code point above U+FFFF is two UTF-16 units (a surrogate pair). A surrogate code point written as an
-            // escape has no pair and stays one unit.
-            return codePoint is > 0xFFFF and <= 0x10FFFF
-                ? char.ConvertFromUtf32(utf32: codePoint)
-                : ((char)codePoint).ToString();
+            // The scan already refused a surrogate and anything above U+10FFFF. A code point above U+FFFF is two
+            // UTF-16 units (a surrogate pair).
+            return char.ConvertFromUtf32(utf32: codePoint);
         }
 
         return EscapeCharacter(c: c)
