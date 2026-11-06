@@ -1046,13 +1046,35 @@ internal sealed class LapilaRoutineWriter
             };
             bits = type switch
             {
-                TokenType.B16Literal => BitConverter.HalfToUInt16Bits(value: (Half)value),
-                TokenType.B32Literal => BitConverter.SingleToUInt32Bits(value: (float)value),
+                TokenType.B16Literal => ExactNarrowBits(digits: digits, half: true, rounded: BitConverter.HalfToUInt16Bits(value: (Half)value)),
+                TokenType.B32Literal => ExactNarrowBits(digits: digits, half: false, rounded: BitConverter.SingleToUInt32Bits(value: (float)value)),
                 _ => BitConverter.DoubleToUInt64Bits(value: value)
             };
         }
 
         return $"{lapila}.from_bits(0x{bits:X})";
+    }
+
+    /// <summary>The bits of a decimal literal as B16 or B32, rounded once from its exact value (not through a double),
+    /// or <paramref name="rounded"/> for a word such as inf or a value out of range.</summary>
+    private static ulong ExactNarrowBits(string digits, bool half, ulong rounded)
+    {
+        if (digits is "inf" or "nan")
+        {
+            return rounded;
+        }
+
+        try
+        {
+            return (ulong)NumericLiteralParser.EncodeBinary(str: digits,
+                mantBits: half ? 10 : 23,
+                expBits: half ? 5 : 8,
+                typeName: half ? "B16" : "B32");
+        }
+        catch (Exception e) when (e is OverflowException or FormatException)
+        {
+            return rounded;
+        }
     }
 
     /// <summary>

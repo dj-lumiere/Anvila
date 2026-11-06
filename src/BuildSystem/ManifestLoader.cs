@@ -111,6 +111,7 @@ public static class ManifestLoader
     {
         string manifestDir = Path.GetDirectoryName(path: fullPath)!;
         TomlTable root = Toml.ToModel(text: content);
+        RejectUnknownKeys(root: root);
 
         var manifest = new ProjectManifest { ManifestDirectory = manifestDir };
 
@@ -182,6 +183,113 @@ public static class ManifestLoader
         ResolveLibraryDependencyDirectories(manifest: manifest, manifestDir: manifestDir);
 
         return manifest;
+    }
+
+    /// <summary>The keys each section of config.toml reads. A key that is not here is a build error, so a misspelled
+    /// key never passes without a word.</summary>
+    private static readonly Dictionary<string, string[]> KnownKeys = new()
+    {
+        ["package"] =
+        [
+            "name", "version", "license", "description", "authors", "repository", "revare-version", "mielia-version",
+            "razorforge-version", "suflae-version"
+        ],
+        ["target"] =
+        [
+            "executable", "mode", "use-daemon", "incremental", "backend", "module_paths", "c_libraries",
+            "library_paths", "library"
+        ],
+        ["debug"] =
+        [
+            "dump-ast", "timing", "show-build-stages", "prune-stats", "jit-trace", "dump-ir", "dump-lapila",
+            "reachability-dump", "maysuspend-dump", "deadlock-check", "access-order", "trace-stdlib", "sanitize"
+        ],
+        ["libraries"] = []
+    };
+
+    private static readonly string[] KnownLibraryKeys = ["name", "kind", "calling-convention"];
+
+    /// <summary>Refuses a section or key config.toml does not read, naming the key meant when one is close.</summary>
+    private static void RejectUnknownKeys(TomlTable root)
+    {
+        foreach ((string section, object? value) in root)
+        {
+            if (!KnownKeys.TryGetValue(key: section, value: out string[]? keys))
+            {
+                throw new InvalidOperationException(
+                    message: $"{ManifestFileName}: [{section}] is not a section config.toml reads. Its sections are " +
+                             $"{string.Join(separator: ", ", values: KnownKeys.Keys.Select(selector: k => $"[{k}]"))}." +
+                             MeantSuffix(unknown: section, known: KnownKeys.Keys));
+            }
+
+            if (value is not TomlTable table)
+            {
+                continue;
+            }
+
+            if (section == "libraries")
+            {
+                foreach ((string library, object? libraryValue) in table)
+                {
+                    if (libraryValue is TomlTable libraryTable)
+                    {
+                        RejectUnknownKeys(section: $"libraries.{library}", table: libraryTable, keys: KnownLibraryKeys);
+                    }
+                }
+
+                continue;
+            }
+
+            RejectUnknownKeys(section: section, table: table, keys: keys);
+        }
+    }
+
+    private static void RejectUnknownKeys(string section, TomlTable table, IReadOnlyCollection<string> keys)
+    {
+        foreach (string key in table.Keys)
+        {
+            if (!keys.Contains(value: key))
+            {
+                throw new InvalidOperationException(
+                    message: $"{ManifestFileName}: [{section}] has no key named {key}. Its keys are " +
+                             $"{string.Join(separator: ", ", values: keys)}." + MeantSuffix(unknown: key, known: keys));
+            }
+        }
+    }
+
+    /// <summary>" Did you mean X?" for the known name that is the unknown one with its <c>-</c> and <c>_</c> swapped or
+    /// one or two letters apart, else empty.</summary>
+    private static string MeantSuffix(string unknown, IEnumerable<string> known)
+    {
+        string swapped = unknown.Replace(oldChar: '-', newChar: '_');
+        string? meant = known.FirstOrDefault(predicate: k => k.Replace(oldChar: '-', newChar: '_') == swapped) ??
+                        known.Where(predicate: k => EditDistance(a: k, b: unknown) <= 2)
+                             .OrderBy(keySelector: k => EditDistance(a: k, b: unknown))
+                             .FirstOrDefault();
+        return meant is null
+            ? ""
+            : $" Did you mean {meant}?";
+    }
+
+    private static int EditDistance(string a, string b)
+    {
+        int[] previous = Enumerable.Range(start: 0, count: b.Length + 1).ToArray();
+        for (int i = 1; i <= a.Length; i++)
+        {
+            int[] current = new int[b.Length + 1];
+            current[0] = i;
+            for (int j = 1; j <= b.Length; j++)
+            {
+                current[j] = Math.Min(val1: Math.Min(val1: current[j - 1] + 1, val2: previous[j] + 1),
+                    val2: previous[j - 1] + (a[i - 1] == b[j - 1]
+                        ? 0
+                        : 1));
+            }
+
+            previous = current;
+        }
+
+        return previous[b.Length];
     }
 
     /// <summary>Reads the optional <c>[debug]</c> flags into <paramref name="d"/>.</summary>

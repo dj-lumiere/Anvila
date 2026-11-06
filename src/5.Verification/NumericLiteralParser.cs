@@ -502,10 +502,25 @@ public static partial class NumericLiteralParser
     /// </summary>
     public static B128 EncodeB128(string str)
     {
+        UInt128 bits = EncodeBinary(str: str, mantBits: 112, expBits: 15, typeName: "B128");
+        return new B128 { Lo = (ulong)(bits & ulong.MaxValue), Hi = (ulong)(bits >> 64) };
+    }
+
+    /// <summary>
+    /// Encodes a decimal literal into the IEEE binary format with <paramref name="mantBits"/> stored mantissa bits
+    /// and <paramref name="expBits"/> exponent bits (B16 is 10 and 5, B32 23 and 8, B64 52 and 11, B128 112 and 15),
+    /// rounded to nearest-even once from the exact decimal value. Rounding through a <c>double</c> first rounds twice
+    /// and can land one step off for B16 and B32. Throws <see cref="OverflowException"/> when the value is out of the
+    /// format's finite range.
+    /// </summary>
+    public static UInt128 EncodeBinary(string str, int mantBits, int expBits, string typeName)
+    {
         DecimalLiteralParts p = ParseDecimalLiteral(str: str);
+        int bias = (1 << expBits - 1) - 1;
+        int maxBiased = (1 << expBits) - 2; // largest finite biased exponent (all ones = inf/nan)
         if (p.Coeff.IsZero)
         {
-            return PackB128(sign: p.Sign, biasedExp: 0, mant: 0);
+            return PackBinary(sign: p.Sign, biasedExp: 0, mant: 0, mantBits: mantBits, expBits: expBits);
         }
 
         // value = coeff * 10^exp10, written as the positive ratio num/den.
@@ -521,10 +536,6 @@ public static partial class NumericLiteralParser
             den = BigInteger.Pow(value: 10, exponent: -p.Exp10);
         }
 
-        const int mantBits = 112; // stored mantissa width
-        const int bias = 16383;
-        const int maxBiased = 0x7FFE; // largest finite biased exponent (0x7FFF = inf/nan)
-
         // Unbiased exponent E = floor(log2(value)); estimate from bit lengths then correct so that
         // 2^E <= value < 2^(E+1). CmpPow2 compares value (num/den) to 2^k exactly (left-shifts only).
         int e = (int)num.GetBitLength() - (int)den.GetBitLength();
@@ -538,7 +549,7 @@ public static partial class NumericLiteralParser
             e++; // value < 2^(e+1)
         }
 
-        // significand q = round(value * 2^(mantBits - e)) in [2^112, 2^113) (round half-to-even).
+        // significand q = round(value * 2^(mantBits - e)) in [2^mantBits, 2^(mantBits+1)) (round half-to-even).
         BigInteger q = RoundedScale(num: num, den: den, shift: mantBits - e);
         if (q >= BigInteger.One << mantBits + 1)
         {
@@ -551,44 +562,42 @@ public static partial class NumericLiteralParser
         {
             throw new OverflowException(
                 message:
-                $"float literal '{str}' is out of range for B128 (overflows to infinity)");
+                $"float literal '{str}' is out of range for {typeName} (overflows to infinity)");
         }
 
         if (biased <= 0)
         {
-            return EncodeB128Subnormal(sign: p.Sign,
-                num: num,
-                den: den,
-                mantBits: mantBits,
-                bias: bias);
+            return EncodeBinarySubnormal(sign: p.Sign, num: num, den: den, mantBits: mantBits, expBits: expBits, bias: bias);
         }
 
         var mant = (UInt128)(q - (BigInteger.One << mantBits));
-        return PackB128(sign: p.Sign, biasedExp: biased, mant: mant);
+        return PackBinary(sign: p.Sign, biasedExp: biased, mant: mant, mantBits: mantBits, expBits: expBits);
     }
 
     /// <summary>
     /// Rounds the significand at the minimum exponent (biased 0) to produce a subnormal, the
-    /// smallest normal, or a signed zero for a binary128 value that underflows the normal range.
+    /// smallest normal, or a signed zero for a value that underflows the normal range.
     /// </summary>
-    private static B128 EncodeB128Subnormal(bool sign, BigInteger num, BigInteger den,
-        int mantBits, int bias)
+    private static UInt128 EncodeBinarySubnormal(bool sign, BigInteger num, BigInteger den,
+        int mantBits, int expBits, int bias)
     {
-        int eMin = 1 - bias; // -16382
+        int eMin = 1 - bias;
         BigInteger qs = RoundedScale(num: num, den: den, shift: mantBits - eMin);
         if (qs.IsZero)
         {
-            return PackB128(sign: sign, biasedExp: 0, mant: 0); // -> +/-0
+            return PackBinary(sign: sign, biasedExp: 0, mant: 0, mantBits: mantBits, expBits: expBits); // -> +/-0
         }
 
         if (qs >= BigInteger.One << mantBits)
         {
-            return PackB128(sign: sign,
+            return PackBinary(sign: sign,
                 biasedExp: 1,
-                mant: (UInt128)(qs - (BigInteger.One << mantBits))); // smallest normal
+                mant: (UInt128)(qs - (BigInteger.One << mantBits)),
+                mantBits: mantBits,
+                expBits: expBits); // smallest normal
         }
 
-        return PackB128(sign: sign, biasedExp: 0, mant: (UInt128)qs); // subnormal
+        return PackBinary(sign: sign, biasedExp: 0, mant: (UInt128)qs, mantBits: mantBits, expBits: expBits); // subnormal
     }
 
     /// <summary>Exact sign of <c>(num/den) - 2^k</c>, i.e. compares the value to a power of two
@@ -631,15 +640,15 @@ public static partial class NumericLiteralParser
         return q;
     }
 
-    private static B128 PackB128(bool sign, int biasedExp, UInt128 mant)
+    private static UInt128 PackBinary(bool sign, int biasedExp, UInt128 mant, int mantBits, int expBits)
     {
-        UInt128 bits = (UInt128)(uint)biasedExp << 112 | mant & ((UInt128)1 << 112) - 1;
+        UInt128 bits = (UInt128)(uint)biasedExp << mantBits | mant & ((UInt128)1 << mantBits) - 1;
         if (sign)
         {
-            bits |= (UInt128)1 << 127;
+            bits |= (UInt128)1 << mantBits + expBits;
         }
 
-        return new B128 { Lo = (ulong)(bits & ulong.MaxValue), Hi = (ulong)(bits >> 64) };
+        return bits;
     }
 
     /// <summary>

@@ -429,7 +429,7 @@ internal static class NativeToolchain
     /// 1. REVARE_LLVM_HOME/bin/&lt;tool&gt; — explicit user override.
     /// 2. &lt;dir of Revare executable&gt;/toolchain/bin/&lt;tool&gt; — self-contained release
     ///    packages bundle a relocatable LLVM (llvm-mingw on Windows) there.
-    /// 3. The bare tool name, resolved from PATH (dev setups).
+    /// 3. The bare tool name, resolved from PATH (dev setups), else the newest copy where LLVM's packages install it.
     /// </summary>
     private static string ResolveToolchainTool(string name)
     {
@@ -451,9 +451,23 @@ internal static class NativeToolchain
             path2: "toolchain",
             path3: "bin",
             path4: exeName);
-        return File.Exists(path: bundled)
-            ? bundled
-            : name;
+        if (File.Exists(path: bundled))
+        {
+            return bundled;
+        }
+
+        // On PATH, the bare name does. A builder started without the shell's PATH (an editor's language server) looks
+        // where LLVM's packages install it, as the Lapila builder does.
+        return IsOnPath(exeName: exeName)
+            ? name
+            : Lapila.Toolchain.FindInstalled(tool: name) ?? name;
+    }
+
+    private static bool IsOnPath(string exeName)
+    {
+        return (Environment.GetEnvironmentVariable(variable: "PATH") ?? "")
+              .Split(separator: Path.PathSeparator)
+              .Any(predicate: dir => dir.Length > 0 && File.Exists(path: Path.Combine(path1: dir.Trim(), path2: exeName)));
     }
 
     private static readonly Lazy<string> ClangTool =

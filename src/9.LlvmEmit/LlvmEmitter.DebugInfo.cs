@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using SyntaxTree;
+using TypeModel.Enums;
 
 namespace Builder.LlvmEmit;
 
@@ -188,13 +189,14 @@ public partial class LlvmEmitter
     /// <c>!llvm.dbg.cu</c> / <c>!llvm.module.flags</c> named metadata, the DICompileUnit and Debug
     /// Info Version flag, and the accumulated per-descriptor <paramref name="meta"/> block.
     /// </summary>
-    private static void AppendDebugMetadataTrailer(StringBuilder outSb, StringBuilder meta,
+    private void AppendDebugMetadataTrailer(StringBuilder outSb, StringBuilder meta,
         int cuId, int cuFileId, int flagsId)
     {
         outSb.Append(value: $"\n!llvm.dbg.cu = !{{!{cuId}}}\n");
         // Windows reads debug information as CodeView (in a PDB): DbgHelp, which names the frames of a crash
-        // trace, and the Windows debuggers do not read DWARF. The same metadata goes out as CodeView there.
-        if (OperatingSystem.IsWindows())
+        // trace, and the Windows debuggers do not read DWARF. The same metadata goes out as CodeView there. The
+        // choice follows the target the IR is for, not the machine the builder runs on.
+        if (_target.TargetOS == "windows")
         {
             // The flags id is the last one allocated, so the next one is free.
             int codeViewId = flagsId + 1;
@@ -203,13 +205,20 @@ public partial class LlvmEmitter
         }
         else
         {
-            outSb.Append(value: $"!llvm.module.flags = !{{!{flagsId}}}\n");
+            // DWARF 5, except on Apple's targets, whose tools read version 4.
+            int dwarfId = flagsId + 1;
+            outSb.Append(value: $"!llvm.module.flags = !{{!{flagsId}, !{dwarfId}}}\n");
+            outSb.Append(value: $"!{dwarfId} = !{{i32 7, !\"Dwarf Version\", i32 {(_target.TargetOS is "macos" or "ios" ? 4 : 5)}}}\n");
         }
+
+        string producer = _registry.Language == Language.Mielia
+            ? "Mielia"
+            : "Revare";
 
         outSb.Append(
             value:
             $"!{cuId} = distinct !DICompileUnit(language: DW_LANG_C99, file: !{cuFileId}, " +
-            "producer: \"Revare\", isOptimized: false, runtimeVersion: 0, emissionKind: LineTablesOnly)\n");
+            $"producer: \"{producer}\", isOptimized: false, runtimeVersion: 0, emissionKind: LineTablesOnly)\n");
         outSb.Append(value: $"!{flagsId} = !{{i32 2, !\"Debug Info Version\", i32 3}}\n");
         outSb.Append(value: meta);
     }

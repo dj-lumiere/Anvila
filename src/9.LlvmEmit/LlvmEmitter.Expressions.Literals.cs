@@ -396,6 +396,27 @@ public partial class LlvmEmitter
             return $"u0x{b128.Hi:X16}{b128.Lo:X16}";
         }
 
+        // B16 and B32: rounded once from the exact decimal value. Going through a double first rounds twice, and a
+        // value just past a halfway point of the narrow format can land one step off.
+        if (literalType is TokenType.B16Literal or TokenType.B32Literal)
+        {
+            bool half = literalType == TokenType.B16Literal;
+            try
+            {
+                UInt128 narrow = NumericLiteralParser.EncodeBinary(str: numericValue,
+                    mantBits: half ? 10 : 23,
+                    expBits: half ? 5 : 8,
+                    typeName: half ? "B16" : "B32");
+                return half
+                    ? $"0xH{(ushort)narrow:X4}"
+                    : $"0x{BitConverter.DoubleToInt64Bits(value: BitConverter.UInt32BitsToSingle(value: (uint)narrow)):X16}";
+            }
+            catch (OverflowException)
+            {
+                // Out of the narrow format's range: the double path below gives its infinity.
+            }
+        }
+
         if (double.TryParse(s: numericValue,
                 style: NumberStyles.Float,
                 provider: CultureInfo.InvariantCulture,
