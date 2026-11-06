@@ -22,9 +22,15 @@ namespace Builder.Execution;
 #pragma warning disable S6640 // unsafe blocks are required for Win32 VirtualAlloc/VirtualProtect and ORC callback interop
 internal static unsafe partial class OrcContiguousMemoryManager
 {
-    // 64 MiB reserved+committed per linked object. Windows demand-pages committed memory, so the resident
-    // footprint only grows with the code/data actually written — the reservation is effectively free.
+    // 64 MiB of address space reserved per linked object, committed only as its sections are placed. Windows
+    // charges committed memory against the commit limit (RAM plus page file) whether or not it is touched: a lazy
+    // JIT links an object per routine, and committing whole slabs ran a CI runner out of commit after about 450
+    // objects (win32 error 1455) while the sections held under 4 MB.
     private const nuint SlabSize = 64 * 1024 * 1024;
+
+    // Commits grow, and a finalized slab gives its unused tail back to the region, in steps of the allocation
+    // granularity.
+    private const nuint Granule = 64 * 1024;
 
     // ── Win32 virtual memory ────────────────────────────────────────────────────────────────────
     private const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, MEM_DECOMMIT = 0x4000,
@@ -90,12 +96,19 @@ internal static unsafe partial class OrcContiguousMemoryManager
         public byte* Base;
         public nuint Offset;
 
+        /// <summary>How much of the slab, from its base, is committed.</summary>
+        public nuint Committed;
+
+        /// <summary>How much address space the slab holds: SlabSize until it is finalized, then its committed part
+        /// when it was the region's last slab and gave the rest back.</summary>
+        public nuint Reserved = SlabSize;
+
         /// <summary>True when the slab was carved from the shared region (decommitted, not released).</summary>
         public bool InRegion;
     }
 
-    /// <summary>Commits the next slab of the shared region, reserving the region on first use. Falls back to
-    /// an independent allocation (the old behavior) once the region is used up.</summary>
+    /// <summary>Takes the next slab of the shared region, reserving the region on first use. Falls back to an
+    /// independent reservation (the old behavior) once the region is used up. Nothing is committed yet.</summary>
     private static byte* AllocateSlab(out bool inRegion)
     {
         lock (RegionLock)
@@ -106,16 +119,10 @@ internal static unsafe partial class OrcContiguousMemoryManager
                     protect: PAGE_READWRITE);
             if (_region != null && _regionUsed + SlabSize <= RegionSize)
             {
-                void* carved = VirtualAlloc(addr: _region + _regionUsed,
-                    size: SlabSize,
-                    type: MEM_COMMIT,
-                    protect: PAGE_READWRITE);
-                if (carved != null)
-                {
-                    _regionUsed += SlabSize;
-                    inRegion = true;
-                    return (byte*)carved;
-                }
+                byte* carved = _region + _regionUsed;
+                _regionUsed += SlabSize;
+                inRegion = true;
+                return carved;
             }
         }
 
@@ -123,7 +130,7 @@ internal static unsafe partial class OrcContiguousMemoryManager
         Interlocked.Increment(location: ref _fallbackSlabs);
         byte* alone = (byte*)VirtualAlloc(addr: null,
             size: SlabSize,
-            type: MEM_RESERVE | MEM_COMMIT,
+            type: MEM_RESERVE,
             protect: PAGE_READWRITE);
         if (alone == null)
         {
@@ -146,9 +153,48 @@ internal static unsafe partial class OrcContiguousMemoryManager
                 null; // slab exhausted — the module is larger than SlabSize (raise it if this ever trips)
         }
 
+        nuint end = aligned + size;
+        if (end > slab.Committed)
+        {
+            nuint upTo = Math.Min(val1: RoundUp(n: end), val2: SlabSize);
+            if (VirtualAlloc(addr: slab.Base + slab.Committed, size: upTo - slab.Committed, type: MEM_COMMIT,
+                    protect: PAGE_READWRITE) == null)
+            {
+                Report(what: $"commit of {upTo - slab.Committed} bytes failed, win32 error " +
+                             $"{Marshal.GetLastPInvokeError()}");
+                return null;
+            }
+
+            slab.Committed = upTo;
+        }
+
         byte* p = slab.Base + aligned;
-        slab.Offset = aligned + size;
+        slab.Offset = end;
         return p;
+    }
+
+    private static nuint RoundUp(nuint n)
+    {
+        return (n + Granule - 1) & ~(Granule - 1);
+    }
+
+    /// <summary>Gives the region back the part of a region slab past <paramref name="keep"/> bytes, when the slab
+    /// is the region's last one (a slab taken after it holds the space in between).</summary>
+    private static void GiveBackTail(Slab slab, nuint keep)
+    {
+        if (!slab.InRegion)
+        {
+            return;
+        }
+
+        lock (RegionLock)
+        {
+            if (_region + _regionUsed == slab.Base + slab.Reserved)
+            {
+                _regionUsed = (nuint)(slab.Base - _region) + keep;
+                slab.Reserved = keep;
+            }
+        }
     }
 
     // ── memory-manager callbacks (unmanaged entry points) ───────────────────────────────────────
@@ -256,13 +302,19 @@ internal static unsafe partial class OrcContiguousMemoryManager
             // e.g. emulated-TLS control blocks). Will tighten to code=RX / data=RW once execution is clean.
             // Return values indicate Win32 success/failure; failure is best-effort here — if protection
             // change fails the JIT will fault on execute, which surfaces as a clear crash rather than silence.
-            _ = VirtualProtect(addr: slab.Base,
-                size: slab.Offset,
-                newProtect: PAGE_EXECUTE_READWRITE,
-                oldProtect: &old);
-            _ = FlushInstructionCache(process: GetCurrentProcess(),
-                addr: slab.Base,
-                size: slab.Offset);
+            if (slab.Offset > 0)
+            {
+                _ = VirtualProtect(addr: slab.Base,
+                    size: slab.Offset,
+                    newProtect: PAGE_EXECUTE_READWRITE,
+                    oldProtect: &old);
+                _ = FlushInstructionCache(process: GetCurrentProcess(),
+                    addr: slab.Base,
+                    size: slab.Offset);
+            }
+
+            // Its sections are all placed: the next object's slab can start right after them.
+            GiveBackTail(slab: slab, keep: Math.Max(val1: slab.Committed, val2: Granule));
             return 0; // LLVMBool: 0 = success
         }
         catch
@@ -281,9 +333,19 @@ internal static unsafe partial class OrcContiguousMemoryManager
             {
                 // Return value indicates Win32 success/failure; failure during teardown is non-recoverable
                 // (best-effort release — the OS will reclaim the reservation when the process exits).
-                _ = slab.InRegion
-                    ? VirtualFree(addr: slab.Base, size: SlabSize, type: MEM_DECOMMIT)
-                    : VirtualFree(addr: slab.Base, size: 0, type: MEM_RELEASE);
+                if (slab.InRegion)
+                {
+                    if (slab.Committed > 0)
+                    {
+                        _ = VirtualFree(addr: slab.Base, size: slab.Committed, type: MEM_DECOMMIT);
+                    }
+
+                    GiveBackTail(slab: slab, keep: 0);
+                }
+                else
+                {
+                    _ = VirtualFree(addr: slab.Base, size: 0, type: MEM_RELEASE);
+                }
             }
 
             Interlocked.Decrement(location: ref _slabsLive);
