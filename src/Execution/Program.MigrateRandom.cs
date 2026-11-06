@@ -28,20 +28,20 @@ internal partial class Program
     private static bool IsCodeOrHole(string text, int at)
     {
         int start = text.LastIndexOf(value: '\n', startIndex: Math.Max(val1: at - 1, val2: 0)) + 1;
-        // Each open string: whether it is an f-text, and how deep its holes are opened.
-        var strings = new Stack<(bool Formatted, int Depth)>();
+        // Each open string: the quote that closes it, whether it is an f-text, and how deep its holes are opened.
+        var strings = new Stack<(char Quote, bool Formatted, int Depth)>();
         for (int i = start; i < at; i++)
         {
             char c = text[index: i];
             bool inText = strings.Count > 0 && strings.Peek().Depth == 0;
             if (inText)
             {
-                (bool formatted, _) = strings.Peek();
+                (char quote, bool formatted, _) = strings.Peek();
                 if (c == '\\')
                 {
                     i++;
                 }
-                else if (c == '"')
+                else if (c == quote)
                 {
                     strings.Pop();
                 }
@@ -51,7 +51,8 @@ internal partial class Program
                 }
                 else if (formatted && c == '{')
                 {
-                    strings.Push(item: (strings.Pop().Formatted, 1));
+                    strings.Pop();
+                    strings.Push(item: (quote, formatted, 1));
                 }
 
                 continue;
@@ -62,19 +63,19 @@ internal partial class Program
                 return false;
             }
 
-            if (c == '"')
+            if (c is '"' or '\'')
             {
-                strings.Push(item: (i > 0 && text[index: i - 1] is 'f' or 'F', 0));
+                strings.Push(item: (c, i > 0 && text[index: i - 1] is 'f' or 'F', 0));
             }
             else if (strings.Count > 0 && c == '{')
             {
-                (bool formatted, int depth) = strings.Pop();
-                strings.Push(item: (formatted, depth + 1));
+                (char quote, bool formatted, int depth) = strings.Pop();
+                strings.Push(item: (quote, formatted, depth + 1));
             }
             else if (strings.Count > 0 && c == '}')
             {
-                (bool formatted, int depth) = strings.Pop();
-                strings.Push(item: (formatted, depth - 1));
+                (char quote, bool formatted, int depth) = strings.Pop();
+                strings.Push(item: (quote, formatted, depth - 1));
             }
         }
 
