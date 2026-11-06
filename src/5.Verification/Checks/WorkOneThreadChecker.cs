@@ -114,6 +114,8 @@ internal sealed class WorkOneThreadChecker(DiagnosticReporter report)
             }
         }
 
+        CheckBlockMoves(nodes: nodes, held: held);
+
         // Anywhere else, the Work would leave the block where the argument it holds can be used.
         foreach (object n in nodes)
         {
@@ -126,6 +128,88 @@ internal sealed class WorkOneThreadChecker(DiagnosticReporter report)
                     location: e.Location);
             }
         }
+    }
+
+    /// <summary>
+    /// A routine marked <c>@moves_block</c> (<c>PoolManager.add</c>) moves the entity handed to it into another block
+    /// and gives the old one back. A Work of this routine whose arguments reach that entity (a token of it, or a member
+    /// a Work changes where it lies, an <c>Unbroken</c>) and that is not collected yet would then work on the given-back
+    /// block, so handing the entity over before the Work is collected is RV-S632. A Work handed a copied member value
+    /// counts too: the build can't tell it from a member it works on in place.
+    /// </summary>
+    private void CheckBlockMoves(List<object> nodes, Dictionary<string, string> held)
+    {
+        // Each one-thread Work variable, where it is made, and the names its arguments reach.
+        var reaches = new Dictionary<string, (SourceLocation Made, HashSet<string> Names)>(comparer: StringComparer.Ordinal);
+        var collected = new List<(string Work, SourceLocation At)>();
+        foreach (object n in nodes)
+        {
+            if (n is VariableDeclaration { Initializer: { } init } v &&
+                (held.ContainsKey(key: v.Name) || init is WorkExpression ||
+                 init.ResolvedType?.BareName == Declaration.RuntimeContract.WorkTypeName))
+            {
+                // The Work's arguments, in the job expression or the call analysis lowered it to.
+                var names = new HashSet<string>(comparer: StringComparer.Ordinal);
+                AstWalker.WalkExpressions(root: init, visit: e =>
+                {
+                    if (e is IdentifierExpression id)
+                    {
+                        names.Add(item: id.Name);
+                    }
+                });
+                reaches[key: v.Name] = (v.Location, names);
+            }
+            else if (n is CallExpression { Callee: MemberExpression { Object: IdentifierExpression work, MemberName: var verb } } call &&
+                     CollectingVerbs.Contains(item: verb))
+            {
+                collected.Add(item: (work.Name, call.Location));
+            }
+        }
+
+        if (reaches.Count == 0)
+        {
+            return;
+        }
+
+        foreach (object n in nodes)
+        {
+            if (n is not CallExpression { ResolvedRoutine: { } routine } call ||
+                !(routine.RecoveryOf ?? routine).Annotations.Contains(value: "moves_block"))
+            {
+                continue;
+            }
+
+            foreach (Expression argument in call.Arguments)
+            {
+                Expression value = argument is NamedArgumentExpression named ? named.Value : argument;
+                if (value is not StealExpression { Operand: IdentifierExpression moved })
+                {
+                    continue;
+                }
+
+                foreach ((string work, (SourceLocation made, HashSet<string> names)) in reaches)
+                {
+                    if (!names.Contains(item: moved.Name) || !Before(a: made, b: call.Location) ||
+                        collected.Any(predicate: c => c.Work == work && Before(a: c.At, b: call.Location)))
+                    {
+                        continue;
+                    }
+
+                    report(code: SemanticDiagnosticCode.ThreadArgNotShareable,
+                        message: $"'{moved.Name}' goes into the pool here, which moves it, while the Work " +
+                                 $"'{work}' (line {made.Line}) was handed '{moved.Name}' or part of it and hasn't " +
+                                 $"finished: what it holds would no longer reach '{moved.Name}'. Collect the Work first " +
+                                 $"('{work}.retrieve()'), then hand '{moved.Name}' to the pool. A member value the Work " +
+                                 "only needs a copy of can be put in a name first and that name handed to the Work.",
+                        location: call.Location);
+                }
+            }
+        }
+    }
+
+    private static bool Before(SourceLocation a, SourceLocation b)
+    {
+        return a.Line < b.Line || a.Line == b.Line && a.Column < b.Column;
     }
 
     private static string? OneThreadReason(Expression expr, Dictionary<string, string> held)

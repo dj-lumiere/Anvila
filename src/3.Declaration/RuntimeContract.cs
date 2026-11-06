@@ -363,6 +363,9 @@ public static class RuntimeContract
     /// <remarks>Sites: SemanticVerifier.Expressions (IsStampOperand), ViewedValues.</remarks>
     public const string StampedTypeName = "Stamped";
 
+    /// <summary>The type <c>f.to[Work](...)</c> gives: concurrent work a verb starts and a collecting verb waits for.</summary>
+    public const string WorkTypeName = "Work";
+
     /// <summary><c>Stamped[T].same_entity</c> (Stamped.rvr): what <c>a === b</c> on two stamps runs, the same slot and
     /// generation. A stamp is a value of eight bytes, so the builder compares both fields instead of one address.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
