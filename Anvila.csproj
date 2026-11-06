@@ -4,7 +4,6 @@
        driver, daemon, JIT and language server). Each language's lexer and command line live in its own
        project (..\Revare, ..\Mielia), which registers its language rules here at startup. -->
   <PropertyGroup>
-    <SonarQubeTestProject>false</SonarQubeTestProject>
     <OutputType>Library</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -59,7 +58,6 @@
 
   <ItemGroup>
     <PackageReference Include="DebugUtils.CSharp" Version="1.8.0"/>
-    <PackageReference Include="dotnet-framework-sonarscanner" Version="9.2.0"/>
     <PackageReference Include="LLVMSharp" Version="22.1.8"/>
     <!-- The LLVM-C library the in-process JIT loads, the same version as the bindings above. Only the
          host's runtime package is pulled, so a build carries one native libLLVM, not every platform's. -->

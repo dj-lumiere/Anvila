@@ -7,11 +7,6 @@ name: Workspace build and test
 
 on:
   workflow_call:
-    inputs:
-      sonar-project:
-        description: SonarQube project key to analyze the calling repository under ('' skips the analysis).
-        type: string
-        default: ''
 
 env:
   # Safety net for a vendored subproject whose own CMakeLists declares cmake_minimum_required < 3.5, which
@@ -28,18 +23,10 @@ env:
   RV_TEST_TIMEOUT_SCALE: '2'
 
 jobs:
-  # Two parallel Linux legs share one definition: `test` is the plain build + test gate, `sonar` repeats it
-  # under the SonarScanner (Roslyn-instrumented build, coverage-collecting test run, upload) so the analysis
-  # never sits on the test gate's critical path.
   build-linux:
-    name: build-linux (${{ matrix.leg }})
     runs-on: ubuntu-latest
     # A hang fails the job here instead of holding the runner for GitHub's six hours.
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        leg: ${{ fromJSON(inputs.sonar-project != '' && '["test", "sonar"]' || '["test"]') }}
 
     steps:
       - name: Checkout the workspace
@@ -82,43 +69,10 @@ jobs:
           export CXXFLAGS="-D_GNU_SOURCE -Wno-implicit-function-declaration"
           ./build.sh
 
-      # SonarQube lives inside the tailnet; join it as an ephemeral node so the hosted runner can reach
-      # SONAR_HOST_URL. Requires a Tailscale OAuth client (scope: auth_keys) and an ACL tag `tag:ci`.
-      - name: Connect to tailnet for SonarQube
-        if: matrix.leg == 'sonar'
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-
-      - name: Install SonarScanner for .NET
-        if: matrix.leg == 'sonar'
-        run: |
-          dotnet tool install --global dotnet-sonarscanner
-          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
-
       - name: Restore dependencies
         run: |
           dotnet restore "$RV_TESTS"
           dotnet restore "$MI_TESTS"
-
-      # The scanner sees every project the build compiles, so the other workspace repositories are excluded:
-      # each repository is analyzed under its own project key.
-      - name: SonarQube Begin
-        if: matrix.leg == 'sonar'
-        run: |
-          own="${GITHUB_REPOSITORY#*/}"
-          exclusions=""
-          for p in Anvila Ingrid Revare Mielia Lapila; do
-            if [ "$p" != "$own" ]; then exclusions="${exclusions:+$exclusions,}$p/**"; fi
-          done
-          dotnet sonarscanner begin \
-            /k:"${{ inputs.sonar-project }}" \
-            /d:sonar.host.url="${{ secrets.SONAR_HOST_URL }}" \
-            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
-            /d:sonar.exclusions="$exclusions" \
-            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
 
       - name: Build
         run: |
@@ -135,27 +89,9 @@ jobs:
           sudo sysctl -w kernel.yama.ptrace_scope=0
 
       - name: Test
-        if: matrix.leg == 'test'
         run: |
           dotnet test "$RV_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
           dotnet test "$MI_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
-
-      # The builder a test starts as a child process runs the coverage-instrumented assemblies from the test output
-      # directory, several times slower, so the tests' child time limits are scaled up (TestHelpers.ChildTimeoutMs).
-      - name: Test with coverage
-        if: matrix.leg == 'sonar'
-        env:
-          RV_TEST_TIMEOUT_SCALE: '3'
-        run: |
-          for t in "$RV_TESTS" "$MI_TESTS"; do
-            dotnet test "$t" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER" \
-              --collect:"XPlat Code Coverage" \
-              -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
-          done
-
-      - name: SonarQube End
-        if: always() && matrix.leg == 'sonar'
-        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
 
   build-windows:
     runs-on: windows-latest
