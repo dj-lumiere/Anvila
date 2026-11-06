@@ -403,7 +403,7 @@ public sealed partial class StdlibLoader
             {
                 // Parse stdlib files by their own extension, not the user language: the stdlib is
                 // Revare source (`.rvr`, uses `danger`/`extern`), so a Mielia compile must still
-                // parse it with the Revare grammar (else MI-G112 on the `danger` bang). The build
+                // parse it with the Revare grammar (else ME-G112 on the `danger` bang). The build
                 // driver may have parsed the file already for the import index.
                 Program ast = _parsedStdlib?.Take(filePath: filePath) is { } parsed
                     ? TakeParsedFacts(program: parsed, filePath: filePath)

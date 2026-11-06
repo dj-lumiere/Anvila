@@ -7,7 +7,7 @@ internal partial class Program
 {
     /// <summary>A diagnostic code spelled with a language's short name from before (<c>RF-S625</c>, <c>RA-S625</c>,
     /// <c>SF-G010</c>), as a whole word.</summary>
-    private static readonly Regex OldDiagnosticCode = new(pattern: @"(?<![\w-])(RF|RA|SF)-([SGWC]\d{3})(?!\w)",
+    private static readonly Regex OldDiagnosticCode = new(pattern: @"(?<![\w-])(RF|RA|SF|MI)-([SGWC]\d{3})(?!\w)",
         options: RegexOptions.Compiled);
 
     /// <summary>The realm qualifier of the shared standard library from before, <c>RF::</c> or <c>RA::</c>.</summary>
@@ -139,7 +139,7 @@ internal partial class Program
         string text = ReplaceInCode(text: source, pattern: OldSharedRealm, replacement: _ => "RV::");
         text = ReplaceInCode(text: text, pattern: OldBindingAnnotation, replacement: _ => "@rv");
         return OldDiagnosticCode.Replace(input: text,
-            evaluator: m => (m.Groups[1].Value == "SF" ? "MI" : "RV") + "-" + m.Groups[2].Value);
+            evaluator: m => (m.Groups[1].Value is "SF" or "MI" ? "ME" : "RV") + "-" + m.Groups[2].Value);
     }
 
     /// <summary>The files under <paramref name="paths"/> that have an extension from before 0.5.</summary>

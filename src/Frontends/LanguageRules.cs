@@ -37,9 +37,13 @@ public abstract class LanguageRules
     /// still has one is a build error that names the new extension and the <c>migrate</c> step that renames it.</summary>
     public virtual IReadOnlyList<string> PreviousFileExtensions => [];
 
-    /// <summary>The language's short name (<c>RV</c>): the prefix its diagnostic codes are spelled with,
-    /// and the realm its standard library types are registered under.</summary>
+    /// <summary>The language's short name (<c>RV</c>): the realm its standard library types are
+    /// registered under (see <see cref="DiagnosticPrefix"/> for the code prefix).</summary>
     public abstract string ShortName { get; }
+
+    /// <summary>The prefix the language's diagnostic codes are spelled with (<c>RV</c>, <c>ME</c>). It is the
+    /// short name unless the realm name and the code prefix differ.</summary>
+    public virtual string DiagnosticPrefix => ShortName;
 
     /// <summary>The tokens of <paramref name="source"/>, read from <paramref name="fileName"/>.</summary>
     public abstract List<Token> Tokenize(string source, string fileName);

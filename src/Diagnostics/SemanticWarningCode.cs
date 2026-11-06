@@ -3,7 +3,7 @@ using TypeModel.Enums;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Semantic warning codes for Revare (RV-W prefix) and Mielia (MI-W prefix, same numbers).
+/// Semantic warning codes for Revare (RV-W prefix) and Mielia (ME-W prefix, same numbers).
 /// Covers non-fatal issues that may indicate problems but allow building.
 ///
 /// Code ranges:
@@ -245,7 +245,7 @@ public static class SemanticWarningCodeExtensions
     extension(SemanticWarningCode code)
     {
         /// <summary>
-        /// Formats code as RV-Wnnn or MI-Wnnn depending on language (e.g., RV-W007, MI-W007),
+        /// Formats code as RV-Wnnn or ME-Wnnn depending on language (e.g., RV-W007, ME-W007),
         /// matching the S and G code families.
         /// </summary>
         public string ToCodeString(Language language)

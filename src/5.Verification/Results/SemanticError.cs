@@ -30,7 +30,7 @@ public sealed record SemanticError(
 
     /// <summary>
     /// The code as the user sees it, spelled in the language of the file the error points at
-    /// (RV-S### for a .rvr file, MI-S### for a .mie file).
+    /// (RV-S### for a .rvr file, ME-S### for a .mie file).
     /// </summary>
     public string CodeString => GrammarCode ?? Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
 
@@ -45,7 +45,7 @@ public sealed record SemanticError(
 
     /// <summary>
     /// Gets the formatted error message including diagnostic code and location.
-    /// Format: error[RV-S###]: filename:line:column: message (MI-S### for a Mielia file)
+    /// Format: error[RV-S###]: filename:line:column: message (ME-S### for a Mielia file)
     /// </summary>
     public string FormattedMessage =>
         $"error[{CodeString}]: {Location.FileName}:{Location.Line}:{Location.Column}: {SurfaceMessage}";

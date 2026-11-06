@@ -5,17 +5,17 @@ namespace Builder.Diagnostics;
 
 /// <summary>
 /// Picks the language a diagnostic code is spelled in. A code carries the language of the file the
-/// diagnostic points at, so a Mielia file reports MI-S436 while an imported Revare module in the
+/// diagnostic points at, so a Mielia file reports ME-S436 while an imported Revare module in the
 /// same build still reports RV codes for its own lines.
 /// </summary>
 public static class DiagnosticLanguage
 {
-    /// <summary>The code prefix for a language (its short name, <c>RV</c>). A language whose front end is
+    /// <summary>The code prefix for a language (<c>RV</c>, <c>ME</c>). A language whose front end is
     /// not registered falls back to <c>RV</c>.</summary>
     public static string Prefix(Language language)
     {
         return Languages.IsRegistered(language: language)
-            ? Languages.For(language: language).ShortName
+            ? Languages.For(language: language).DiagnosticPrefix
             : TypeModel.Realms.Shared;
     }
 

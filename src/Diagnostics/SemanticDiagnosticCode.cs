@@ -3,7 +3,7 @@ using TypeModel.Enums;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Semantic diagnostic codes for Revare (RV-S prefix) and Mielia (MI-S prefix, same numbers).
+/// Semantic diagnostic codes for Revare (RV-S prefix) and Mielia (ME-S prefix, same numbers).
 /// Covers semantic analysis errors including type checking, scope resolution,
 /// and language-specific validation.
 ///
@@ -1234,7 +1234,7 @@ public enum SemanticDiagnosticCode
 public static class SemanticDiagnosticCodeExtensions
 {
     /// <summary>
-    /// Formats code as RV-Snnn or MI-Snnn depending on language (e.g., RV-S413, MI-S436). Both
+    /// Formats code as RV-Snnn or ME-Snnn depending on language (e.g., RV-S413, ME-S436). Both
     /// languages share one number space, so the same number means the same rule in either.
     /// </summary>
     public static string ToCodeString(this SemanticDiagnosticCode code, Language language)

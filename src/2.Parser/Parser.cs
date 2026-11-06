@@ -324,7 +324,7 @@ public partial class Parser
             {
                 // GrammarException.Message already contains formatted error:
                 // error[RV-G150]: filename.rvr:9:14: message
-                // error[MI-G150]: filename.mie:9:14: message
+                // error[ME-G150]: filename.mie:9:14: message
                 RecordError(ex: ex);
                 Synchronize();
             }
