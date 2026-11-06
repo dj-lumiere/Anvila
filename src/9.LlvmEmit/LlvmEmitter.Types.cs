@@ -252,7 +252,7 @@ public partial class LlvmEmitter
         // `Optional[T]` has no struct: it is the entity's address, null when absent.
         if (record.IsEntityOptional)
         {
-            return "ptr";
+            return record.OptionalLlvm;
         }
 
         string name = GetRecordTypeName(record: record);

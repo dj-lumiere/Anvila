@@ -640,6 +640,7 @@ public sealed partial class SemanticVerifier
             Module = GetCurrentModuleName(),
             Annotations = record.Annotations,
             BackendType = ExtractLlvmAnnotation(annotations: record.Annotations),
+            NoneIsZero = record.Annotations?.Contains(value: "none_is_zero") == true,
             IsInPlaceEntity = record.IsInPlaceEntity
         };
 

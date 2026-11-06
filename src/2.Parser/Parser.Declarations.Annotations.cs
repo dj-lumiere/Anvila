@@ -114,9 +114,9 @@ public partial class Parser
     private static readonly HashSet<string> KnownAnnotations =
     [
         "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "noinline", "no_optimize",
-        "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking", "hands_over",
+        "override", "overridable", "innate", "generated", "uses_pool", "crash_only", "untraced", "blocking", "hands_over",
         RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rv",
-        "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"
+        "none_is_zero", "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"
     ];
 
     /// <summary>Whether <paramref name="name"/> names an annotation a Mielia program declares: a record that obeys

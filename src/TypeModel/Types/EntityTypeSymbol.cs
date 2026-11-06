@@ -66,61 +66,10 @@ public class EntityTypeSymbol : TypeSymbol
     /// </summary>
     public int HeapBlockSize(int pointerSize)
     {
-        int size = MemberBlockSize(pointerSize: pointerSize);
-        if (!KeepsStamp)
-        {
-            return size;
-        }
-
-        // The stamp slot: eight bytes after the member variables (the slot, then its generation), kept to the
-        // block's alignment.
-        int maxAlignment = MemberVariables.Count == 0
-            ? 4
-            : Math.Max(val1: 4, val2: MemberVariables.Max(selector: mv =>
-                Math.Max(val1: Math.Min(val1: mv.Type.SizeBytes(pointerSize: pointerSize), val2: 16), val2: 1)));
-        return AlignTo(size: StampSlotOffset(pointerSize: pointerSize) + 8, alignment: maxAlignment);
+        return MemberBlockSize(pointerSize: pointerSize);
     }
 
-    /// <summary>
-    /// Whether this entity keeps a slot of the stamp table (<c>Stamped[T]</c>): eight bytes after its member variables
-    /// (the slot and the slot's generation, so a later <c>stamp()</c> reads only the entity), zero until its first
-    /// <c>stamp()</c>, ended by its <c>destruct</c>. Set on a user entity type whose program writes it as
-    /// <c>Stamped[...]</c>'s argument (<c>SemanticVerifier.NoteStampedTypes</c>), and an instance of a generic entity
-    /// keeps its definition's. Every other entity keeps its layout.
-    /// </summary>
-    public bool KeepsStamp
-    {
-        get => _keepsStamp || GenericDefinition is { KeepsStamp: true };
-        set => _keepsStamp = value;
-    }
-
-    private bool _keepsStamp;
-
-    /// <summary>The target's pointer size in bytes, set with <see cref="KeepsStamp"/>: the stamp slot's offset.</summary>
-    public int StampPointerSize
-    {
-        get => GenericDefinition is { _keepsStamp: true } definition ? definition._stampPointerSize : _stampPointerSize;
-        set => _stampPointerSize = value;
-    }
-
-    private int _stampPointerSize = 8;
-
-    /// <summary>The byte offset of the stamp slot in the entity's block: right after the member variables.</summary>
-    public int StampSlotOffset(int pointerSize)
-    {
-        int size = 0;
-        foreach (MemberVariableInfo mv in MemberVariables)
-        {
-            int memberSize = mv.Type.SizeBytes(pointerSize: pointerSize);
-            int alignment = Math.Max(val1: Math.Min(val1: memberSize, val2: 16), val2: 1);
-            size = AlignTo(size: size, alignment: alignment);
-            size += memberSize;
-        }
-
-        return AlignTo(size: size, alignment: 4);
-    }
-
-    /// <summary>The size of the member variables' block, without a stamp slot.</summary>
+    /// <summary>The size of the member variables' block.</summary>
     private int MemberBlockSize(int pointerSize)
     {
         int size = 0;

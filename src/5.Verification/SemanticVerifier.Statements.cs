@@ -307,17 +307,6 @@ public sealed partial class SemanticVerifier
             {
                 destructBody.Statements.Insert(index: 0, item: HollowGuard(location: destructBody.Location));
             }
-
-            // An entity the program stamps ends its slot right after the hollow check: every stamp of it fails from
-            // there on (the derived destruct does the same, Derivation.rvr). Every entity type of the program gets the
-            // call: whether it keeps a slot is known only once every body is analyzed (a `stamp()` whose type is
-            // inferred gives one), and `release_stamp` asks `keeps_stamp()`, which the builder answers after that.
-            if (routineInfo is { Name: "destruct", OwnerType: EntityTypeSymbol { Location.FileName: { } entityFile } } &&
-                !_registry.Rules.EntitiesAreShared && IsProgramFile(filePath: entityFile) &&
-                !destructBody.Statements.Any(predicate: IsStampRelease))
-            {
-                destructBody.Statements.Insert(index: 1, item: StampRelease(location: destructBody.Location));
-            }
         }
 
         _deadrefVariables.Clear();
@@ -2371,29 +2360,6 @@ public sealed partial class SemanticVerifier
             Arguments: [new NamedArgumentExpression(Name: "ptr", Value: MeAddress(location: location), Location: location)],
             Location: location) { IsSynthesizedLowering = true };
         return new ExpressionStatement(Expression: invalidate, Location: location);
-    }
-
-    /// <summary>The statement <c>me.release_stamp()</c> (Stamped.rvr).</summary>
-    private static ExpressionStatement StampRelease(SourceLocation location)
-    {
-        var me = new IdentifierExpression(Name: "me", Location: location);
-        var release = new CallExpression(
-            Callee: new MemberExpression(Object: me, MemberName: "release_stamp", Location: location),
-            Arguments: [],
-            Location: location) { IsSynthesizedLowering = true };
-        return new ExpressionStatement(Expression: release, Location: location);
-    }
-
-    /// <summary>Whether <paramref name="statement"/> is <c>me.release_stamp()</c>.</summary>
-    private static bool IsStampRelease(Statement statement)
-    {
-        return statement is ExpressionStatement
-        {
-            Expression: CallExpression
-            {
-                Callee: MemberExpression { MemberName: "release_stamp", Object: IdentifierExpression { Name: "me" } }
-            }
-        };
     }
 
     /// <summary>Whether <paramref name="statement"/> is the statement <see cref="BoxGiveBack"/> makes.</summary>

@@ -24,6 +24,10 @@ internal sealed class GlobalThreadChecker(DiagnosticReporter report)
         public readonly HashSet<VariableInfo> Reads = new(comparer: ReferenceEqualityComparer.Instance);
         public readonly HashSet<VariableInfo> Writes = new(comparer: ReferenceEqualityComparer.Instance);
         public readonly List<RoutineDeclaration> Callees = [];
+
+        /// <summary>The first call in the routine to one of the pool's routines (the library marks them
+        /// <c>@uses_pool</c>): setting it up, adding, fetching, removing, sweeping, or ending it.</summary>
+        public string? PoolCall;
     }
 
     private readonly Dictionary<string, RoutineDeclaration> _byKey = new(comparer: StringComparer.Ordinal);
@@ -75,7 +79,7 @@ internal sealed class GlobalThreadChecker(DiagnosticReporter report)
             changed.UnionWith(other: facts.Writes);
         }
 
-        if (changed.Count == 0)
+        if (changed.Count == 0 && _facts.Values.All(predicate: f => f.PoolCall is null))
         {
             return;
         }
@@ -161,8 +165,17 @@ internal sealed class GlobalThreadChecker(DiagnosticReporter report)
                          IsPlainGlobal(id: target, variable: out VariableInfo written):
                     facts.Writes.Add(item: written);
                     break;
-                case CallExpression { ResolvedRoutine: { } callee } when FindDeclaration(routine: callee) is { } decl:
-                    facts.Callees.Add(item: decl);
+                case CallExpression { ResolvedRoutine: { } callee } call:
+                    if ((callee.RecoveryOf ?? callee).Annotations.Contains(value: "uses_pool"))
+                    {
+                        facts.PoolCall ??= $"line {call.Location.Line}";
+                    }
+
+                    if (FindDeclaration(routine: callee) is { } decl)
+                    {
+                        facts.Callees.Add(item: decl);
+                    }
+
                     break;
             }
         });
@@ -239,6 +252,19 @@ internal sealed class GlobalThreadChecker(DiagnosticReporter report)
         }
     }
 
+    private void ReportPool(SourceLocation site, RoutineDeclaration called, RoutineDeclaration current, string where)
+    {
+        string who = ReferenceEquals(current, called)
+            ? $"'{current.Name}' uses"
+            : $"'{current.Name}', which '{called.Name}' calls, uses";
+        report(code: SemanticDiagnosticCode.GlobalChangedAcrossThreads,
+            message: $"This Work runs '{called.Name}' on another thread, and {who} the PoolManager ({where}). The pool belongs to " +
+                     "one thread, like a global the program changes, so a routine another thread runs can't set it up, add to it, " +
+                     "fetch from it, remove from it, sweep it or end it. Keep the entities on one thread, or put a graph that " +
+                     "threads share behind a manager such as Guarded.",
+            location: site);
+    }
+
     private void ReportReached(SourceLocation site, RoutineDeclaration entry, HashSet<VariableInfo> changed)
     {
         var seen = new HashSet<RoutineDeclaration>(comparer: ReferenceEqualityComparer.Instance) { entry };
@@ -252,10 +278,23 @@ internal sealed class GlobalThreadChecker(DiagnosticReporter report)
         }
 
         var reported = new HashSet<VariableInfo>(comparer: ReferenceEqualityComparer.Instance);
+        bool poolReported = false;
+        if (_facts[key: entry].PoolCall is { } entryPoolCall)
+        {
+            ReportPool(site: site, called: entry, current: entry, where: entryPoolCall);
+            poolReported = true;
+        }
+
         while (queue.Count > 0)
         {
             (RoutineDeclaration current, RoutineDeclaration called) = queue.Dequeue();
             Facts facts = _facts[key: current];
+            if (!poolReported && facts.PoolCall is { } poolCall)
+            {
+                ReportPool(site: site, called: called, current: current, where: poolCall);
+                poolReported = true;
+            }
+
             foreach (VariableInfo global in facts.Reads.Where(predicate: changed.Contains))
             {
                 if (!reported.Add(item: global))

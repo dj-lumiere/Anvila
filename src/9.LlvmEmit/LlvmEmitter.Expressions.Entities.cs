@@ -625,7 +625,7 @@ public partial class LlvmEmitter
 
         if (value == null || present is null or "false" or "0")
         {
-            return "null";
+            return record.OptionalNone;
         }
 
         if (present is "true" or "1")
@@ -634,7 +634,8 @@ public partial class LlvmEmitter
         }
 
         string chosen = NextTemp();
-        EmitLine(sb: sb, line: $"  {chosen} = select i1 {present}, ptr {value}, ptr null");
+        EmitLine(sb: sb,
+            line: $"  {chosen} = select i1 {present}, {record.OptionalLlvm} {value}, {record.OptionalLlvm} {record.OptionalNone}");
         return chosen;
     }
 
@@ -642,7 +643,8 @@ public partial class LlvmEmitter
     /// Reads a member variable of an <c>Optional[T]</c> held in <paramref name="optional"/> (its address):
     /// <c>present</c> is whether the address is not null, <c>value</c> is the address itself.
     /// </summary>
-    private string EmitOptionalMemberRead(StringBuilder sb, string optional, string memberVariableName)
+    private string EmitOptionalMemberRead(StringBuilder sb, RecordTypeSymbol record, string optional,
+        string memberVariableName)
     {
         if (memberVariableName == Declaration.RuntimeContract.Carrier.ValueField)
         {
@@ -657,7 +659,7 @@ public partial class LlvmEmitter
         }
 
         string present = NextTemp();
-        EmitLine(sb: sb, line: $"  {present} = icmp ne ptr {optional}, null");
+        EmitLine(sb: sb, line: $"  {present} = icmp ne {record.OptionalLlvm} {optional}, {record.OptionalNone}");
         return present;
     }
 
@@ -834,7 +836,8 @@ public partial class LlvmEmitter
 
         if (record.IsEntityOptional)
         {
-            return EmitOptionalMemberRead(sb: sb, optional: recordValue, memberVariableName: memberVariableName);
+            return EmitOptionalMemberRead(sb: sb, record: record, optional: recordValue,
+                memberVariableName: memberVariableName);
         }
 
         // Find member variable index

@@ -409,6 +409,12 @@ public sealed partial class TypeRegistry
             return true;
         }
 
+        // A zero-is-none link (`Stamped[T]`) names an entity in the pool and holds none: freely copyable.
+        if (type is RecordTypeSymbol { NoneIsZero: true })
+        {
+            return false;
+        }
+
         // A wrapper (RC handle / access token / raw pointer) is a DOOR to an entity, not an inline owner: it
         // is itself freely copyable (or scope-bound), so it never confers entity-kind on its holder. Stop.
         string? wrapperBase = type switch

@@ -2798,13 +2798,6 @@ internal static class GenericAstRewriter
                 LiteralType: TokenType.S64Literal,
                 Location: location) { ResolvedType = s64Type },
 
-            RuntimeContract.KeepsStamp when boolType != null => new LiteralExpression(
-                Value: typeInfo is EntityTypeSymbol { KeepsStamp: true },
-                LiteralType: typeInfo is EntityTypeSymbol { KeepsStamp: true }
-                    ? TokenType.True
-                    : TokenType.False,
-                Location: location) { ResolvedType = boolType },
-
             RuntimeContract.ReachesEntity when boolType != null => new LiteralExpression(
                 Value: HandleReach.Reaches(type: typeInfo),
                 LiteralType: HandleReach.Reaches(type: typeInfo)
@@ -2819,9 +2812,9 @@ internal static class GenericAstRewriter
                     : TokenType.False,
                 Location: location) { ResolvedType = boolType },
 
-            RuntimeContract.StampSlotOffset when s64Type != null => new LiteralExpression(
-                Value: (long)(typeInfo is EntityTypeSymbol { KeepsStamp: true } stamped
-                    ? stamped.StampSlotOffset(pointerSize: stamped.StampPointerSize)
+            RuntimeContract.BlockSize when s64Type != null => new LiteralExpression(
+                Value: (long)(typeInfo is EntityTypeSymbol block
+                    ? block.HeapBlockSize(pointerSize: 8)
                     : -1),
                 LiteralType: TokenType.S64Literal,
                 Location: location) { ResolvedType = s64Type },

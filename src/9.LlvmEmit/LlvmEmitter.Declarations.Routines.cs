@@ -1170,7 +1170,8 @@ public partial class LlvmEmitter
         {
             RecordTypeSymbol { BackendType: not null } record => GetZeroValueForLlvmType(
                 llvmType: record.BackendType),
-            EntityTypeSymbol or RecordTypeSymbol { IsEntityOptional: true } => "null",
+            EntityTypeSymbol => "null",
+            RecordTypeSymbol { IsEntityOptional: true } optional => optional.OptionalNone,
             _ => "zeroinitializer"
         };
     }

@@ -182,7 +182,7 @@ public static class BuilderInfoProvider
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);
             MaybeRegister(owner: type,
-                name: RuntimeContract.StampSlotOffset,
+                name: RuntimeContract.BlockSize,
                 returnType: types.S64Type,
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);
@@ -210,11 +210,6 @@ public static class BuilderInfoProvider
                 registry: registry);
             MaybeRegister(owner: type,
                 name: "is_in_flight",
-                returnType: types.BoolType,
-                existingMemberRoutines: existingMemberRoutines,
-                registry: registry);
-            MaybeRegister(owner: type,
-                name: RuntimeContract.KeepsStamp,
                 returnType: types.BoolType,
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);

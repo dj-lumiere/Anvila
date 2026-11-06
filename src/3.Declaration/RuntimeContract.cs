@@ -359,9 +359,8 @@ public static class RuntimeContract
     /// <remarks>Sites: BuilderInfoProvider, BuilderQueryInliningPass, GenericAstRewriter.</remarks>
     public const string DataSize = "data_size";
 
-    /// <summary>The standard library's <c>Stamped[T]</c> (System/Memory): an entity type written as its argument keeps a
-    /// stamp slot.</summary>
-    /// <remarks>Sites: SemanticVerifier.Stamps (NoteStampedTypes), SemanticVerifier.Helpers.Access (CheckStampHasSlot).</remarks>
+    /// <summary>The standard library's <c>Stamped[T]</c> (System/Memory): a link to an entity in the <c>PoolManager</c>.</summary>
+    /// <remarks>Sites: SemanticVerifier.Expressions (IsStampOperand), ViewedValues.</remarks>
     public const string StampedTypeName = "Stamped";
 
     /// <summary><c>Stamped[T].same_entity</c> (Stamped.rvr): what <c>a === b</c> on two stamps runs, the same slot and
@@ -372,9 +371,6 @@ public static class RuntimeContract
     /// <summary><c>Stamped[T].other_entity</c> (Stamped.rvr): what <c>a !== b</c> on two stamps runs.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
     public const string StampOtherEntity = "other_entity";
-
-    /// <summary>BuilderQuery: whether an entity type keeps a stamp slot (<c>Stamped[T]</c>).</summary>
-    public const string KeepsStamp = "keeps_stamp";
 
     /// <summary>BuilderQuery: whether a value of the type holds a handle to a shared entity (<c>Roamed[E]</c>).</summary>
     public const string ReachesEntity = "reaches_entity";
@@ -387,8 +383,9 @@ public static class RuntimeContract
     /// variable of an entity that may have escaped.</summary>
     public const string AdmitStoredInto = "admit_stored_into";
 
-    /// <summary>BuilderQuery: the byte offset of an entity's stamp slot in its block, -1 for none.</summary>
-    public const string StampSlotOffset = "stamp_slot_offset";
+    /// <summary>BuilderQuery: the bytes of an entity's block (its member variables, aligned), -1 for a type that is no
+    /// entity. <c>PoolManager.add</c> copies that many bytes into a slot.</summary>
+    public const string BlockSize = "block_size";
 
     /// <summary><c>crash_message()</c> on error types — extracts the diagnostic string on the throw path.</summary>
     /// <remarks>Sites: LlvmEmitter.Statements.Returns, WiredRoutinePass, RoutineReachabilityPass.</remarks>
@@ -753,10 +750,9 @@ public static class RuntimeContract
             "routine_info",
             "annotations",
             DataSize,
-            KeepsStamp,
             ReachesEntity,
             SharesEntityAcrossTasks,
-            StampSlotOffset,
+            BlockSize,
             "full_type_name",
             "dependencies",
             "member_type_id"

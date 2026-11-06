@@ -117,10 +117,10 @@ public class RecordTypeSymbol : TypeSymbol
                 return be;
             }
 
-            // `Optional[T]` is the entity's address alone (null when absent).
+            // `Optional[T]` is the entity's address alone (null when absent), or the zero-is-none record alone.
             if (IsEntityOptional)
             {
-                return "ptr";
+                return OptionalLlvm;
             }
 
             // A variant has no member variables: it is the tag and the largest arm's words, the layout both
@@ -151,10 +151,12 @@ public class RecordTypeSymbol : TypeSymbol
             return SizeOfLlvmType(llvmType: be, pointerSize: pointerSize);
         }
 
-        // Optional[T]: the entity's address alone.
+        // Optional[T]: the entity's address alone, or the zero-is-none record alone.
         if (IsEntityOptional)
         {
-            return pointerSize;
+            return TypeArguments is [RecordTypeSymbol { NoneIsZero: true } held]
+                ? held.SizeBytes(pointerSize: pointerSize)
+                : pointerSize;
         }
 
         // Result[T]: 8-byte type-id tag + max(payload, 8). Optional is handled by
@@ -259,8 +261,23 @@ public class RecordTypeSymbol : TypeSymbol
     /// an address: its one argument is an entity reached through its address.</summary>
     public static bool IsEntityOptionalOver(CarrierKind carrierKind, IReadOnlyList<TypeSymbol>? typeArguments)
     {
-        return carrierKind == CarrierKind.Optional && typeArguments is [EntityTypeSymbol];
+        return carrierKind == CarrierKind.Optional &&
+               typeArguments is [EntityTypeSymbol or RecordTypeSymbol { NoneIsZero: true }];
     }
+
+    /// <summary>
+    /// Whether this record is marked <c>@none_is_zero</c>: its all-zero value stands for none, so an <c>Optional</c> over
+    /// it is the record alone with no presence flag (<c>Stamped[T]?</c> is the 8-byte stamp).
+    /// </summary>
+    public bool NoneIsZero { get; set; }
+
+    /// <summary>The LLVM type of an address-like <c>Optional</c>: <c>ptr</c> over an entity, the record's own type over a
+    /// zero-is-none record.</summary>
+    public string OptionalLlvm => TypeArguments is [RecordTypeSymbol { NoneIsZero: true } held] ? held.LlvmType : "ptr";
+
+    /// <summary>The LLVM constant of none in an address-like <c>Optional</c>: <c>null</c>, or <c>0</c> over a zero-is-none
+    /// record.</summary>
+    public string OptionalNone => TypeArguments is [RecordTypeSymbol { NoneIsZero: true }] ? "0" : "null";
 
     /// <summary>
     /// Declared <c>entity</c> with an <c>@llvm</c> layout (<c>Slots[T, COUNT]</c>): an entity whose storage is laid
@@ -353,6 +370,7 @@ public class RecordTypeSymbol : TypeSymbol
                     genericParams: GenericParameters,
                     typeArguments: typeArguments),
             IsPacked = IsPacked,
+            NoneIsZero = NoneIsZero,
             ForcedAlignment = ForcedAlignment,
             Visibility = Visibility,
             Location = Location,

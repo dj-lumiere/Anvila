@@ -1591,6 +1591,7 @@ public sealed partial class StdlibLoader
             GenericConstraints = record.GenericConstraints,
             Annotations = record.Annotations,
             BackendType = ExtractLlvmAnnotation(annotations: record.Annotations),
+            NoneIsZero = record.Annotations?.Contains(value: "none_is_zero") == true,
             CarrierKind = inheritedCarrierKind,
             IsInPlaceEntity = record.IsInPlaceEntity
         };
