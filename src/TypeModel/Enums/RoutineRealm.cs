@@ -13,7 +13,7 @@ public enum RoutineRealm
     RV,
 
     /// <summary>Native Mielia routine (a body defined in a <c>.mie</c> source file).</summary>
-    MI,
+    ME,
 
     /// <summary>Foreign C function, declared <c>routine C::name(...)</c> — no body, C ABI linkage.</summary>
     C,

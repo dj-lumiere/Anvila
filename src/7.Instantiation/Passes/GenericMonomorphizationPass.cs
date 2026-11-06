@@ -2635,7 +2635,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             expectedOwnerModule: resolvedRoutine.OwnerType?.FullName is { } ownerFn
                 ? TypeSymbol.StripTypeArgs(name: ownerFn)
                 : null,
-            // Realm-scoped: an MI overlay (`MI::System.Dict[K,V]`) and the RV type it wraps
+            // Realm-scoped: an MI overlay (`ME::System.Dict[K,V]`) and the RV type it wraps
             // (`System.Dict[K,V]`) share the same bare AST name AND owner module (`System.Dict`), so a
             // module-only match binds the MI overlay's forwarder instance to the RV body — e.g. the MI
             // `Dict.add` forwarder (`me.inner.add`) gets the RV `Dict.add` body (`me.keys`), which then

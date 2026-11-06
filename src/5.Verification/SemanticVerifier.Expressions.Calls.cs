@@ -20,7 +20,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Enforces the realm gate at a free-routine call site: a FOREIGN routine (C extern / LLVM intrinsic)
     /// must be called with its realm qualifier (`C::name(...)` / `LLVM::name(...)`), and a `C::`/`LLVM::`
-    /// qualifier must resolve to a routine of that realm. `RV::`/`MI::` qualifiers (native cross-realm
+    /// qualifier must resolve to a routine of that realm. `RV::`/`ME::` qualifiers (native cross-realm
     /// references) are allowed through. Reports a diagnostic when the call is illegal.
     /// </summary>
     private void CheckCallRealm(IdentifierExpression callee, RoutineInfo routine,
@@ -635,7 +635,7 @@ public sealed partial class SemanticVerifier
             callableType = new GenericParameterTypeSymbol(name: callName,
                 slot: _typeResolver.GenericParameterSlot(name: callName));
         }
-        // Honor an explicit `RV::`/`MI::` realm on a constructor call (`RV::System.List[T]()`): the
+        // Honor an explicit `RV::`/`ME::` realm on a constructor call (`RV::System.List[T]()`): the
         // lookup above is realm-blind (prefers the file's resolution realm), so inside an MI file
         // `RV::System.List[T]()` would resolve to the MI-realm list and the MI wrapper's constructor
         // `return List[T](inner: RV::System.List[T]())` would self-recurse. Swap to the qualified realm.

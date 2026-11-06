@@ -1062,7 +1062,7 @@ public sealed partial class SemanticVerifier
                                                   routine.BaseName == qualifiedName))
                                             .ToList();
         // Matching by the parameters' written type names misses a type written another way than its info names it
-        // (`Roamed[MI::System.Dict[Text, Unknown]]`): the info registered for the declaration is its own then.
+        // (`Roamed[ME::System.Dict[Text, Unknown]]`): the info registered for the declaration is its own then.
         return MatchRoutineDeclaration(candidates: standaloneCandidates,
                    decl: decl,
                    moduleName: moduleName) ??

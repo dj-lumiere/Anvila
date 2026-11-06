@@ -143,7 +143,7 @@ public sealed partial class StdlibLoader
         // Revare is always scanned: it is the RV-realm System, and — under a Mielia compile — the bridged
         // delegation backend an MI wrapper reaches via `RV::System.X`. A Mielia compile ALSO scans
         // Standard/Mielia/*.mie, the MI-realm System surface (types there declare `module System` too; they are
-        // stamped Realm="MI" at registration, so they key distinctly from the RV-realm `System.*`). Each file's
+        // stamped Realm="ME" at registration, so they key distinctly from the RV-realm `System.*`). Each file's
         // realm is derived from its extension (`.mie`→MI, `.rvr`→RV) — see StdlibLoader.Registration.RealmOf.
         _scanRoots = Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: stdlibRoot, language: language);
         _revareRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),

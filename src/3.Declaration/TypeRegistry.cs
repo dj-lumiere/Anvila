@@ -429,10 +429,10 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The AMBIENT realm of the compilation — the world-line a bare (unqualified) type name resolves to:
-    /// <c>"RV"</c> for a Revare compile, <c>"MI"</c> for a Mielia compile. A compilation-global
+    /// <c>"RV"</c> for a Revare compile, <c>"ME"</c> for a Mielia compile. A compilation-global
     /// constant (like <see cref="Language"/>): types of this realm key BARE (realm-free
     /// <see cref="TypeSymbol.FullName"/>) so the whole name-resolution hot path stays realm-blind; only the
-    /// NON-ambient (bridged via <c>RV::</c>/<c>MI::</c>) realm gets a realm-marked
+    /// NON-ambient (bridged via <c>RV::</c>/<c>ME::</c>) realm gets a realm-marked
     /// <see cref="TypeSymbol.RealmQualifiedName"/> registry key. Settable so stdlib bodies of each realm are
     /// analyzed under their own realm — see SemanticVerifier.AnalyzeStdlibBodies. Defaults to <c>"RV"</c>.
     /// </summary>
@@ -446,11 +446,11 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The realm whose types a bare (unqualified) name should PREFER during the CURRENT file's analysis —
-    /// set per-file (a <c>.mie</c> file ⇒ <c>"MI"</c>, a <c>.rvr</c> file ⇒ <c>"RV"</c>). When it differs
+    /// set per-file (a <c>.mie</c> file ⇒ <c>"ME"</c>, a <c>.rvr</c> file ⇒ <c>"RV"</c>). When it differs
     /// from <see cref="AmbientRealm"/> (i.e. analyzing an MI file while RV stays the ambient/bare realm),
     /// <see cref="LookupType(string)"/> first tries the <c>{ResolutionRealm}::</c>-keyed type before the
     /// bare ambient one, so a bare <c>List</c> in a Mielia file resolves to the MI-realm <c>System.List</c>
-    /// (bridged, keyed <c>MI::System.List</c>) yet still falls back to the RV-realm type for anything the MI
+    /// (bridged, keyed <c>ME::System.List</c>) yet still falls back to the RV-realm type for anything the MI
     /// surface has not (re)declared. Defaults to <c>"RV"</c> ⇒ equal to the ambient ⇒ zero effect on RV.
     /// </summary>
     public string ResolutionRealm { get; set; } = TypeModel.Realms.Shared;
@@ -1099,7 +1099,7 @@ public sealed partial class TypeRegistry
         // `List` is the RV `System.List` roamed, which WORKS end-to-end. Flipping the user resolution realm to
         // MI (so bare `List` → the MI wrapper) is DEFERRED: it triggers a pipeline-wide realm cascade
         // (construction create-binding, reachability create-seeding, codegen emission) not yet complete —
-        // see [[sf-real-stdlib-direction]]. The MI wrapper is reachable explicitly via `MI::List`.
+        // see [[sf-real-stdlib-direction]]. The MI wrapper is reachable explicitly via `ME::List`.
         LoadCoreModule();
     }
 
@@ -2140,7 +2140,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Re-resolves <paramref name="type"/> into the <paramref name="realm"/> world-line — the mechanism
-    /// behind an explicit <c>RV::</c>/<c>MI::</c> qualifier. Name resolution is realm-blind and always yields
+    /// behind an explicit <c>RV::</c>/<c>ME::</c> qualifier. Name resolution is realm-blind and always yields
     /// the AMBIENT-realm type (keyed bare); this swaps it to the bridged realm's equivalent, which the
     /// registry keys by <see cref="TypeSymbol.RealmQualifiedName"/> (<c>{realm}::{FullName}</c>). Returns null
     /// when no such bridged type is registered (caller keeps the ambient resolution — for a pure-ambient
@@ -2297,12 +2297,12 @@ public sealed partial class TypeRegistry
             $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name))}]";
         // Module-qualified full key: used when @llvm_ir type args are rewritten to fully-qualified
         // names by GenericAstRewriter (e.g. "Collections.BTreeSetNode[System.S64]"). A BRIDGED (non-ambient)
-        // realm def gets a leading `RV::`/`MI::` so a bridged `RV::System.List[S64]` keys distinctly from the
+        // realm def gets a leading `RV::`/`ME::` so a bridged `RV::System.List[S64]` keys distinctly from the
         // ambient `System.List[S64]`; the ambient realm adds no prefix (unchanged for a single-realm compile).
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        // An argument of the other realm is marked too: `Accessing[MI::System.List[T]]` is not
+        // An argument of the other realm is marked too: `Accessing[ME::System.List[T]]` is not
         // `Accessing[System.List[T]]`.
         bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
         string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument
@@ -2635,11 +2635,11 @@ public sealed partial class TypeRegistry
         string fullKey =
             $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.FullName))}]";
         // Module-qualified key first (distinct across modules/realms); mirrors GetOrCreateResolution
-        // incl. the bridged-realm `RV::`/`MI::` prefix (ambient realm adds none).
+        // incl. the bridged-realm `RV::`/`ME::` prefix (ambient realm adds none).
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        // An argument of the other realm is marked too: `Accessing[MI::System.List[T]]` is not
+        // An argument of the other realm is marked too: `Accessing[ME::System.List[T]]` is not
         // `Accessing[System.List[T]]`.
         bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
         string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument

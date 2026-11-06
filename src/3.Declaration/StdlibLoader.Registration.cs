@@ -58,7 +58,7 @@ public sealed partial class StdlibLoader
     internal const string UnstampedRealm = TypeModel.Realms.Shared;
 
     /// <summary>The realm a stdlib file belongs to: the short name of the language it is written in
-    /// (<c>"MI"</c> for a Mielia source, <c>"RV"</c> for a Revare one).</summary>
+    /// (<c>"ME"</c> for a Mielia source, <c>"RV"</c> for a Revare one).</summary>
     internal static string RealmOf(string filePath)
     {
         return Builder.Frontends.Languages.RealmOf(fileName: filePath);
@@ -906,7 +906,7 @@ public sealed partial class StdlibLoader
         List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
             receiverLeaves: receiverLeaves,
             resolve: name => registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name),
-            // A bracket entry with type arguments (`to[MI::System.List[T]]`) resolves as the written type, the
+            // A bracket entry with type arguments (`to[ME::System.List[T]]`) resolves as the written type, the
             // receiver's own parameters (`T`) and those the routine declares (`N` of `needs U64 N`) in scope.
             resolveExpression: (typeExpr, inScope) => ResolveSimpleType(registry: registry, typeExpr: typeExpr,
                 genericParams: inScope.ToList(), moduleName: moduleName));

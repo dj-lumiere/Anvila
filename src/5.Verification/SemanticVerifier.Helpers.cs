@@ -723,7 +723,7 @@ public sealed partial class SemanticVerifier
                     ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                         message:
                         $"Argument '{param.Name}' of '{routine.Name}' takes RV::{crossing.BareName}, and this is " +
-                        $"MI::{crossing.BareName}: the two languages each have their own, which don't cross as they " +
+                        $"ME::{crossing.BareName}: the two languages each have their own, which don't cross as they " +
                         $"are. Convert it at the boundary: '.to[RV::{crossing.BareName}]()'.",
                         location: argExpr.Location);
                 }
@@ -1213,14 +1213,14 @@ public sealed partial class SemanticVerifier
     /// No implicit numeric or widening conversions are performed.
     /// </summary>
     /// <summary>
-    /// The Mielia type handed where the Revare type of the same name is wanted (`MI::System.List[S64]` for
+    /// The Mielia type handed where the Revare type of the same name is wanted (`ME::System.List[S64]` for
     /// `RV::System.List[S64]`, either one maybe behind a shared handle), or null.
     /// </summary>
     private static TypeSymbol? OtherRealmOfSameType(TypeSymbol source, TypeSymbol target)
     {
         TypeSymbol from = SharedInner(type: source);
         TypeSymbol to = SharedInner(type: target);
-        return from.FullName == to.FullName && from.Realm == "MI" && to.Realm == TypeModel.Realms.Shared
+        return from.FullName == to.FullName && from.Realm == "ME" && to.Realm == TypeModel.Realms.Shared
             ? from
             : null;
 
@@ -1253,7 +1253,7 @@ public sealed partial class SemanticVerifier
     {
         if (source.Name == target.Name || source.FullName == target.FullName)
         {
-            // One stdlib source makes a type in each language (`MI::System.List` and `RV::System.List`): the same name in
+            // One stdlib source makes a type in each language (`ME::System.List` and `RV::System.List`): the same name in
             // two realms is two types, which a value crosses only through a conversion (`xs.to[RV::List]()`).
             return source.Realm == target.Realm || source.Category == TypeCategory.Error;
         }

@@ -1000,7 +1000,7 @@ public sealed partial class SemanticVerifier
         GenericMemberRoutineCallExpression generic, IdentifierExpression typeId, TypeSymbol typeSymbol,
         List<TypeSymbol> typeArgs)
     {
-        // Honor an explicit `RV::`/`MI::` realm on a generic construction (`RV::System.List[T]()`): the
+        // Honor an explicit `RV::`/`ME::` realm on a generic construction (`RV::System.List[T]()`): the
         // Object was resolved realm-blind (prefers the file's resolution realm), so inside an MI file
         // `RV::System.List[T]()` would resolve to the MI-realm list and the MI wrapper's constructor
         // `return List[T](inner: RV::System.List[T]())` would self-recurse. Swap the generic DEF to the

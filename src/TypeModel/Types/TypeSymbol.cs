@@ -62,11 +62,11 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// The stdlib "world-line" this type identity belongs to: <c>"RV"</c> (Revare realm — bare
-    /// single-owner entities, deterministic teardown) or <c>"MI"</c> (Mielia realm — <c>entity</c> lowers
+    /// single-owner entities, deterministic teardown) or <c>"ME"</c> (Mielia realm — <c>entity</c> lowers
     /// to <c>Roamed</c>, cycle-collected). A structured attribute (like <c>IsFailable</c> /
     /// <c>TypeArguments</c>), never string-parsed off the name. The SAME stdlib source instantiates under
-    /// BOTH realms as DISTINCT identities: <c>RV::System.List</c> ≠ <c>MI::System.List</c>. The ambient realm
-    /// comes from the source file (.rvr ⇒ RV, .mie ⇒ MI); an explicit <c>RV::</c>/<c>MI::</c> qualifier
+    /// BOTH realms as DISTINCT identities: <c>RV::System.List</c> ≠ <c>ME::System.List</c>. The ambient realm
+    /// comes from the source file (.rvr ⇒ RV, .mie ⇒ MI); an explicit <c>RV::</c>/<c>ME::</c> qualifier
     /// overrides it. Both realms are rendered explicitly in <see cref="FullName"/> (and therefore in LLVM
     /// symbols) so the two world-lines never collide when they coexist in one binary.
     /// </summary>
@@ -153,7 +153,7 @@ public abstract class TypeSymbol
     /// <summary>
     /// This type as a generic instance's name writes it among its type arguments: its <see cref="FullName"/>,
     /// marked with its realm when that is not the shared one. Mielia's own <c>System.List</c> and Revare's
-    /// share a full name, and an instance over one (<c>Roamed[MI::System.List[Int]]</c>) is a different type
+    /// share a full name, and an instance over one (<c>Roamed[ME::System.List[Int]]</c>) is a different type
     /// from the same instance over the other, so its name, and every key and symbol made from it, differ.
     /// </summary>
     public string InstanceArgumentName => Realm == Realms.Shared
@@ -168,7 +168,7 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// <see cref="FullName"/> with the structured <see cref="Realm"/> rendered as an explicit
-    /// <c>RV::</c>/<c>MI::</c> prefix (recursively over generic args), e.g. <c>RV::System.List[RV::System.S64]</c>.
+    /// <c>RV::</c>/<c>ME::</c> prefix (recursively over generic args), e.g. <c>RV::System.List[RV::System.S64]</c>.
     /// This is the SYMMETRIC identity used for LLVM symbol mangling (both world-lines always marked) and as
     /// the cross-realm registry key when RV and MI instances of the same type coexist in one binary.
     /// </summary>
@@ -186,7 +186,7 @@ public abstract class TypeSymbol
             }
 
             // An instance's name already spells its arguments, without their realms: rebuild it from the bare
-            // name so every argument carries its own (`Modifying[MI::ObjectHacker.MemberVariableInfo]`).
+            // name so every argument carries its own (`Modifying[ME::ObjectHacker.MemberVariableInfo]`).
             baseName = string.IsNullOrEmpty(value: Module)
                 ? BareName
                 : $"{Module}.{BareName}";

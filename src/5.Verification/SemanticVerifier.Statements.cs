@@ -2167,7 +2167,7 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
-        // A realm qualifier (`MI::System.List[T]`) is the expression's realm, not part of its name.
+        // A realm qualifier (`ME::System.List[T]`) is the expression's realm, not part of its name.
         string? realm = null;
         int realmIdx = text.IndexOf(value: "::", comparisonType: StringComparison.Ordinal);
         if (realmIdx > 0 && (text.IndexOf(value: '[') < 0 || realmIdx < text.IndexOf(value: '[')))

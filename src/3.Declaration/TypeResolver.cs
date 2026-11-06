@@ -204,7 +204,7 @@ internal sealed class TypeResolver
         }
 
         TypeSymbol resolved = ResolveTypeCore(typeExpr: typeExpr);
-        // Effective realm = the explicit `RV::`/`MI::` qualifier, else the realm of the file being analyzed:
+        // Effective realm = the explicit `RV::`/`ME::` qualifier, else the realm of the file being analyzed:
         // a bare `List` in a `.mie` file is Mielia's own list when Mielia declares one. Name resolution above
         // prefers that realm already; this swap also covers a generic instance resolved through the other
         // realm's definition, and turns `RV::System.List` in a `.mie` into the Revare list. Null-safe when

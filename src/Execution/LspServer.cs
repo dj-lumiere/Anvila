@@ -711,7 +711,7 @@ public static class LspServer
     /// has no resolved type.</summary>
     private static string? ResolveHoverFallbackLabel(DocState doc, Token hit, Expression? best)
     {
-        // A realm tag (`C`/`LLVM`/`RV`/`MI` before `::`) is a qualifier, not a value — don't report it
+        // A realm tag (`C`/`LLVM`/`RV`/`ME` before `::`) is a qualifier, not a value — don't report it
         // as the return type. If the qualified call resolved, the routine branch already handled it.
         if (IsRealmQualifier(doc: doc, hit: hit))
         {
@@ -1742,7 +1742,7 @@ public static class LspServer
         }
     }
 
-    /// <summary>True when the token is a realm tag (<c>C</c>/<c>LLVM</c>/<c>RV</c>/<c>MI</c>) — i.e. the
+    /// <summary>True when the token is a realm tag (<c>C</c>/<c>LLVM</c>/<c>RV</c>/<c>ME</c>) — i.e. the
     /// very next token on the line is the <c>::</c> separator. Such a token is a qualifier, not a value,
     /// so hover must not fall back to reporting it as a typed expression.</summary>
     private static bool IsRealmQualifier(DocState doc, Token hit)
@@ -2252,7 +2252,7 @@ public static class LspServer
             "C" => RoutineRealm.C,
             "LLVM" => RoutineRealm.LLVM,
             "RV" => RoutineRealm.RV,
-            "MI" => RoutineRealm.MI,
+            "ME" => RoutineRealm.ME,
             _ => null
         };
         if (want is not { } wr)
