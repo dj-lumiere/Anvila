@@ -190,7 +190,18 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             subjectType: subjectType,
             loweredClauses: loweredClauses,
             loc: loc,
-            ownsSubject: !s.IsForStep || s.StepHandsOver || StepHandsOver(step: s));
+            ownsSubject: (!s.IsForStep || s.StepHandsOver || StepHandsOver(step: s)) &&
+                         !ReadsPlace(expression: s.Expression));
+    }
+
+    /// <summary>
+    /// Whether a subject reads a member variable (<c>when x.left</c>, <c>when s.fetch().left</c>): the member still
+    /// holds its value, so the temp only reads it and tears nothing down. Tearing it down too ended the entity the
+    /// member still held, which the member's container then ended a second time.
+    /// </summary>
+    private static bool ReadsPlace(Expression expression)
+    {
+        return expression is MemberExpression;
     }
 
     /// <summary>

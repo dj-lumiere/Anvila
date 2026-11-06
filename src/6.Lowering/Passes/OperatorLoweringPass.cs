@@ -1359,14 +1359,16 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// <summary>
     /// <c>a === b</c> on two stamps: <c>a.same_entity(you: b)</c>, and <c>a !== b</c>: <c>a.other_entity(you: b)</c>.
     /// A stamp is a value (a slot and its generation), not an address, so its two fields are compared. A token on a
-    /// stamp (a <c>for</c> element) is read by TokenReadLoweringPass first. Null for any other operands.
+    /// stamp (a <c>for</c> element) is read by TokenReadLoweringPass first. Two <c>Stamped[T]?</c> call the
+    /// Optional's own pair (both none, or the same entity): compared as an address they matched whenever both were
+    /// present. Null for any other operands.
     /// </summary>
     private Expression? LowerStampIdentity(BinaryExpression bin, Expression left, Expression right)
     {
         string routineName = bin.Operator == BinaryOperator.IdentityEqual
             ? Declaration.RuntimeContract.StampSameEntity
             : Declaration.RuntimeContract.StampOtherEntity;
-        if (left.ResolvedType is not { BareName: Declaration.RuntimeContract.StampedTypeName } stampType ||
+        if (left.ResolvedType is not { } stampType || !IsStampOrOptionalStamp(type: stampType) ||
             ctx.Registry.LookupMemberRoutineOverload(type: stampType,
                 memberRoutineName: routineName,
                 argTypes: [right.ResolvedType ?? stampType]) is not { } compare)
@@ -1390,6 +1392,14 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             ResolvedType = bin.ResolvedType,
             LoweringKind = ClassifyCallLoweringKind(routine: compare, receiverType: stampType)
         };
+    }
+
+    private static bool IsStampOrOptionalStamp(TypeSymbol type)
+    {
+        return type.BareName == Declaration.RuntimeContract.StampedTypeName ||
+               type.BareName == Declaration.RuntimeContract.OptionalCarrier &&
+               type.TypeArguments is { Count: 1 } arguments &&
+               arguments[index: 0].BareName == Declaration.RuntimeContract.StampedTypeName;
     }
 
     private Expression LowerNonOverloadableBinary(Expression expr, BinaryExpression bin)
