@@ -741,7 +741,8 @@ public sealed partial class SemanticVerifier
     internal static bool IsStampOperand(TypeSymbol? type)
     {
         return type?.BareName == Declaration.RuntimeContract.StampedTypeName ||
-               type?.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+               type?.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying or
+                   Declaration.RuntimeContract.OptionalCarrier &&
                type.TypeArguments is [{ BareName: Declaration.RuntimeContract.StampedTypeName }];
     }
 
