@@ -53,6 +53,34 @@ internal static unsafe partial class OrcContiguousMemoryManager
     [LibraryImport(libraryName: "kernel32")]
     private static partial nint GetCurrentProcess();
 
+    // Diagnostics for the Windows CI "Unable to allocate section memory!" flake. RuntimeDyld prints that when
+    // a callback returns null, so every null return below logs what was asked and what was handed out so far.
+    private static int _slabsCreated, _slabsLive, _fallbackSlabs;
+    private static long _sectionCount, _sectionBytes;
+
+    private static void Report(string what)
+    {
+        try
+        {
+            Console.Error.WriteLine(value: $"[jit-mm] {what} | slabs created={_slabsCreated} live={_slabsLive} " +
+                                           $"fallback={_fallbackSlabs} regionUsed={_regionUsed >> 20}MiB " +
+                                           $"sections={Interlocked.Read(location: ref _sectionCount)} " +
+                                           $"sectionBytes={Interlocked.Read(location: ref _sectionBytes)}");
+            Console.Error.Flush();
+        }
+        catch
+        {
+            // diagnostics must never change behavior
+        }
+    }
+
+    private static string SectionName(sbyte* name)
+    {
+        return name == null
+            ? "?"
+            : Marshal.PtrToStringAnsi(ptr: (nint)name) ?? "?";
+    }
+
     /// <summary>Per-linked-object slab state: one contiguous block, bump-allocated. The whole used range is
     /// flipped to RWX at finalize — a dev-loop JIT trades W^X for simplicity, and some sections genuinely
     /// need both (RuntimeDyld places emulated-TLS control blocks, which are mutated at runtime, next to
@@ -92,10 +120,18 @@ internal static unsafe partial class OrcContiguousMemoryManager
         }
 
         inRegion = false;
-        return (byte*)VirtualAlloc(addr: null,
+        Interlocked.Increment(location: ref _fallbackSlabs);
+        byte* alone = (byte*)VirtualAlloc(addr: null,
             size: SlabSize,
             type: MEM_RESERVE | MEM_COMMIT,
             protect: PAGE_READWRITE);
+        if (alone == null)
+        {
+            Report(what: $"slab VirtualAlloc failed, win32 error {Marshal.GetLastPInvokeError()}, " +
+                         $"size={SlabSize >> 20}MiB, region={(_region == null ? "unreserved" : "reserved")}");
+        }
+
+        return alone;
     }
 
     private static byte* Bump(Slab slab, nuint size, uint alignment)
@@ -125,14 +161,18 @@ internal static unsafe partial class OrcContiguousMemoryManager
             byte* baseAddr = AllocateSlab(inRegion: out bool inRegion);
             if (baseAddr == null)
             {
+                Report(what: "CreateContext returned null (no slab)");
                 return null;
             }
 
             var slab = new Slab { Base = baseAddr, Offset = 0, InRegion = inRegion };
+            Interlocked.Increment(location: ref _slabsCreated);
+            Interlocked.Increment(location: ref _slabsLive);
             return (void*)(nint)GCHandle.Alloc(value: slab);
         }
-        catch
+        catch (Exception e)
         {
+            Report(what: $"CreateContext threw {e.GetType().Name}: {e.Message}");
             return null;
         }
     }
@@ -152,10 +192,24 @@ internal static unsafe partial class OrcContiguousMemoryManager
         {
             var slab = (Slab)GCHandle.FromIntPtr(value: (nint)opaque)
                                      .Target!;
-            return Bump(slab: slab, size: size, alignment: align);
+            byte* p = Bump(slab: slab, size: size, alignment: align);
+            if (p == null)
+            {
+                Report(what: $"code section '{SectionName(name: name)}' size={size} align={align} " +
+                             $"code id={sectionId} slabOffset={slab.Offset} refused");
+            }
+            else
+            {
+                Interlocked.Increment(location: ref _sectionCount);
+                Interlocked.Add(location1: ref _sectionBytes, value: (long)size);
+            }
+
+            return p;
         }
-        catch
+        catch (Exception e)
         {
+            Report(what: $"code section '{SectionName(name: name)}' size={size} align={align} " +
+                         $"threw {e.GetType().Name}: {e.Message}");
             return null;
         }
     }
@@ -168,10 +222,24 @@ internal static unsafe partial class OrcContiguousMemoryManager
         {
             var slab = (Slab)GCHandle.FromIntPtr(value: (nint)opaque)
                                      .Target!;
-            return Bump(slab: slab, size: size, alignment: align);
+            byte* p = Bump(slab: slab, size: size, alignment: align);
+            if (p == null)
+            {
+                Report(what: $"data section '{SectionName(name: name)}' size={size} align={align} " +
+                             $"readOnly={isReadOnly} id={sectionId} slabOffset={slab.Offset} refused");
+            }
+            else
+            {
+                Interlocked.Increment(location: ref _sectionCount);
+                Interlocked.Add(location1: ref _sectionBytes, value: (long)size);
+            }
+
+            return p;
         }
-        catch
+        catch (Exception e)
         {
+            Report(what: $"data section '{SectionName(name: name)}' size={size} align={align} " +
+                         $"threw {e.GetType().Name}: {e.Message}");
             return null;
         }
     }
@@ -218,6 +286,7 @@ internal static unsafe partial class OrcContiguousMemoryManager
                     : VirtualFree(addr: slab.Base, size: 0, type: MEM_RELEASE);
             }
 
+            Interlocked.Decrement(location: ref _slabsLive);
             h.Free();
         }
         catch
