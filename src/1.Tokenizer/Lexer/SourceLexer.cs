@@ -118,9 +118,7 @@ public sealed partial class SourceLexer
     {
         [key: "r"] = TokenType.RawText,
         [key: "f"] = TokenType.FormattedText,
-        [key: "rf"] = TokenType.RawFormattedText,
-        [key: "b"] = TokenType.BytesLiteral,
-        [key: "br"] = TokenType.BytesRawLiteral
+        [key: "rf"] = TokenType.RawFormattedText
     };
 
     /// <summary>

@@ -711,6 +711,7 @@ public sealed partial class SemanticVerifier
             if (_expressionDepth == 0)
             {
                 ReportSpecialFloats();
+                ReportByteLiteralFailures();
                 ReportEscapedDangerousCallables();
             }
         }

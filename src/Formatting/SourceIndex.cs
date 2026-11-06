@@ -212,11 +212,10 @@ internal sealed class SourceIndex
     public int TokenEnd(int tokenIndex)
     {
         Token token = Tokens[index: tokenIndex];
-        if (token.Type is TokenType.TextLiteral or TokenType.RawText or TokenType.BytesLiteral
-            or TokenType.BytesRawLiteral)
+        if (token.Type is TokenType.TextLiteral or TokenType.RawText)
         {
             int quote = Source.IndexOf(value: '"', startIndex: token.Position);
-            bool raw = token.Type is TokenType.RawText or TokenType.BytesRawLiteral;
+            bool raw = token.Type is TokenType.RawText;
             int i = quote + 1;
             while (i < Source.Length && Source[index: i] != '"')
             {
@@ -275,7 +274,7 @@ internal sealed class SourceIndex
         Token token = Tokens[index: tokenIndex];
         return token.Type switch
         {
-            TokenType.TextLiteral or TokenType.RawText or TokenType.BytesLiteral or TokenType.BytesRawLiteral =>
+            TokenType.TextLiteral or TokenType.RawText =>
                 Source[token.Position..TokenEnd(tokenIndex: tokenIndex)],
             _ when IsBacktickName(token: token) => Source[token.Position..TokenEnd(tokenIndex: tokenIndex)],
             _ => token.Text

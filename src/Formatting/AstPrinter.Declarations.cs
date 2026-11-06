@@ -507,8 +507,7 @@ internal sealed partial class AstPrinter
 
             text.Append(value: token.Type switch
             {
-                TokenType.TextLiteral => Literals.QuoteText(value: token.Text, bytes: false),
-                TokenType.BytesLiteral => "b" + Literals.QuoteText(value: token.Text, bytes: true),
+                TokenType.TextLiteral => Literals.QuoteText(value: token.Text),
                 _ => token.Text
             });
         }
@@ -1504,7 +1503,7 @@ internal sealed partial class AstPrinter
             EmitPrefix(start: templateStart, depth: depth + 1, first: first, policy: BlankPolicy.Preserve);
             string name = template.NamePrefix.Length == 0
                 ? Splices.NameOf(handle: expand.HandleName)
-                : "${" + Literals.QuoteText(value: template.NamePrefix, bytes: false) + " + " + expand.HandleName +
+                : "${" + Literals.QuoteText(value: template.NamePrefix) + " + " + expand.HandleName +
                   ".name}";
             EmitHead(start: templateStart, depth: depth + 1, head: Doc.Concat(
                 Doc.Text(text: VisibilityPrefix(visibility: template.Visibility, at: template.Location, printer: this) +

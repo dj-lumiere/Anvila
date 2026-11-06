@@ -714,8 +714,7 @@ public partial class Parser
         if (from < 0 || to > _tokens.Count || from >= to || _tokens[index: from].Line != _tokens[index: to - 1].Line ||
             _tokens.Skip(count: from).Take(count: to - from).Any(predicate: t => t.Type is TokenType.TextLiteral
                 or TokenType.FormattedText or TokenType.RawText or TokenType.RawFormattedText or TokenType.TextSegment
-                or TokenType.CharacterLiteral or TokenType.ByteLetterLiteral or TokenType.BytesLiteral
-                or TokenType.BytesRawLiteral))
+                or TokenType.CharacterLiteral))
         {
             return null;
         }

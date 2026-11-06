@@ -543,7 +543,7 @@ public partial class Parser
         }
 
         // Check for letter/character literal (const generic)
-        if (CheckAndAdvance(TokenType.CharacterLiteral, TokenType.ByteLetterLiteral))
+        if (CheckAndAdvance(TokenType.CharacterLiteral))
         {
             string value = PeekToken(offset: -1)
                .Text;

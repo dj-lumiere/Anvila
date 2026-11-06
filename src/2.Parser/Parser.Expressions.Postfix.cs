@@ -27,6 +27,25 @@ public partial class Parser
     }
 
     /// <summary>
+    /// <c>Byte('a')</c> and <c>Byte('\xE9')</c> (the argument may be labeled <c>from</c>) are one byte literal, or null
+    /// for any other call.
+    /// </summary>
+    private static LiteralExpression? ByteLetter(Expression callee, List<Expression> arguments)
+    {
+        if (callee is not IdentifierExpression { Name: "Byte" } || arguments.Count != 1)
+        {
+            return null;
+        }
+
+        Expression argument = arguments[index: 0] is NamedArgumentExpression { Name: "from" } named
+            ? named.Value
+            : arguments[index: 0];
+        return argument is LiteralExpression { LiteralType: TokenType.CharacterLiteral, Value: string letter }
+            ? new LiteralExpression(Value: letter, LiteralType: TokenType.ByteLetterLiteral, Location: callee.Location)
+            : null;
+    }
+
+    /// <summary>
     /// Attempts to parse one postfix step on <paramref name="expr"/>, updating it in place.
     /// Returns <c>true</c> when a postfix operator was consumed and the loop should try another;
     /// <c>false</c> when no postfix token was found and parsing should stop.
@@ -51,7 +70,9 @@ public partial class Parser
         {
             List<Expression> args = ParseArgumentList();
             Consume(type: TokenType.RightParen, errorMessage: ExpectedRightParenAfterArguments);
-            expr = new CallExpression(Callee: expr, Arguments: args, Location: expr.Location);
+            expr = ByteLetter(callee: expr, arguments: args) is { } letter
+                ? letter
+                : new CallExpression(Callee: expr, Arguments: args, Location: expr.Location);
             return true;
         }
 

@@ -11,19 +11,41 @@ namespace Builder.Formatting;
 internal static class Literals
 {
     /// <summary>
-    /// <paramref name="value"/> as a quoted, escaped text literal (without a prefix). Byte strings take
-    /// <c>\xHH</c> for the bytes that need an escape, text takes <c>\uXXXXXX</c>.
+    /// <paramref name="value"/> as a quoted, escaped text literal. A byte written as <c>\xHH</c> stays one (see
+    /// <see cref="Builder.Tokenizer.SourceLexer.HexEscapeBase"/>) and any other character that needs an escape takes
+    /// <c>\uXXXXXX</c>.
     /// </summary>
-    public static string QuoteText(string value, bool bytes)
+    public static string QuoteText(string value)
     {
         var text = new StringBuilder(value: "\"");
-        AppendEscaped(text: text, value: value, bytes: bytes, formatted: false);
+        AppendEscaped(text: text, value: value, formatted: false);
         return text.Append(value: '"')
                    .ToString();
     }
 
+    /// <summary>A one-character <paramref name="value"/> as a quoted character literal.</summary>
+    public static string QuoteChar(string value)
+    {
+        var text = new StringBuilder(value: "'");
+        if (value == "'")
+        {
+            text.Append(value: "\\'");
+        }
+        else if (value == "\"")
+        {
+            text.Append(value: '"');
+        }
+        else
+        {
+            AppendEscaped(text: text, value: value, formatted: false);
+        }
+
+        return text.Append(value: '\'')
+                   .ToString();
+    }
+
     /// <summary>Appends <paramref name="value"/> escaped for a quoted literal (a formatted one doubles braces).</summary>
-    public static void AppendEscaped(StringBuilder text, string value, bool bytes, bool formatted)
+    public static void AppendEscaped(StringBuilder text, string value, bool formatted)
     {
         for (int i = 0; i < value.Length; i++)
         {
@@ -64,22 +86,15 @@ internal static class Literals
                 continue;
             }
 
-            if (NeedsEscape(c: c, bytes: bytes))
+            if (c is >= (char)Builder.Tokenizer.SourceLexer.HexEscapeBase and <= (char)(Builder.Tokenizer.SourceLexer.HexEscapeBase + 0xFF))
             {
-                if (bytes)
-                {
-                    if (c > 0xFF)
-                    {
-                        throw new FormatRefusedException(reason: $"a byte string holds the character U+{(int)c:X4}");
-                    }
+                text.Append(value: $"\\x{c - Builder.Tokenizer.SourceLexer.HexEscapeBase:X2}");
+                continue;
+            }
 
-                    text.Append(value: $"\\x{(int)c:X2}");
-                }
-                else
-                {
-                    text.Append(value: $"\\u{(int)c:X6}");
-                }
-
+            if (NeedsEscape(c: c))
+            {
+                text.Append(value: $"\\u{(int)c:X6}");
                 continue;
             }
 
@@ -88,9 +103,9 @@ internal static class Literals
     }
 
     /// <summary>Whether a character cannot stand in a quoted literal as itself (the lexer rejects it in source).</summary>
-    private static bool NeedsEscape(char c, bool bytes)
+    private static bool NeedsEscape(char c)
     {
-        return c < 0x20 || c == 0x7F || bytes && c > 0x7F || char.IsSurrogate(c: c) ||
+        return c < 0x20 || c == 0x7F || char.IsSurrogate(c: c) ||
                char.IsWhiteSpace(c: c) && c != ' ' ||
                CharUnicodeInfo.GetUnicodeCategory(ch: c) is UnicodeCategory.Format or UnicodeCategory.Control;
     }

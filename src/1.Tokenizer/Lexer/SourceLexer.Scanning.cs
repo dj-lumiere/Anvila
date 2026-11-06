@@ -71,7 +71,7 @@ public partial class SourceLexer
 
                 break;
             case 'b':
-                // Could be bytes prefix (b"..."), byte character (b'x'), or identifier
+                // A name, or a `b` prefix on a literal (b"...", b'x'), which is a grammar error
                 ScanBPrefixOrIdentifier();
                 break;
 
@@ -183,8 +183,8 @@ public partial class SourceLexer
     }
 
     /// <summary>
-    /// Scans a <c>b</c> character that may begin a bytes-string literal (<c>b"…"</c>), a
-    /// byte-character literal (<c>b'x'</c>), or a plain identifier.
+    /// Scans a <c>b</c> character that begins a name. A <c>b</c> directly before a quote (<c>b"…"</c>,
+    /// <c>b'x'</c>) is a grammar error.
     /// </summary>
     private void ScanBPrefixOrIdentifier()
     {

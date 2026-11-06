@@ -19,7 +19,7 @@ namespace Builder.Lowering.Passes;
 /// <item>ByteSize (<c>64kib</c>, <c>100mb</c>, ?? -> <c>ByteSize(value: bytes_u64)</c></item>
 /// <item>Duration (<c>5s</c>, <c>100ms</c>, ?? -> <c>Duration(seconds: s64, nanoseconds: u32)</c></item>
 /// <item>Char (<c>'a'</c>) -> <c>Char(from: codepoint_u32)</c></item>
-/// <item>ByteLetter (<c>b'x'</c>) -> <c>Byte(from: byte_u8)</c></item>
+/// <item>ByteLetter (<c>Byte('x')</c>, or a character where a Byte goes) -> <c>Byte(from: byte_u8)</c></item>
 /// </list>
 ///
 /// <para><c>Bytes</c> literals (<c>b"..."</c>) are not lowered here -> they produce global-constant
@@ -209,16 +209,19 @@ internal sealed class LiteralLoweringPass : AstRewriter
                 text: s,
                 literalType: literal.LiteralType,
                 loc: loc),
+            // A character where a Byte goes (`var b: Byte = 'a'`), or `Byte('a')`: the one byte, or the byte of a
+            // `'\xE9'` escape (kept in the value as U+DC00 + E9).
+            string s when literal.LiteralType is TokenType.CharacterLiteral or TokenType.ByteLetterLiteral &&
+                          literal.ResolvedType?.Name == "Byte" => MakeByteCreator(
+                byteValue: s.Length > 0
+                    ? s[index: 0] & 0xFF
+                    : 0,
+                loc: loc),
             string s when literal.LiteralType == TokenType.CharacterLiteral =>
                 MakeCharacterCreator(codepoint: s.Length > 0
                         ? char.ConvertToUtf32(s: s, index: 0)
                         : 0,
                     loc: loc),
-            string s when literal.LiteralType == TokenType.ByteLetterLiteral => MakeByteCreator(
-                byteValue: s.Length > 0
-                    ? s[index: 0] & 0xFF
-                    : 0,
-                loc: loc),
             // A bare number where a byte goes (`b & 0x7F`): analysis checked that it is 0 to 255.
             string s when literal.LiteralType == TokenType.UndecidedInteger && literal.ResolvedType?.Name == "Byte" &&
                           SemanticVerifier.TryParseWideMagnitude(cleaned: SemanticVerifier.CleanNumericLiteral(value: s),

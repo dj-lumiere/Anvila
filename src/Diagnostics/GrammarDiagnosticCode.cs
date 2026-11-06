@@ -44,6 +44,10 @@ public enum GrammarDiagnosticCode
     /// from the place it goes, or from the declaration it starts (<c>var x: U8 = 5</c>).</summary>
     TypeNamingSuffix = 10,
 
+    /// <summary>A text or character literal has a <c>b</c> prefix (<c>b"..."</c>, <c>br"..."</c>, <c>b'x'</c>). A
+    /// literal becomes bytes by the place it goes, so the prefix is not part of the language.</summary>
+    ByteLiteralPrefix = 11,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // INDENTATION ERRORS (050 - 079)
     // ═══════════════════════════════════════════════════════════════════════════

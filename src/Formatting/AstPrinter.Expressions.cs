@@ -822,10 +822,9 @@ internal sealed partial class AstPrinter
         // A literal written as a type argument keeps its spelling (`CSVParser['	']`): the tree holds its value.
         Token written = _index.Tokens[index: _index.TokenIndexAt(position: type.Location.Position)];
         if (type.GenericArguments == null && written.Position == type.Location.Position &&
-            written.Type is TokenType.CharacterLiteral or TokenType.ByteLetterLiteral or TokenType.TextLiteral
-                or TokenType.RawText or TokenType.BytesLiteral or TokenType.BytesRawLiteral)
+            written.Type is TokenType.CharacterLiteral or TokenType.TextLiteral or TokenType.RawText)
         {
-            return written.Type is TokenType.CharacterLiteral or TokenType.ByteLetterLiteral
+            return written.Type is TokenType.CharacterLiteral
                 ? written.Text
                 : _index.TokenSourceText(tokenIndex: _index.TokenIndexAt(position: type.Location.Position));
         }
@@ -1309,21 +1308,19 @@ internal sealed partial class AstPrinter
             case TokenType.NoneValue:
                 return "none";
             case TokenType.TextLiteral:
-                return Literals.QuoteText(value: (string)value!, bytes: false);
-            case TokenType.BytesLiteral:
-                return "b" + Literals.QuoteText(value: (string)value!, bytes: true);
-            case TokenType.RawText or TokenType.BytesRawLiteral:
+                return Literals.QuoteText(value: (string)value!);
+            case TokenType.RawText:
                 string raw = (string)value!;
                 if (raw.Contains(value: '"'))
                 {
                     throw Refuse(at: at, reason: "a raw text literal holding a quote");
                 }
 
-                return (type == TokenType.RawText
-                    ? "r\""
-                    : "br\"") + raw + "\"";
-            case TokenType.CharacterLiteral or TokenType.ByteLetterLiteral:
+                return "r\"" + raw + "\"";
+            case TokenType.CharacterLiteral:
                 return CharacterLiteralSource(at: at, type: type);
+            case TokenType.ByteLetterLiteral:
+                return "Byte(" + Literals.QuoteChar(value: (string)value!) + ")";
         }
 
         // `inf` and `nan` are written as the words alone: they take their type from where they go.
@@ -1375,7 +1372,7 @@ internal sealed partial class AstPrinter
                     else
                     {
                         var escaped = new StringBuilder();
-                        Literals.AppendEscaped(text: escaped, value: textPart.Text, bytes: false, formatted: true);
+                        Literals.AppendEscaped(text: escaped, value: textPart.Text, formatted: true);
                         parts.Add(item: Doc.Text(text: escaped.ToString()));
                     }
 

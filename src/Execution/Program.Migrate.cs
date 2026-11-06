@@ -122,6 +122,12 @@ internal partial class Program
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteBytes);
         }
 
+        // `--step byte-literals`: `b'A'` is `Byte('A')`, and a byte string loses its `b` (it is bytes where a Bytes goes).
+        if (step == "byte-literals")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteByteLiterals);
+        }
+
         // `--step work`: a piece of handed-off work is a `Work` (`f.to[Work](...)`, `Work[T]`), and a Mielia Work starts
         // with `start_now()` only.
         if (step == "work")
@@ -556,7 +562,7 @@ internal partial class Program
     [
         "indent", "have", "suffix", "failable", "names", "modules", "access", "cpu-events", "addr", "files", "until",
         "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random", "for",
-        "emitter-tools", "extensions"
+        "emitter-tools", "extensions", "byte-literals"
     ];
 
     /// <summary>The named steps as a list for a message: <c>indent, have, ... or random</c>.</summary>

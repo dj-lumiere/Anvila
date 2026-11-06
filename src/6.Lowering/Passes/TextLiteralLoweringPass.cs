@@ -1,3 +1,4 @@
+using System.Text;
 using Builder.Declaration;
 using Builder.Tokenizer;
 using SyntaxTree;
@@ -10,7 +11,8 @@ namespace Builder.Lowering.Passes;
 /// Writes each text and bytes literal as the record it builds, and each typed <c>none</c> as the zero value of its
 /// type, so a backend has no literal layout of its own:
 /// <c>"héllo"</c> becomes <c>Text(data: #constant_data[...], count: 5)</c>, its characters as Unicode code points,
-/// and <c>b"abc"</c> becomes <c>Bytes(data: #constant_data[...], count: 3)</c>, one byte per character. The data is
+/// and <c>"abc"</c> where a <c>Bytes</c> goes becomes <c>Bytes(data: #constant_data[...], count: 3)</c>, one byte per
+/// element of its UTF-8 form. The data is
 /// a <see cref="ConstantDataExpression"/> the backend lays down once as module data. The controller field is the
 /// zero value, null: a literal is never freed and its reference count is never touched. Runs at Phase 9 over every
 /// body that reaches a backend, after the passes that write literals of their own (crash messages, use-after-steal
@@ -57,14 +59,40 @@ internal sealed class TextLiteralLoweringPass(TypeSymbol character, TypeSymbol b
             LiteralExpression
             {
                 Value: string text,
-                LiteralType: TokenType.TextLiteral or TokenType.RawText or TokenType.BytesLiteral
-                or TokenType.BytesRawLiteral
+                LiteralType: TokenType.TextLiteral or TokenType.RawText
             } literal => Lower(literal: literal, text: text),
             // `none` is the zero value of the optional (or handle) it stands for.
             LiteralExpression { LiteralType: TokenType.NoneValue, ResolvedType: { IsNone: false } type } none =>
                 new ZeroValueExpression(Location: none.Location) { ResolvedType = type },
             _ => base.VisitExpression(expr: expr)
         };
+    }
+
+    /// <summary>
+    /// The bytes a text literal stands for where a <c>Bytes</c> goes: each <c>\xHH</c> escape (kept in the value as the
+    /// lone surrogate U+DC00 + HH) is that byte, any other character is its UTF-8 bytes.
+    /// </summary>
+    internal static List<long> Utf8WithHexEscapes(string text)
+    {
+        var bytes = new List<long>();
+        for (int i = 0; i < text.Length; i += 1)
+        {
+            char c = text[index: i];
+            if (c is >= (char)SourceLexer.HexEscapeBase and <= (char)(SourceLexer.HexEscapeBase + 0xFF))
+            {
+                bytes.Add(item: c - SourceLexer.HexEscapeBase);
+                continue;
+            }
+
+            int length = char.IsHighSurrogate(c: c) && i + 1 < text.Length && char.IsLowSurrogate(c: text[index: i + 1])
+                ? 2
+                : 1;
+            bytes.AddRange(collection: Encoding.UTF8.GetBytes(s: text.Substring(startIndex: i, length: length))
+                                               .Select(selector: b => (long)b));
+            i += length - 1;
+        }
+
+        return bytes;
     }
 
     private CreatorExpression Lower(LiteralExpression literal, string text)
@@ -78,10 +106,9 @@ internal sealed class TextLiteralLoweringPass(TypeSymbol character, TypeSymbol b
                          $"not a record starting with '{DataField}' and '{CountField}'.");
         }
 
-        bool bytes = literal.LiteralType is TokenType.BytesLiteral or TokenType.BytesRawLiteral;
+        bool bytes = record.Name == "Bytes";
         List<long> elements = bytes
-            ? text.Select(selector: c => (long)(c & 0xFF))
-                  .ToList()
+            ? Utf8WithHexEscapes(text: text)
             : text.EnumerateRunes()
                   .Select(selector: rune => (long)rune.Value)
                   .ToList();

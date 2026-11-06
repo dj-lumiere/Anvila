@@ -35,8 +35,10 @@ public enum TokenType
     /// </summary>
     UndecidedDecimal,
 
-    /// <summary>Byte letter literal with prefix (b'a')</summary>
+    /// <summary>A byte written <c>Byte('a')</c> or <c>Byte('\xE9')</c>. The parser makes it from that call, the lexer
+    /// has no token of this type.</summary>
     ByteLetterLiteral,
+
 
     /// <summary>Single character literal - default for plain quotes ('a', '\n')</summary>
     CharacterLiteral,
@@ -70,11 +72,7 @@ public enum TokenType
     /// <summary>Format specifier after : in {expr:spec}</summary>
     FormatSpec,
 
-    /// <summary>Bytes literal with explicit prefix (b"hello")</summary>
-    BytesLiteral,
 
-    /// <summary>Bytes raw literal with explicit prefix (br"C:\path")</summary>
-    BytesRawLiteral,
 
     #endregion
 

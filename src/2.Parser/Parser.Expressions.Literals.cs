@@ -56,10 +56,7 @@ public partial class Parser
     {
         result = null;
 
-        if (!CheckAndAdvance(TokenType.TextLiteral,
-                TokenType.RawText,
-                TokenType.BytesLiteral,
-                TokenType.BytesRawLiteral))
+        if (!CheckAndAdvance(TokenType.TextLiteral, TokenType.RawText))
         {
             return false;
         }
@@ -190,7 +187,7 @@ public partial class Parser
     {
         result = null;
 
-        if (!CheckAndAdvance(TokenType.CharacterLiteral, TokenType.ByteLetterLiteral))
+        if (!CheckAndAdvance(TokenType.CharacterLiteral))
         {
             return false;
         }
@@ -285,10 +282,10 @@ public partial class Parser
             return char.ConvertFromUtf32(utf32: codePoint);
         }
 
-        // A byte's hex escape: `b'\x07'` (the lexer took exactly two hex digits).
+        // A hex escape `'\x07'` (the lexer took exactly two hex digits) stays a byte for the place to decide.
         if (charContent.StartsWith(value: "\\x") && charContent.Length == 4)
         {
-            return ((char)Convert.ToInt32(value: charContent.Substring(startIndex: 2), fromBase: 16)).ToString();
+            return ((char)(SourceLexer.HexEscapeBase + Convert.ToInt32(value: charContent.Substring(startIndex: 2), fromBase: 16))).ToString();
         }
 
         return charContent switch

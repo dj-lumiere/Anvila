@@ -34,6 +34,7 @@ public sealed partial class SemanticVerifier
             if (_expressionDepth == 0 && _statementDepth == 0)
             {
                 ReportSpecialFloats();
+                ReportByteLiteralFailures();
             }
         }
     }
@@ -890,15 +891,19 @@ public sealed partial class SemanticVerifier
                              or BinaryOperator.PowerWrap or BinaryOperator.PowerClamp or BinaryOperator.PowerUnchecked);
         TypeSymbol leftType;
         TypeSymbol rightType;
-        if (peerTyped && LeadingNumber(expression: binary.Left) is { } leadingLeft &&
-            LeadingNumber(expression: binary.Right) == null)
+        if (peerTyped && (LeadingNumber(expression: binary.Left) != null || IsPlainTextLiteral(expression: binary.Left)) &&
+            LeadingNumber(expression: binary.Right) == null && !IsPlainTextLiteral(expression: binary.Right))
         {
             rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
             TypeSymbol peer = ConstGenericValueType(type: rightType) ?? rightType;
             leftType = AnalyzeExpression(expression: binary.Left,
-                expectedType: ConformsToPeer(literal: leadingLeft, peer: peer)
-                    ? peer
-                    : literalCtx);
+                expectedType: LeadingNumber(expression: binary.Left) is { } leadingLeft
+                    ? ConformsToPeer(literal: leadingLeft, peer: peer)
+                        ? peer
+                        : literalCtx
+                    : TextLiteralTakesPeer(literal: (LiteralExpression)binary.Left, peer: peer)
+                        ? peer
+                        : literalCtx);
         }
         else
         {
@@ -927,7 +932,10 @@ public sealed partial class SemanticVerifier
                 : AnalyzeExpression(expression: binary.Right,
                     expectedType: peerTyped && LeadingNumber(expression: binary.Right) is { } leadingRight &&
                                   LeadingNumber(expression: binary.Left) == null &&
-                                  ConformsToPeer(literal: leadingRight, peer: peer)
+                                  ConformsToPeer(literal: leadingRight, peer: peer) ||
+                                  peerTyped && binary.Right is LiteralExpression { } rightText &&
+                                  IsPlainTextLiteral(expression: rightText) &&
+                                  TextLiteralTakesPeer(literal: rightText, peer: peer)
                         ? peer
                         : rightCtx);
             if (narrowedBefore != null)
@@ -1588,6 +1596,26 @@ public sealed partial class SemanticVerifier
         } number
             ? number
             : null;
+    }
+
+    /// <summary>Whether <paramref name="expression"/> is a text or character literal written plain.</summary>
+    private static bool IsPlainTextLiteral(Expression expression)
+    {
+        return expression is LiteralExpression
+        {
+            LiteralType: TokenType.TextLiteral or TokenType.RawText or TokenType.CharacterLiteral
+        };
+    }
+
+    /// <summary>
+    /// Whether a plain text literal beside a <c>Bytes</c> is bytes (<c>data == "GET"</c>), and a plain character
+    /// beside a <c>Byte</c> is a byte (<c>b == 'a'</c>).
+    /// </summary>
+    private static bool TextLiteralTakesPeer(LiteralExpression literal, TypeSymbol peer)
+    {
+        return literal.LiteralType == TokenType.CharacterLiteral
+            ? peer.Name == ByteTypeName
+            : peer.Name == BytesTypeName;
     }
 
     /// <summary>

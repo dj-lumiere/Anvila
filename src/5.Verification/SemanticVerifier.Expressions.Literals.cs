@@ -16,6 +16,7 @@ public sealed partial class SemanticVerifier
     private const string AddressTypeName = Declaration.RuntimeContract.Addr;
     private const string IntegerTypeName = "Int";
     private const string ByteTypeName = "Byte";
+    private const string BytesTypeName = "Bytes";
 
     /// <summary>
     /// Analyze literal expression as part of this builder phase.
@@ -81,6 +82,8 @@ public sealed partial class SemanticVerifier
                 return expectedType ?? LookupTypeWithImports(name: typeName) ?? ErrorTypeSymbol.Instance;
             }
         }
+
+        NoteByteEscapes(literal: literal, typeName: typeName);
 
         // A number that is a byte is made into one by LiteralLoweringPass from its text.
         if (typeName != ByteTypeName)
@@ -262,6 +265,18 @@ public sealed partial class SemanticVerifier
             return typeName;
         }
 
+        // Text goes to bytes where a Bytes goes (`var b: Bytes = "abc"`), a character where a Byte goes (`var b: Byte
+        // = 'a'`).
+        if (literal.LiteralType is TokenType.TextLiteral or TokenType.RawText && expectedType.Name == BytesTypeName)
+        {
+            return BytesTypeName;
+        }
+
+        if (literal.LiteralType is TokenType.CharacterLiteral && expectedType.Name == ByteTypeName)
+        {
+            return ByteTypeName;
+        }
+
         // A bare whole number where a Byte goes is that byte (`b & 0x7F`, `var b: Byte = 0x41`): 0 to 255.
         if (literal.LiteralType is TokenType.UndecidedInteger && expectedType.Name == ByteTypeName)
         {
@@ -313,6 +328,93 @@ public sealed partial class SemanticVerifier
         }
 
         return typeName;
+    }
+
+    private readonly Dictionary<LiteralExpression, (SemanticDiagnosticCode Code, string Message)?> _byteLiteralFailures =
+        new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Notes whether the <c>\xHH</c> escapes and characters of a text or character literal suit the type its place gave
+    /// it: a <c>Bytes</c> takes any, a <c>Byte</c> takes one byte, and text or a <c>Char</c> takes none (it writes a
+    /// character with <c>\u</c>). A literal can be analyzed more than once with different places (while a call's
+    /// overload is picked), so the verdict of the last analysis stands and <see cref="ReportByteLiteralFailures"/>
+    /// reports it when the statement is done.
+    /// </summary>
+    private void NoteByteEscapes(LiteralExpression literal, string typeName)
+    {
+        if (literal.Value is not string text ||
+            literal.LiteralType is not (TokenType.TextLiteral or TokenType.CharacterLiteral
+                or TokenType.ByteLetterLiteral))
+        {
+            return;
+        }
+
+        (SemanticDiagnosticCode, string)? failure = null;
+        if (typeName == ByteTypeName)
+        {
+            bool one = text.Length == 1 && (text[index: 0] < 0x80 || IsHexEscape(c: text[index: 0]));
+            if (!one)
+            {
+                failure = (SemanticDiagnosticCode.NonAsciiByte,
+                    $"A Byte holds one byte, and {DescribeTextForByte(text: text)} is not one. Write a byte above " +
+                    "7F with its hex escape ('\\xE9'), or put the text where a Bytes goes to get its UTF-8 bytes.");
+            }
+        }
+        else if (typeName != BytesTypeName && HasHexEscape(text: text))
+        {
+            bool character = literal.LiteralType == TokenType.CharacterLiteral;
+            failure = (SemanticDiagnosticCode.HexEscapeInText,
+                $"A {(character ? "character" : "text")} has no \\xHH escape, since it holds characters and not " +
+                "bytes. Write the character with \\u followed by six hex digits (\\u0000E9), or put the literal where a " +
+                $"{(character ? "Byte" : "Bytes")} goes to get the byte.");
+        }
+
+        _byteLiteralFailures[key: literal] = failure;
+    }
+
+    /// <summary>Reports the byte literal failures noted while a statement was analyzed.</summary>
+    private void ReportByteLiteralFailures()
+    {
+        foreach ((LiteralExpression literal, (SemanticDiagnosticCode Code, string Message)? failure) in _byteLiteralFailures)
+        {
+            if (failure is { } found && _reportedSpecialFloats.Add(item: literal.Location))
+            {
+                ReportError(code: found.Code, message: found.Message, location: literal.Location);
+            }
+        }
+
+        _byteLiteralFailures.Clear();
+    }
+
+    /// <summary>Whether a literal's value holds a <c>\xHH</c> escape. A U+DC00 to U+DCFF char that follows a high
+    /// surrogate is the end of a character above U+FFFF and not an escape.</summary>
+    private static bool HasHexEscape(string text)
+    {
+        for (int i = 0; i < text.Length; i += 1)
+        {
+            if (char.IsHighSurrogate(c: text[index: i]) && i + 1 < text.Length && char.IsLowSurrogate(c: text[index: i + 1]))
+            {
+                i += 1;
+            }
+            else if (IsHexEscape(c: text[index: i]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsHexEscape(char c)
+    {
+        return c is >= (char)SourceLexer.HexEscapeBase and <= (char)(SourceLexer.HexEscapeBase + 0xFF);
+    }
+
+    private static string DescribeTextForByte(string text)
+    {
+        return text.Length == 0
+            ? "an empty literal"
+            : $"'{text}'";
     }
 
     /// <summary>
@@ -451,9 +553,7 @@ public sealed partial class SemanticVerifier
             // Text and characters — a raw string `r"..."` (RawText) is a Text too; only the escape
             // processing differed at tokenize time, the resulting value is a plain Text.
             TokenType.TextLiteral or TokenType.RawText => "Text",
-            TokenType.BytesLiteral => "Bytes",
-            TokenType.BytesRawLiteral => "Bytes",
-            TokenType.ByteLetterLiteral => "Byte",
+            TokenType.ByteLetterLiteral => ByteTypeName,
             TokenType.CharacterLiteral => "Char",
 
             // byte size literals (all map to ByteSize type)

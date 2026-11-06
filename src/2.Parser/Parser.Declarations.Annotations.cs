@@ -266,7 +266,7 @@ public partial class Parser
         // String literal — keep it quoted so the stored annotation round-trips as `@llvm("i64")`
         // rather than `@llvm(i64)`. All consumers strip the wrapping quotes (ExtractLlvmAnnotation /
         // llvm_ir template extraction / SA all Trim or strip one pair).
-        if (Check(TokenType.TextLiteral, TokenType.BytesLiteral))
+        if (Check(TokenType.TextLiteral))
         {
             return $"\"{Advance().Text}\"";
         }
@@ -354,6 +354,6 @@ public partial class Parser
             or TokenType.MebibyteLiteral or TokenType.GigabyteLiteral or TokenType.GibibyteLiteral
             or TokenType.WeekLiteral or TokenType.DayLiteral or TokenType.HourLiteral or TokenType.MinuteLiteral
             or TokenType.SecondLiteral or TokenType.MillisecondLiteral or TokenType.MicrosecondLiteral
-            or TokenType.NanosecondLiteral or TokenType.CharacterLiteral or TokenType.ByteLetterLiteral;
+            or TokenType.NanosecondLiteral or TokenType.CharacterLiteral;
     }
 }

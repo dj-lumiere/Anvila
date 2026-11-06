@@ -113,6 +113,18 @@ public enum SemanticDiagnosticCode
     /// </summary>
     SpecialFloatNotInType = 20,
 
+    /// <summary>
+    /// A text or character literal holds a <c>\xHH</c> escape and goes where text or a character goes. Only a byte
+    /// place (<c>Bytes</c>, <c>Byte</c>) takes <c>\xHH</c>, text writes a character with <c>\u</c>.
+    /// </summary>
+    HexEscapeInText = 21,
+
+    /// <summary>
+    /// A character literal that goes where a <c>Byte</c> goes holds a character outside ASCII, which is more than
+    /// one byte.
+    /// </summary>
+    NonAsciiByte = 22,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // BINARY AND UNARY OPERATOR ERRORS (RV-S050 - RV-S099)
     // ═══════════════════════════════════════════════════════════════════════════

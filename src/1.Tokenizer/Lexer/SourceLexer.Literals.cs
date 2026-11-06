@@ -19,12 +19,12 @@ public partial class SourceLexer
     {
         ScanStringLiteral(isRaw: false,
             isFormatted: false,
-            tokenType: TokenType.TextLiteral,
-            bitWidth: 32);
+            tokenType: TokenType.TextLiteral);
     }
 
     /// <summary>
-    /// Attempts to parse a text prefix (r, f, rf, b, br) followed by a quoted string.
+    /// Attempts to parse a text prefix (r, f, rf) followed by a quoted string. A <c>b</c> or <c>br</c> prefix
+    /// has no meaning and is a grammar error.
     /// </summary>
     /// <returns>
     /// <c>true</c> if a valid text prefix was found; <c>false</c> otherwise.
@@ -55,6 +55,11 @@ public partial class SourceLexer
 
         string prefix = prefixSb.ToString();
         // Check if we found a valid prefix
+        if (prefix is "b" or "br" && Peek() is '"')
+        {
+            throw ByteLiteralPrefixError();
+        }
+
         if (!_textPrefixToTokenType.TryGetValue(key: prefix, value: out TokenType tokenType))
         {
             _position = originalPos;
@@ -74,15 +79,9 @@ public partial class SourceLexer
         bool isRaw = prefix.Contains(value: 'r');
         bool isFormatted = prefix.Contains(value: 'f');
 
-        // Byte strings are 8-bit, regular strings are 32-bit
-        int bitWidth = prefix.Contains(value: 'b')
-            ? 8
-            : 32;
-
         ScanStringLiteral(isRaw: isRaw,
             isFormatted: isFormatted,
-            tokenType: tokenType,
-            bitWidth: bitWidth);
+            tokenType: tokenType);
         return true;
     }
 
@@ -90,8 +89,7 @@ public partial class SourceLexer
     /// Scans a string literal with the specified properties.
     /// For formatted strings, delegates to ScanFormattedStringLiteral.
     /// </summary>
-    private void ScanStringLiteral(bool isRaw, bool isFormatted, TokenType tokenType,
-        int bitWidth = 32)
+    private void ScanStringLiteral(bool isRaw, bool isFormatted, TokenType tokenType)
     {
         if (isFormatted)
         {
@@ -105,7 +103,7 @@ public partial class SourceLexer
 
         while (!IsAtEnd() && Peek() != '"')
         {
-            ScanStringLiteralChar(isRaw: isRaw, bitWidth: bitWidth, content: content);
+            ScanStringLiteralChar(isRaw: isRaw, content: content);
         }
 
         if (IsAtEnd())
@@ -127,7 +125,7 @@ public partial class SourceLexer
     /// value to <paramref name="content"/>. Handles literal newlines, escape sequences (with line
     /// continuation), and byte-literal ASCII validation.
     /// </summary>
-    private void ScanStringLiteralChar(bool isRaw, int bitWidth, StringBuilder content)
+    private void ScanStringLiteralChar(bool isRaw, StringBuilder content)
     {
         if (Peek() == '\n')
         {
@@ -143,53 +141,17 @@ public partial class SourceLexer
             if (Peek() == '\n' || Peek() == '\r')
             {
                 // Line continuation: skip newline and leading whitespace, don't add to content
-                ScanEscapeSequence(bitWidth: bitWidth);
+                ScanEscapeSequence(allowHex: true);
             }
             else
             {
-                ScanEscapeSequence(bitWidth: bitWidth);
+                ScanEscapeSequence(allowHex: true);
                 content.Append(value: ParseEscapeSequence(escapeStart: escapeStart));
             }
         }
         else
         {
-            char c = Advance();
-            if (bitWidth == 8 && c > '\x7F')
-            {
-                AppendUtf8Bytes(first: c, content: content);
-                return;
-            }
-
-            content.Append(value: c);
-        }
-    }
-
-    /// <summary>
-    /// Appends the UTF-8 bytes of the non-ASCII character that starts with <paramref name="first"/> to a byte
-    /// string's value, one char per byte (a byte string's token text holds each byte as a char from U+0000 to U+00FF).
-    /// </summary>
-    private void AppendUtf8Bytes(char first, StringBuilder content)
-    {
-        string character = first.ToString();
-        if (char.IsHighSurrogate(c: first) && !IsAtEnd() && char.IsLowSurrogate(c: Peek()))
-        {
-            character += Advance();
-        }
-
-        if (char.IsSurrogate(c: first) && character.Length == 1)
-        {
-            throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
-                message: $"The character U+{(int)first:X4} in this byte string is half of a surrogate pair and has no " +
-                         "UTF-8 bytes. Write the whole character, or its bytes with \\xHH escapes.",
-                fileName: _fileName,
-                line: _line,
-                column: _column,
-                language: _language);
-        }
-
-        foreach (byte b in Encoding.UTF8.GetBytes(s: character))
-        {
-            content.Append(value: (char)b);
+            content.Append(value: Advance());
         }
     }
 
@@ -269,11 +231,11 @@ public partial class SourceLexer
             Advance(); // consume backslash
             if (Peek() == '\n' || Peek() == '\r')
             {
-                ScanEscapeSequence(bitWidth: 32);
+                ScanEscapeSequence(allowHex: false);
             }
             else
             {
-                ScanEscapeSequence(bitWidth: 32);
+                ScanEscapeSequence(allowHex: false);
                 textBuffer.Append(value: ParseEscapeSequence(escapeStart: escapeStart));
             }
 
@@ -615,8 +577,8 @@ public partial class SourceLexer
     }
 
     /// <summary>
-    /// Handles 'b' characters inside an insertion expression: tries a prefixed text literal (b"...")
-    /// or byte character literal (b'x'), falling back to scanning as an identifier.
+    /// Handles 'b' characters inside an insertion expression: a name, or a grammar error for a `b` prefix on a
+    /// literal (b"...", b'x').
     /// </summary>
     private void ScanInsertionByteOrIdentifier()
     {
@@ -730,68 +692,55 @@ public partial class SourceLexer
     /// </summary>
     private void ScanCharacter()
     {
-        ScanCharacterLiteral(tokenType: TokenType.CharacterLiteral, bitWidth: 32);
+        ScanCharacterLiteral();
     }
 
     /// <summary>
-    /// Attempts to parse a b'x' byte character literal.
+    /// A <c>b</c> directly before a quote has no meaning: raises the grammar error that says what to write instead.
+    /// Returns false for any other <c>b</c>, which starts a name.
     /// </summary>
     private bool TryParseByteLiteralPrefix()
     {
-        // We already consumed 'b', check if followed by single quote
         if (Peek() != '\'')
         {
             return false;
         }
 
-        Advance(); // consume opening quote
-        ScanCharacterLiteral(tokenType: TokenType.ByteLetterLiteral, bitWidth: 8);
-        return true;
+        throw ByteLiteralPrefixError();
     }
 
     /// <summary>
-    /// Scans a character literal with the specified token type and bit width.
+    /// The grammar error for <c>b"..."</c>, <c>br"..."</c> and <c>b'x'</c>: a literal has no prefix that makes it
+    /// bytes, since the place it goes decides that.
     /// </summary>
-    private void ScanCharacterLiteral(TokenType tokenType, int bitWidth = 32)
+    private GrammarException ByteLiteralPrefixError()
+    {
+        return new GrammarException(code: GrammarDiagnosticCode.ByteLiteralPrefix,
+            message: "A literal has no 'b' prefix. Write a plain \"...\" where a Bytes goes and a plain 'x' where a " +
+                     "Byte goes (\"\\xE9\" is the byte E9 there), or write Byte('x') for one byte.",
+            fileName: _fileName,
+            line: _line,
+            column: _column,
+            language: _language);
+    }
+
+    /// <summary>
+    /// Scans a character literal. A <c>\xHH</c> escape is kept for the place to decide (a Byte takes it, a Char refuses).
+    /// </summary>
+    private void ScanCharacterLiteral()
     {
         if (Peek() == '\\')
         {
             Advance(); // consume backslash
 
-            // \x is byte-only, \u is character-only
-            if (bitWidth != 8 && Peek() == 'x')
-            {
-                throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
-                    message:
-                    "A character has no \\x escape. Write the character with \\u followed by six hex digits " +
-                    "(\\u0000E9), or write a byte with b'\\xE9'.",
-                    fileName: _fileName,
-                    line: _line,
-                    column: _column,
-                    language: _language);
-            }
-
-            ScanEscapeSequence(bitWidth: bitWidth);
+            ScanEscapeSequence(allowHex: true);
         }
         else
         {
             char c = Peek();
-            if (bitWidth == 8 && c > '\x7F')
-            {
-                throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
-                    message: $"Non-ASCII character '{c}' (U+{(int)c:X4}) in byte literal. " +
-                             "A byte character holds one byte, so write a non-ASCII byte as \\xHH (b'\\xE9'), " +
-                             "or write the character in a byte string b\"...\" to get its UTF-8 bytes.",
-                    fileName: _fileName,
-                    line: _line,
-                    column: _column,
-                    language: _language);
-            }
-
             Advance(); // consume the character
             // Handle UTF-16 surrogate pairs for non-BMP codepoints (Character is UTF-32)
-            if (bitWidth != 8 && char.IsHighSurrogate(c: c) && !IsAtEnd() &&
-                char.IsLowSurrogate(c: Peek()))
+            if (char.IsHighSurrogate(c: c) && !IsAtEnd() && char.IsLowSurrogate(c: Peek()))
             {
                 Advance(); // consume low surrogate
             }
@@ -807,7 +756,7 @@ public partial class SourceLexer
                 language: _language);
         }
 
-        AddToken(type: tokenType);
+        AddToken(type: TokenType.CharacterLiteral);
     }
 
     #endregion
@@ -817,7 +766,7 @@ public partial class SourceLexer
     /// <summary>
     /// Scans and validates an escape sequence.
     /// </summary>
-    private void ScanEscapeSequence(int bitWidth = 32)
+    private void ScanEscapeSequence(bool allowHex)
     {
         if (IsAtEnd())
         {
@@ -836,12 +785,12 @@ public partial class SourceLexer
                 Advance();
                 break;
             case 'x':
-                if (bitWidth != 8)
+                if (!allowHex)
                 {
                     throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
                         message:
-                        "Text has no \\x escape. Write the character with \\u followed by six hex digits " +
-                        "(\\u0000FF), or write a byte string b\"...\" if you want the byte 0xFF.",
+                        "Inserted text has no \\x escape. Write the character with \\u followed by six hex digits " +
+                        "(\\u0000FF).",
                         fileName: _fileName,
                         line: _line,
                         column: _column,
@@ -852,17 +801,6 @@ public partial class SourceLexer
                 ScanHexByteEscape();
                 break;
             case 'u':
-                if (bitWidth == 8)
-                {
-                    throw new GrammarException(code: GrammarDiagnosticCode.InvalidEscapeSequence,
-                        message:
-                        "A byte string has no \\u escape. Write a byte as \\xHH, or write the character itself to get its UTF-8 bytes.",
-                        fileName: _fileName,
-                        line: _line,
-                        column: _column,
-                        language: _language);
-                }
-
                 Advance(); // consume 'u'
                 ScanUnicodeEscape();
                 break;
@@ -966,6 +904,13 @@ public partial class SourceLexer
     }
 
     /// <summary>
+    /// A <c>\xHH</c> escape stays in a literal's value as the lone low surrogate U+DC00 + HH. No source text can
+    /// spell one (a <c>\u</c> escape refuses a surrogate and a UTF-8 source has none), so the place the literal goes
+    /// reads each as the byte HH, or reports it where the place is text.
+    /// </summary>
+    public const int HexEscapeBase = 0xDC00;
+
+    /// <summary>
     /// Parses an escape sequence and returns the text it stands for (one character, or the surrogate pair of a code
     /// point above U+FFFF).
     /// </summary>
@@ -977,7 +922,7 @@ public partial class SourceLexer
         {
             string hexStr = _source.Substring(startIndex: escapeStart + 2, length: 2);
             int byteValue = Convert.ToInt32(value: hexStr, fromBase: 16);
-            return ((char)byteValue).ToString();
+            return ((char)(HexEscapeBase + byteValue)).ToString();
         }
 
         if (c == 'u')
