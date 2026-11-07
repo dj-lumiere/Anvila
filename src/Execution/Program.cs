@@ -21,7 +21,6 @@ namespace Builder.Execution;
 internal partial class Program
 {
     private const string BuildCommand = "build";
-    private const string RunCommand = "run";
     private const string BuildAndRunCommand = "buildandrun";
     /// <summary>The language of the command that is running (<c>revare</c> or <c>mielia</c>). Selects
     /// the branding (version/usage) and is the DEFAULT language when a source's extension does not decide
@@ -70,14 +69,16 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "new" or "migrate" or "parse" or "tokenize" or "codegen" or BuildCommand
-            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "rv-stubs";
+            or "test" or "lint" or BuildAndRunCommand or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "rv-stubs";
 
         if (!isCommand)
         {
-            // Every action has its command, so a bare file does nothing on its own: running it is `run`.
+            // Every action has its command, so a bare file does nothing on its own: running it is `buildandrun`.
             Console.Error.WriteLine(value: File.Exists(path: args[0])
-                ? $"error: '{args[0]}' is a file, not a command. To build and run it: {CliRules.ToolName} run {args[0]}"
-                : $"error: unknown command '{args[0]}'. See {CliRules.ToolName} help.");
+                ? $"error: '{args[0]}' is a file, not a command. To build and run it: {CliRules.ToolName} buildandrun {args[0]}"
+                : command == "run"
+                    ? $"error: there is no 'run' command. To build and run the program: {CliRules.ToolName} buildandrun"
+                    : $"error: unknown command '{args[0]}'. See {CliRules.ToolName} help.");
             return 1;
         }
 
@@ -184,8 +185,7 @@ internal partial class Program
             case BuildCommand:
                 return RunBuildCommand(args: args);
 
-            case RunCommand:
-            case "buildandrun":
+            case BuildAndRunCommand:
                 return RunBuildAndRunCommand(args: args);
 
             case "check":
@@ -958,14 +958,15 @@ internal partial class Program
         Console.WriteLine(value: header);
         Console.WriteLine();
         // The commands every Lumi language's tool shares (Revare, Mielia, Lapila). The others (parse,
-        // tokenize, codegen, validate-stdlib, daemon, ...) still work for the builder's own development, but are
+        // tokenize, validate-stdlib, daemon, ...) still work for the builder's own development, but are
         // not part of the tool's face.
         Console.WriteLine(value: "Usage:");
         Console.WriteLine(value: $"  {tool} new [folder]                     - Start a project (config.toml, main{CliRules.FileExtension}, editor files)");
         Console.WriteLine(value: $"  {tool} migrate [--check] <paths>...      - Move sources from the previous release to this one");
         Console.WriteLine(value: $"  {tool} check [--json] [entry-file]      - Check the program without building it (--json: as JSON)");
         Console.WriteLine(value: $"  {tool} build [entry-file]               - Build a native executable");
-        Console.WriteLine(value: $"  {tool} run [entry-file]                 - Build the program and run it");
+        Console.WriteLine(value: $"  {tool} buildandrun [entry-file]         - Build the program and run it");
+        Console.WriteLine(value: $"  {tool} codegen [entry-file] [out.ll]    - Write the program's LLVM IR without building it");
         Console.WriteLine(value: $"  {tool} test <dir-or-file>...            - Run test programs against their expected output");
         Console.WriteLine(value: $"  {tool} fmt [--check] <file-or-dir>...   - Format sources in place (--check: only list)");
         Console.WriteLine(value: $"  {tool} lint <file-or-dir>...            - Report code that is not in the canonical style, and notes");
