@@ -593,6 +593,55 @@ public static class RuntimeContract
     /// <summary>Controller behind <c>Retained[T]</c> / <c>Tracked[T]</c>.</summary>
     public const string RetainManager = "RetainManager";
 
+    /// <summary>
+    /// A stored value of a protocol (<c>var x: Enemy</c>, <c>List[Enemy]</c>, a member variable, <c>Enemy?</c>):
+    /// the record <c>Dispatched[P]</c> (System/Memory, <c>Dispatched.rvr</c>) of a type hash and an address, and the
+    /// library routines the builder calls to put a value in, reach it, copy it and end it. The routines of
+    /// <c>Dispatched[P]</c> itself (the protocol's routines, <c>destruct</c>, <c>share</c>) are written by the builder
+    /// per protocol, switching on the type hash.
+    /// </summary>
+    public static class Dispatch
+    {
+        /// <summary>The record a protocol place holds.</summary>
+        public const string Dispatched = "Dispatched";
+
+        /// <summary>Its type hash member variable.</summary>
+        public const string TypeHash = "type_hash";
+
+        /// <summary>Its address member variable.</summary>
+        public const string Address = "address";
+
+        /// <summary>Keeps an entity, or a one-address handle, by its own bits.</summary>
+        public const string KeepInline = "dispatched_keep_inline";
+
+        /// <summary>Keeps a record copy in memory of its own.</summary>
+        public const string KeepRecord = "dispatched_keep_record";
+
+        /// <summary>A write token on the value kept at an address.</summary>
+        public const string ModifyAt = "dispatched_modify";
+
+        /// <summary>A write token on the entity a kept handle reaches.</summary>
+        public const string ModifyHandle = "dispatched_modify_handle";
+
+        /// <summary>A copy of a kept record (an <c>is</c> arm's binding).</summary>
+        public const string CopyOut = "dispatched_copy_out";
+
+        /// <summary>One more holder of a kept handle (an <c>is</c> arm's binding in Mielia).</summary>
+        public const string HandleOut = "dispatched_handle_out";
+
+        /// <summary>Copies a kept record into new memory.</summary>
+        public const string CopyRecord = "dispatched_copy_record";
+
+        /// <summary>One more holder of a kept handle.</summary>
+        public const string CopyHandle = "dispatched_copy_handle";
+
+        /// <summary>Ends a value kept by its own bits.</summary>
+        public const string EndInline = "dispatched_end_inline";
+
+        /// <summary>Ends a kept record and gives its memory back.</summary>
+        public const string EndRecord = "dispatched_end_record";
+    }
+
     /// <summary>Controller behind <c>Guarded[T, P]</c> / <c>Witnessed[T, P]</c>. It also holds the access policy's
     /// state, which the runtime's AccessManager reads: who is using the entity right now (the readers, the one
     /// writer).</summary>

@@ -1009,6 +1009,18 @@ public enum SemanticDiagnosticCode
     /// crashables.</summary>
     ThrowsListMisplaced = 713,
 
+    /// <summary>Two types a place of a protocol is given have the same type hash, so a dispatch couldn't tell them
+    /// apart.</summary>
+    DispatchTypeHashCollision = 714,
+
+    /// <summary>A routine of a protocol that takes or gives the protocol's own type (<c>Me</c>) is called on a stored
+    /// value of the protocol, whose type is known only at run time.</summary>
+    ProtocolRoutineNotDispatchable = 715,
+
+    /// <summary>A value whose type is a type parameter goes into a place that stores a value of a protocol: the type
+    /// hash it would carry is not known where the routine is written.</summary>
+    TypeParameterValueIntoProtocolPlace = 716,
+
     /// <summary>An <c>expand</c> template body applies a GATED wired-protocol operation (e.g. <c>eq</c>
     /// via <c>==</c>, <c>compare</c>, <c>hash</c>) to a buildtime member value (<c>me.$nameof(m)</c>) without
     /// the enclosing routine declaring the matching <c>needs P everywhere</c> gate — so nothing

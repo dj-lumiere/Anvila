@@ -186,7 +186,6 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 {
                     continue;
                 }
-
                 List<Owned> held = GenericEntityParameters(r: r, info: entry.Info);
                 if (held.Count == 0)
                 {
@@ -310,7 +309,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // types.
         foreach (ParamInfo p in info.Parameters)
         {
-            if (p.Name == "me" || p.Type is not EntityTypeSymbol entity ||
+            // A stored value of a protocol that keeps entities has one original too.
+            TypeSymbol? entity = p.Type is EntityTypeSymbol ||
+                                 TypeRegistry.DispatchedProtocol(type: p.Type) != null && ctx.Registry.IsEntityKind(type: p.Type)
+                ? p.Type
+                : null;
+            if (p.Name == "me" || entity == null ||
                 definition.Parameters.FirstOrDefault(predicate: d => d.Name == p.Name)?.Type is not
                     GenericParameterTypeSymbol ||
                 !TryResolveDestroy(type: entity, destroy: out RoutineInfo? destroy) || destroy == null)

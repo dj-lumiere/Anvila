@@ -253,7 +253,7 @@ internal sealed class TypeBodyResolver
     {
         // Resolve member variable type
         TypeSymbol memberVariableType = memberVariable.Type != null
-            ? _typeResolver.ResolveType(typeExpr: memberVariable.Type)
+            ? _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type)
             : ErrorTypeSymbol.Instance;
 
         // Records can contain: value types, entity/crashable REFERENCE fields (entities are
@@ -413,7 +413,7 @@ internal sealed class TypeBodyResolver
         int memberVariableIndex)
     {
         TypeSymbol memberVariableType = memberVariable.Type != null
-            ? _typeResolver.ResolveType(typeExpr: memberVariable.Type)
+            ? _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type)
             : ErrorTypeSymbol.Instance;
 
         // Mielia: an entity-typed field is a `Roamed[E]` biased-RC handle and an `x: E?` field is
@@ -446,7 +446,7 @@ internal sealed class TypeBodyResolver
             if (member is VariableDeclaration memberVariable)
             {
                 TypeSymbol memberVariableType = memberVariable.Type != null
-                    ? _typeResolver.ResolveType(typeExpr: memberVariable.Type)
+                    ? _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type)
                     : ErrorTypeSymbol.Instance;
 
                 var memberVariableInfo =

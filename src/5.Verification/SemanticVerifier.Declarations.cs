@@ -304,7 +304,7 @@ public sealed partial class SemanticVerifier
             return; // Type inference will be handled later
         }
 
-        TypeSymbol memberVariableType = ResolveType(typeExpr: memberVariable.Type);
+        TypeSymbol memberVariableType = _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type);
         ReportProtocolValueType(type: memberVariableType, location: memberVariable.Location,
             what: $"member variable '{memberVariable.Name}'");
 

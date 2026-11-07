@@ -2963,6 +2963,8 @@ public sealed partial class SemanticVerifier
                 resolvedTypeArguments.Add(item: ResolveType(typeExpr: typeArg));
             }
 
+            resolvedTypeArguments = _typeResolver.StoredTypeArguments(genericDef: callableType,
+                typeArguments: resolvedTypeArguments);
             if (callableType.IsGenericDefinition)
             {
                 ValidateGenericConstraints(genericDef: callableType,

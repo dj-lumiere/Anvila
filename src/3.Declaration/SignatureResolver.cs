@@ -229,7 +229,7 @@ internal sealed class SignatureResolver
         // returns the raw entity it builds; its return goes through the memberwise-synthesis path (not
         // this ResolveType call), so no explicit carve-out is needed here.
         TypeSymbol? returnType = routine.ReturnType != null
-            ? _typeResolver.ResolveType(typeExpr: routine.ReturnType)
+            ? _typeResolver.ResolveStoredType(typeExpr: routine.ReturnType)
             : null;
 
         // Validate that Optional<T>/Check<T> are not used as return types

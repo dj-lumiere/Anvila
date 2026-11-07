@@ -409,6 +409,13 @@ public sealed partial class TypeRegistry
             return true;
         }
 
+        // A stored value of a protocol keeps an entity when an entity of the program obeys the protocol: the place has
+        // one original then.
+        if (DispatchedProtocol(type: type) is { } dispatched)
+        {
+            return ProtocolHoldsEntities(protocol: dispatched);
+        }
+
         // A zero-is-none link (`Stamped[T]`) names an entity in the pool and holds none: freely copyable.
         if (type is RecordTypeSymbol { NoneIsZero: true })
         {
@@ -645,6 +652,14 @@ public sealed partial class TypeRegistry
     /// module declares, or finds a library protocol of the same name.</param>
     internal bool TypeObeysProtocol(TypeSymbol type, string protocolName, TypeSymbol? resolvedProtocol = null)
     {
+        // A stored value of a protocol obeys that protocol and each protocol it obeys: a call of one of their routines
+        // on it dispatches to the value's own type.
+        if (DispatchedProtocol(type: type) is { } dispatched &&
+            ProtocolIncludes(protocol: dispatched, target: resolvedProtocol ?? LookupType(name: protocolName)))
+        {
+            return true;
+        }
+
         // The handle library code holds an entity a program writes as (HandleTakenAsMe) stands for the entity, so it
         // obeys what the entity obeys: an adapter over it (`WhereEmittable[T, Roamed[Steps]]`) needs its source to be
         // emittable, and `==` on two handles compares the entities.

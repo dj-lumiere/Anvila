@@ -272,6 +272,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // CreatorExpression (codegen's record-creator path builds the { i1, T } aggregate),
         // instead of codegen hand-building the insertvalue at the store site.
         Expression effectiveVal =
+            TryWrapStored(targetType: asgn.Target.ResolvedType, init: loweredVal) ??
             TryWrapMemberMaybe(target: asgn.Target, value: loweredVal) ??
             TryWrapVariantArm(targetType: asgn.Target.ResolvedType, init: loweredVal) ?? loweredVal;
         if (hoisted.Count == 0 && ReferenceEquals(objA: effectiveVal, objB: asgn.Value))
@@ -288,6 +289,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     {
         (List<Statement> hoisted, Expression loweredInit) = LowerExpr(expr: vd.Initializer!);
         Expression effectiveInit =
+            TryWrapStored(targetType: vd.Type?.ResolvedType, init: loweredInit) ??
             TryWrapCarrier(varType: vd.Type, init: loweredInit) ?? loweredInit;
         if (hoisted.Count == 0 && ReferenceEquals(objA: effectiveInit, objB: vd.Initializer))
         {
@@ -302,7 +304,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     {
         (List<Statement> hoisted, Expression loweredVal) = LowerExpr(expr: ret.Value!);
         // A value of one of the variant's types, returned as the variant: `return text` from `-> S64 | Text`.
-        loweredVal = TryWrapVariantArm(targetType: _returnType, init: loweredVal) ?? loweredVal;
+        loweredVal = TryWrapStored(targetType: _returnType, init: loweredVal) ??
+                     TryWrapVariantArm(targetType: _returnType, init: loweredVal) ?? loweredVal;
         if (hoisted.Count == 0 && ReferenceEquals(objA: loweredVal, objB: ret.Value))
         {
             return ([], stmt);
@@ -647,7 +650,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                                  ctx.Registry.LookupVariable(name: named.Name) is { } declared
             ? declared.Type
             : loweredLeft.ResolvedType;
-        Expression wrappedRight = TryWrapMemberMaybe(target: loweredLeft, value: loweredRight) ??
+        Expression wrappedRight = TryWrapStored(targetType: targetType, init: loweredRight) ??
+                                  TryWrapMemberMaybe(target: loweredLeft, value: loweredRight) ??
                                   TryWrapVariantArm(targetType: targetType, init: loweredRight) ?? loweredRight;
         List<Statement> hoisted = Concat(a: leftH, b: rightH);
         if (hoisted.Count == 0 && ReferenceEquals(objA: loweredLeft, objB: assignBin.Left) &&
@@ -998,7 +1002,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         TypeSymbol? paramType = callRoutine?.Parameters
                                           .FirstOrDefault(predicate: p => p.Name == namedArg.Name)
                                          ?.Type ?? FieldTypeOf(constructed: constructed, name: namedArg.Name);
-        Expression wrappedValue = TryWrapVariantArm(targetType: paramType, init: loweredValue) ??
+        Expression wrappedValue = TryWrapStored(targetType: paramType, init: loweredValue) ??
+                                  TryWrapVariantArm(targetType: paramType, init: loweredValue) ??
                                   TryWrapMaybe(targetType: paramType, value: loweredValue) ??
                                   loweredValue;
         // The named argument carries its value's type: a wrapped value changes it.
@@ -1041,7 +1046,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         TypeSymbol? paramType = callRoutine != null && posArgIdx < callRoutine.Parameters.Count
             ? callRoutine.Parameters[index: posArgIdx].Type
             : FieldTypeAt(constructed: constructed, index: posArgIdx);
-        return TryWrapVariantArm(targetType: paramType, init: lowered) ??
+        return TryWrapStored(targetType: paramType, init: lowered) ??
+               TryWrapVariantArm(targetType: paramType, init: lowered) ??
                TryWrapMaybe(targetType: paramType, value: lowered) ??
                lowered;
     }
@@ -1913,6 +1919,72 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     // --- Carrier wrap lowering ----------------------------------------------------
 
     /// <summary>
+    /// A value of a concrete type going into a place that stores a value of a protocol (<c>Dispatched[P]</c>, or a
+    /// <c>Dispatched[P]?</c>): the value is kept with its type hash by the library routine for its kind, an entity
+    /// (or a Mielia entity's handle) by its own bits, a record as a copy in memory of its own. The type is noted as
+    /// one the protocol's dispatch routines switch over. Returns null when the target stores no protocol value or
+    /// the value is one already.
+    /// </summary>
+    private Expression? TryWrapStored(TypeSymbol? targetType, Expression init)
+    {
+        TypeSymbol? dispatched = targetType;
+        bool optional = false;
+        if (targetType != null && CarrierBaseName(type: targetType) == MaybeTypeName &&
+            targetType.TypeArguments is [{ } held] && TypeRegistry.DispatchedProtocol(type: held) != null)
+        {
+            dispatched = held;
+            optional = true;
+        }
+
+        if (TypeRegistry.DispatchedProtocol(type: dispatched) is not { } protocol ||
+            init is LiteralExpression { LiteralType: TokenType.NoneValue } ||
+            init.ResolvedType is not { } concrete || TypeRegistry.DispatchedProtocol(type: concrete) != null ||
+            concrete is GenericParameterTypeSymbol or ErrorTypeSymbol || CarrierBaseName(type: concrete) == MaybeTypeName)
+        {
+            return null;
+        }
+
+        bool byBits = concrete is EntityTypeSymbol || TypeRegistry.DispatchArmEntity(type: concrete) != null;
+        string helper = byBits
+            ? RuntimeContract.Dispatch.KeepInline
+            : RuntimeContract.Dispatch.KeepRecord;
+        if (ctx.Registry.LookupDispatchHelper(name: helper) is not { } helperDef ||
+            ctx.Registry.LookupType(name: "U32") is not { } u32)
+        {
+            return null;
+        }
+
+        RoutineInfo keep = ctx.Registry.GetOrCreateRoutineResolution(genericDef: helperDef,
+            typeArguments: [protocol, concrete]);
+        var hash = new LiteralExpression(Value: TypeRegistry.DispatchTypeHash(type: concrete).ToString(),
+            LiteralType: TokenType.U32Literal,
+            Location: init.Location) { ResolvedType = u32 };
+        Expression wrapped = new CallExpression(
+            Callee: new IdentifierExpression(Name: helper, Location: init.Location) { ResolvedType = keep.ReturnType },
+            Arguments:
+            [
+                new NamedArgumentExpression(Name: "value", Value: init, Location: init.Location)
+                {
+                    ResolvedType = concrete
+                },
+                new NamedArgumentExpression(Name: "type_hash", Value: hash, Location: init.Location)
+                {
+                    ResolvedType = u32
+                }
+            ],
+            Location: init.Location)
+        {
+            ResolvedRoutine = keep,
+            ResolvedType = dispatched,
+            LoweringKind = CallLoweringKind.DirectRoutine
+        };
+        ctx.Registry.NoteDispatchArm(dispatched: dispatched!, concrete: concrete);
+        return optional
+            ? TryWrapMaybe(targetType: targetType, value: wrapped) ?? wrapped
+            : wrapped;
+    }
+
+    /// <summary>
     /// Implicit carrier-wrap rewrite for variable declarations:
     /// <c>var m: Optional[T] = expr</c> where <c>expr : T</c> is rewritten to
     /// <c>var m: Optional[T] = Optional[T](present: true, value: expr)</c>.
@@ -2228,7 +2300,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             (List<Statement> h, Expression low) = LowerExpr(expr: el);
             HoistAfter(hoisted: hoisted, setup: h, earlier: lowered);
             // An element of a variant collection (`List[Int | Text]`) is held as the variant.
-            lowered.Add(item: TryWrapVariantArm(targetType: elementType, init: low) ?? low);
+            lowered.Add(item: TryWrapStored(targetType: elementType, init: low) ??
+                              TryWrapVariantArm(targetType: elementType, init: low) ?? low);
         }
 
         return (hoisted, lowered);

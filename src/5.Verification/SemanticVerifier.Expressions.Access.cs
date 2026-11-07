@@ -1634,6 +1634,7 @@ public sealed partial class SemanticVerifier
                 return ErrorTypeSymbol.Instance;
             }
 
+            typeArgs = _typeResolver.StoredTypeArguments(genericDef: type, typeArguments: typeArgs);
             ValidateGenericConstraints(genericDef: type,
                 typeArgs: typeArgs,
                 location: creator.Location);

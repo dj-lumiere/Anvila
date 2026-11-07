@@ -4501,6 +4501,15 @@ public sealed partial class TypeRegistry
                 : null;
         }
 
+        // A stored value of a protocol is copied by the routine the builder writes for it (a record copy kept in
+        // memory of its own, one more holder of a handle), or not at all when it keeps entities.
+        if (DispatchedProtocol(type: type) != null)
+        {
+            return IsEntityKind(type: type)
+                ? null
+                : own.FirstOrDefault(predicate: m => m.Name == RuntimeContract.Duplication.Share && m.Parameters.Count == 0);
+        }
+
         if (type is RecordTypeSymbol rec)
         {
             // A value aggregate holding an entity (a tuple or variant holding a `Battery`) is never copied by

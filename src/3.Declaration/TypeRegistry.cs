@@ -2375,6 +2375,7 @@ public sealed partial class TypeRegistry
             EnqueueDiscoveredResolution(resolved: resolved);
         }
 
+        NoteDispatchedType(resolved: resolved);
         return resolved;
     }
 

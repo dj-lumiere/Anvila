@@ -347,7 +347,7 @@ public sealed partial class SemanticVerifier
             return AnalyzeGenericTypeConstructorCall(generic: generic,
                 typeId: typeId,
                 typeSymbol: typeInfo,
-                typeArgs: typeArgs);
+                typeArgs: _typeResolver.StoredTypeArguments(genericDef: typeInfo, typeArguments: typeArgs));
         }
 
         // A family of specializations (`routine S64.to[U8]()`, ...) is picked by the written type arguments.

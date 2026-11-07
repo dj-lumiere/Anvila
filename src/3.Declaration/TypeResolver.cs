@@ -230,6 +230,55 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
+    /// Resolves the type of a place that keeps a value (a variable, a member variable, a routine's result): a protocol
+    /// written there is a stored value of the protocol, <c>Dispatched[P]</c>, a type hash and an address that a call
+    /// on it dispatches through. A protocol as a type argument of such a place (<c>List[Enemy]</c>) is one already.
+    /// </summary>
+    public TypeSymbol ResolveStoredType(TypeExpression? typeExpr)
+    {
+        TypeSymbol stored = StoredValueType(type: ResolveType(typeExpr: typeExpr));
+        if (typeExpr != null)
+        {
+            typeExpr.ResolvedType = stored;
+        }
+
+        return stored;
+    }
+
+    /// <summary>The stored value of <paramref name="type"/> when it is a protocol a program's own place may keep
+    /// (<see cref="ResolveStoredType"/>), else <paramref name="type"/> itself.</summary>
+    internal TypeSymbol StoredValueType(TypeSymbol type)
+    {
+        if (type is not ProtocolTypeSymbol { IsGenericDefinition: false } protocol ||
+            _sa.IsStdlibFile(filePath: _sa._currentFilePath) ||
+            _sa._registry.LookupType(name: RuntimeContract.Dispatch.Dispatched) is not { } dispatchedDef)
+        {
+            return type;
+        }
+
+        return _sa._registry.GetOrCreateResolution(genericDef: dispatchedDef, typeArguments: [protocol]);
+    }
+
+    /// <summary>The type arguments of <paramref name="genericDef"/> with each protocol among them a stored value of it,
+    /// when the generic type keeps values of its arguments (<see cref="StoresProtocolArguments"/>).</summary>
+    public List<TypeSymbol> StoredTypeArguments(TypeSymbol genericDef, List<TypeSymbol> typeArguments)
+    {
+        return StoresProtocolArguments(genericDef: genericDef)
+            ? typeArguments.Select(selector: StoredValueType).ToList()
+            : typeArguments;
+    }
+
+    /// <summary>Whether a protocol given as a type argument of <paramref name="genericDef"/> is a stored value of it:
+    /// every generic type but a protocol (<c>Iterable[T]</c> names a protocol) and an access token (a token over a
+    /// protocol is a type parameter of the routine that takes it).</summary>
+    private static bool StoresProtocolArguments(TypeSymbol genericDef)
+    {
+        return genericDef is not ProtocolTypeSymbol &&
+               !RuntimeContract.AccessTokenTypes.Contains(item: genericDef.Name) &&
+               genericDef.Name != RuntimeContract.Dispatch.Dispatched;
+    }
+
+    /// <summary>
     /// Mielia representation unification, centralized: in a Mielia USER file an <c>entity E</c> is a
     /// <c>Roamed[E]</c> biased-RC handle, so any entity type resolved through <see cref="ResolveType"/>
     /// (fields, parameters, returns, local annotations, container element types — every slot) is
@@ -533,7 +582,7 @@ internal sealed class TypeResolver
         var elementTypes = new List<TypeSymbol>();
         foreach (TypeExpression argExpr in typeExpr.GenericArguments!)
         {
-            TypeSymbol argType = ResolveType(typeExpr: argExpr);
+            TypeSymbol argType = StoredValueType(type: ResolveType(typeExpr: argExpr));
             elementTypes.Add(item: argType);
         }
 
@@ -658,6 +707,11 @@ internal sealed class TypeResolver
         foreach (TypeExpression argExpr in typeExpr.GenericArguments!)
         {
             TypeSymbol argType = ResolveType(typeExpr: argExpr);
+            if (StoresProtocolArguments(genericDef: genericDef))
+            {
+                argType = StoredValueType(type: argType);
+            }
+
             // A parameter that needs an entity (`Watched[T]`) names the entity itself. In a file that holds
             // entities by their shared handle the argument resolved to that handle, so it is taken back to the
             // entity it stands for.

@@ -1291,6 +1291,24 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
+        // A value of a type that obeys a protocol goes into a place that stores a value of the protocol: the lowering
+        // keeps it there with its type hash.
+        if (Declaration.TypeRegistry.DispatchedProtocol(type: target) is { } storedProtocol)
+        {
+            return Declaration.TypeRegistry.DispatchedProtocol(type: source) == null && source is not GenericParameterTypeSymbol &&
+                   source.Category is TypeCategory.Record or TypeCategory.Entity or TypeCategory.Choice
+                       or TypeCategory.Flags or TypeCategory.Variant or TypeCategory.Crashable &&
+                   ImplementsProtocol(type: Unroamed(type: source), protocolName: storedProtocol.Name);
+        }
+
+        // ... and into a `P?` place as a present value.
+        if (IsMaybeType(type: target) && target.TypeArguments is [{ } maybeHeld] &&
+            Declaration.TypeRegistry.DispatchedProtocol(type: maybeHeld) != null && !IsMaybeType(type: source) &&
+            IsAssignableTo(source: source, target: maybeHeld))
+        {
+            return true;
+        }
+
         // Protocol conformance.
         if (target.Category == TypeCategory.Protocol)
         {

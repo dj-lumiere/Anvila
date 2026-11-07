@@ -475,6 +475,11 @@ public sealed partial class SemanticVerifier
     /// <summary>The protocol <paramref name="type"/> is or holds as a type argument, at any depth.</summary>
     private static ProtocolTypeSymbol? ProtocolIn(TypeSymbol type)
     {
+        if (Declaration.TypeRegistry.DispatchedProtocol(type: type) != null)
+        {
+            return null;
+        }
+
         return type is ProtocolTypeSymbol protocol
             ? protocol
             : (type.TypeArguments ?? []).Select(selector: ProtocolIn).FirstOrDefault(predicate: p => p != null);
@@ -1209,8 +1214,8 @@ public sealed partial class SemanticVerifier
 
         if (varDecl.Type != null)
         {
-            // Explicit type annotation
-            varType = ResolveType(typeExpr: varDecl.Type);
+            // Explicit type annotation. A protocol written there keeps a stored value of it.
+            varType = _typeResolver.ResolveStoredType(typeExpr: varDecl.Type);
 
             // Mielia: an entity-reference annotation (`x: E` / `x: E?`) stores a `Roamed[E]` handle.
             varType = SharedEntities.ResolveAnnotation(annotated: varType, typeExpr: varDecl.Type);

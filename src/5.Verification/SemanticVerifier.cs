@@ -607,6 +607,7 @@ public sealed partial class SemanticVerifier
             Mark(label: "Phase 7 Instantiation");
             RunPhase8Postprocessing(program: program);
             Mark(label: "Phase 8 Postprocessing");
+            SynthesizeDispatchBodies();
             // Stage ② of the pull architecture: after Phase 8 lowered subscript/operator calls to real
             // getitem/member CallExpressions, run the demand collector so it walks from the entry points and
             // monomorphizes exactly the referenced generic closure. The AnalyzeMultiple path does this after
@@ -775,6 +776,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void RunPhase5SemanticAnalysis(Program program)
     {
+        _registry.PrepareDispatchMembers();
         AnalyzeBodies(program: program);
         CheckSharedDeclarationsAreBound(program: program);
         if (program.Location.FileName is { Length: > 0 } ownFile)
@@ -1531,6 +1533,83 @@ public sealed partial class SemanticVerifier
         foreach ((string key, Statement body) in pctx.VariantBodies)
         {
             _variantBodies[key: key] = body;
+        }
+    }
+
+    /// <summary>
+    /// Writes the routines of each stored protocol value (<c>Dispatched[P]</c>) once the program is lowered: the
+    /// lowering noted every concrete type a place of the protocol is given, so each dispatch switches over exactly
+    /// those (<see cref="DispatchSynthesis"/>). The bodies are analyzed and lowered as the late recovery variants are,
+    /// and join the builder-written bodies the demand collection walks.
+    /// </summary>
+    private void SynthesizeDispatchBodies()
+    {
+        List<(RoutineInfo Routine, Statement Body)> written = new DispatchSynthesis(registry: _registry).Run();
+        if (written.Count == 0)
+        {
+            return;
+        }
+
+        CheckDispatchTypeHashes();
+        var fresh = new Dictionary<string, Statement>(comparer: StringComparer.Ordinal);
+        var routines = new Dictionary<string, RoutineInfo>(comparer: StringComparer.Ordinal);
+        foreach ((RoutineInfo routine, Statement body) in written)
+        {
+            AnalyzeCompilerGeneratedBody(routineInfo: routine, body: body);
+            fresh[key: routine.RegistryKey] = body;
+            routines[key: routine.RegistryKey] = routine;
+        }
+
+        LowerLanguageEntitiesInVariantBodies(bodies: fresh);
+        var dctx = new DesugaringContext(registry: _registry,
+            routineBodies: _routineBodies,
+            target: _target,
+            buildMode: _buildMode) { VariantBodies = fresh, RestoredVariantKeys = _memo.RestoredVariantKeys };
+        new PresetInliningPass(ctx: dctx).RunOnVariantBodies();
+        new ControlFlowLoweringPass(ctx: dctx).RunOnVariantBodies();
+        new GenericCallLoweringPass(ctx: dctx).RunOnVariantBodies();
+        var pctx = new PostprocessingContext(registry: _registry,
+            variantBodies: dctx.VariantBodies,
+            synthesizedBodies: new Dictionary<string, Statement>(),
+            target: _target,
+            buildMode: _buildMode,
+            monomorphizedBodies: _instantiatedGenericBodies);
+        new PostprocessingPipeline(ctx: pctx).RunGlobal();
+        new ScopeTeardownLoweringPass(ctx: pctx).RunOnVariantBodies();
+        new TemporaryTeardownPass(ctx: pctx).RunOnBodies(bodies: pctx.VariantBodies);
+        foreach ((string key, Statement body) in pctx.VariantBodies)
+        {
+            if (routines.TryGetValue(key: key, value: out RoutineInfo? routine))
+            {
+                _synthesizedBodies[key: key] = (routine, body);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Two types of one build with the same type hash would take each other's arm in a dispatch: a build error naming
+    /// both, for every pair among the types a protocol place is given.
+    /// </summary>
+    private void CheckDispatchTypeHashes()
+    {
+        var seen = new Dictionary<uint, TypeSymbol>();
+        foreach (RecordTypeSymbol dispatched in _registry.DispatchedTypes)
+        {
+            foreach (TypeSymbol arm in _registry.DispatchArms(dispatched: dispatched))
+            {
+                TypeSymbol named = TypeRegistry.DispatchArmEntity(type: arm) ?? arm;
+                uint hash = TypeRegistry.DispatchTypeHash(type: arm);
+                if (seen.TryGetValue(key: hash, value: out TypeSymbol? other) && other.FullName != named.FullName)
+                {
+                    ReportError(code: SemanticDiagnosticCode.DispatchTypeHashCollision,
+                        message: $"'{named.Name}' and '{other.Name}' have the same type hash ({hash}), so a place of a " +
+                                 "protocol that holds either couldn't tell them apart. Rename one of the two types.",
+                        location: named.Location ?? other.Location ?? dispatched.Location!);
+                    continue;
+                }
+
+                seen[key: hash] = named;
+            }
         }
     }
 
@@ -2855,6 +2934,7 @@ public sealed partial class SemanticVerifier
         Mark(label: "Phase 4 per-file -> syntax-only desugaring");
 
         // Phase 5: Analyze bodies per file (expressions need correct import scoping)
+        _registry.PrepareDispatchMembers();
         foreach ((Program program, string filePath) in files)
         {
             RestoreImportState(filePath: filePath,
@@ -3011,6 +3091,7 @@ public sealed partial class SemanticVerifier
         _registry.SourceFile = string.Empty;
 
         mark(obj: "Phase 8 per-file -> type-aware postprocessing");
+        SynthesizeDispatchBodies();
 
         // Stage ② of the pull architecture, in SHADOW: all programs are now fully lowered
         // (subscript/operator → real call expressions), so the demand collector can walk from

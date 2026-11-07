@@ -609,15 +609,17 @@ public sealed partial class SemanticVerifier
                 viaOptional.Object.ResolvedType is { TypeArguments: [{ } held] } optionalType)
             {
                 // A record is copied out. An entity or a variant is reached where it is kept, so a call that
-                // changes it acts on the original.
-                string reach = held is RecordTypeSymbol
-                    ? RuntimeContract.ReachThroughOptional
-                    : RuntimeContract.ReachInPlaceThroughOptional;
+                // changes it acts on the original. So is a stored value of a protocol that keeps entities.
+                bool inPlace = held is not RecordTypeSymbol ||
+                               TypeRegistry.DispatchedProtocol(type: held) != null && registry.IsEntityKind(type: held);
+                string reach = inPlace
+                    ? RuntimeContract.ReachInPlaceThroughOptional
+                    : RuntimeContract.ReachThroughOptional;
                 if (registry.LookupMemberRoutineOverload(type: optionalType, memberRoutineName: reach, argTypes: []) is
                     { } unwrap)
                 {
                     TypeSymbol reachedType = held;
-                    if (held is not RecordTypeSymbol && unwrap.ReturnType is { TypeArguments: [{ } reachedOf] } token &&
+                    if (inPlace && unwrap.ReturnType is { TypeArguments: [{ } reachedOf] } token &&
                         reachedOf.FullName == held.FullName)
                     {
                         reachedType = token;
