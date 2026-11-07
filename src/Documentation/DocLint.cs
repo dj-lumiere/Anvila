@@ -79,7 +79,10 @@ public static class DocLint
         bool revare = language == Language.Revare;
         foreach (ISyntaxTreeNode node in program.Declarations)
         {
-            if (node is RoutineDeclaration { IsScriptEntry: false, IsBuilderWritten: false } routine)
+            // The program's entry point, `routine start()`, is what the file is about: it has no parameters or result
+            // to describe, so it is left out like the `start` a script's loose statements become.
+            if (node is RoutineDeclaration { IsScriptEntry: false, IsBuilderWritten: false } routine &&
+                !IsEntryPoint(routine: routine))
             {
                 CheckRoutine(routine: routine, revare: revare, requireDoc: revare || isImported,
                     notes: notes);
@@ -87,6 +90,11 @@ public static class DocLint
         }
 
         return notes;
+    }
+
+    private static bool IsEntryPoint(RoutineDeclaration routine)
+    {
+        return routine.Name == "start" && routine.OwnerName is null && routine.Parameters.Count == 0;
     }
 
     private static void CheckRoutine(RoutineDeclaration routine, bool revare, bool requireDoc, List<DocNote> notes)
