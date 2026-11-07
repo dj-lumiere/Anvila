@@ -1181,7 +1181,7 @@ public sealed partial class SemanticVerifier
             {
                 IdentifierExpression id when IsReturnEndedLocal(name: id.Name) &&
                                              _registry.LookupVariable(name: id.Name) is { } local &&
-                                             IsRawEntityType(type: local.Type) =>
+                                             IsReturnHandedType(type: local.Type) =>
                     new StealExpression(Operand: id, Location: id.Location) { IsImplicitMove = true },
                 StealExpression { IsImplicitMove: false, Operand: IdentifierExpression stolen } written
                     when IsReturnEndedLocal(name: stolen.Name) => WarnStealInReturn(steal: written, local: stolen),
@@ -1198,6 +1198,14 @@ public sealed partial class SemanticVerifier
                 ? namedItem with { Value = replaced }
                 : replaced;
         }
+    }
+
+    /// <summary>Whether a local of <paramref name="type"/> handed over in a return moves by itself: an entity, or an
+    /// <c>E?</c> (an entity that may be absent, the same original).</summary>
+    private static bool IsReturnHandedType(TypeSymbol type)
+    {
+        return IsRawEntityType(type: type) ||
+               type is { BareName: "Optional", TypeArguments: [{ } inner] } && IsRawEntityType(type: inner);
     }
 
     /// <summary>Reports RV-W259 on a written <c>steal</c> of a local that ends at the return, with the quick fix that
