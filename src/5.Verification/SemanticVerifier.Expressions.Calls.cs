@@ -2296,7 +2296,9 @@ public sealed partial class SemanticVerifier
             }
 
             // A parameter that takes an entity, or an `E?` (an entity that may be absent: the same original).
-            if (cParam is { Type: var cParamType } && IsEntityOrOptionalEntity(type: cParamType) &&
+            // A place that stores a value of a protocol keeping entities takes an entity the same way.
+            if (cParam is { Type: var cParamType } &&
+                (IsEntityOrOptionalEntity(type: cParamType) || StoresEntities(type: cParamType)) &&
                 ReadsKeptEntity(value: cArgValue, includeVariables: true) &&
                 creatorArgTypes[index: ci] is { } cArgEntity && IsEntityOrOptionalEntity(type: cArgEntity) &&
                 ChecksHolderOf(type: cArgEntity))
@@ -2311,6 +2313,14 @@ public sealed partial class SemanticVerifier
                     location: cArgValue.Location);
             }
         }
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a stored value of a protocol keeping entities, or a <c>P?</c> of
+    /// one.</summary>
+    private bool StoresEntities(TypeSymbol type)
+    {
+        TypeSymbol held = type is { BareName: "Optional", TypeArguments: [{ } inner] } ? inner : type;
+        return Declaration.TypeRegistry.DispatchedProtocol(type: held) != null && _registry.IsEntityKind(type: held);
     }
 
     private static bool IsEntityOrOptionalEntity(TypeSymbol type)

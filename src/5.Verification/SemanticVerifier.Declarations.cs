@@ -1517,6 +1517,12 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private string WrittenTypeName(TypeSymbol type)
     {
+        // A stored value of a protocol is written as the protocol.
+        if (TypeRegistry.DispatchedProtocol(type: type) is { } storedProtocol)
+        {
+            return storedProtocol.Name;
+        }
+
         if (!_registry.CompilationRules.ChecksAccessTokens &&
             type.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying or RuntimeContract.Roamed &&
             type.TypeArguments is [{ } held])

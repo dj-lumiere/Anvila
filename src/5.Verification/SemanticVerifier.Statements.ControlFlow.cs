@@ -651,6 +651,28 @@ public sealed partial class SemanticVerifier
         {
             CheckWhenExhaustiveness(whenStmt: whenStmt, matchedType: matchedType);
         }
+
+        CheckStoredProtocolWhenHasElse(whenStmt: whenStmt, matchedType: matchedType);
+    }
+
+    /// <summary>
+    /// A <c>when</c> on a stored value of a protocol takes the value by its type, and the types that obey a protocol are
+    /// not a closed list a program writes down (another one may obey it tomorrow): it needs an <c>else</c> arm.
+    /// </summary>
+    private void CheckStoredProtocolWhenHasElse(WhenStatement whenStmt, TypeSymbol matchedType)
+    {
+        if (Declaration.TypeRegistry.DispatchedProtocol(type: ValueTokenTarget(type: matchedType) ?? matchedType) is not
+                { } protocol ||
+            whenStmt.Clauses.Any(predicate: c => c.Pattern is WildcardPattern or ElsePattern or IdentifierPattern))
+        {
+            return;
+        }
+
+        _exhaustiveWhens.Remove(item: whenStmt);
+        ReportError(code: SemanticDiagnosticCode.NonExhaustiveMatch,
+            message: $"This `when` takes a value of '{protocol.Name}' by its type, and any type with the routines of " +
+                     $"'{protocol.Name}' may be there. Add an `else` arm for the types the other arms don't name.",
+            location: whenStmt.Location);
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -477,6 +478,9 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             TypePattern when IsCheck(type: subjectType) || subjectType is VariantTypeSymbol
                 => true,
 
+            // A stored value of a protocol: its type hash is the type's.
+            TypePattern when StoredProtocolSubject(subjectType: subjectType) != null => true,
+
             // User choice `is CASE`: lowerable to a discriminant identity compare (subject `is` case value),
             // but only when the case name resolves — an unknown case is left for codegen (br failLabel).
             TypePattern choiceTp when subjectType is ChoiceTypeSymbol choiceCti =>
@@ -684,6 +688,10 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     subject: subject,
                     loc: loc,
                     boolType: boolType);
+
+            case TypePattern tp when StoredProtocolSubject(subjectType: subjectType) is { } stored:
+                return GetStoredProtocolTypePatternCondition(tp: tp, subject: subject, subjectType: subjectType!,
+                    stored: stored, loc: loc, boolType: boolType);
 
             case TypePattern tp when subjectType is ChoiceTypeSymbol choiceSubj:
                 return GetChoiceTypePatternCondition(tp: tp,
@@ -1090,6 +1098,105 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         return new MemberExpression(Object: subject,
             MemberName: Declaration.RuntimeContract.Carrier.PresentField,
             Location: loc) { ResolvedType = boolType };
+    }
+
+    /// <summary>The <c>Dispatched[P]</c> a <c>when</c> subject of <paramref name="subjectType"/> holds: itself, or the one
+    /// a token is on (an element a <c>for</c> hands out).</summary>
+    private static TypeSymbol? StoredProtocolSubject(TypeSymbol? subjectType)
+    {
+        if (TypeRegistry.DispatchedProtocol(type: subjectType) != null)
+        {
+            return subjectType;
+        }
+
+        return subjectType is RecordTypeSymbol
+               {
+                   GenericDefinition.Name: RuntimeContract.Modifying or RuntimeContract.Viewing, TypeArguments: [{ } held]
+               } && TypeRegistry.DispatchedProtocol(type: held) != null
+            ? held
+            : null;
+    }
+
+    /// <summary>
+    /// <c>is T as b</c> on a stored value of a protocol: the value's type hash is <c>T</c>'s, and <c>b</c> is read with
+    /// the library routine for <c>T</c>'s kind at the value's address: a write token on a Revare entity, a copy of a
+    /// record, one more holder of a Mielia entity's handle. The copy and the handle are <c>b</c>'s own and are torn
+    /// down with it.
+    /// </summary>
+    private (Expression? Cond, Statement? Binding) GetStoredProtocolTypePatternCondition(TypePattern tp,
+        Expression subject, TypeSymbol subjectType, TypeSymbol stored, SourceLocation loc, TypeSymbol? boolType)
+    {
+        // A token on the stored value is read where the value is.
+        Expression value = subject;
+        if (!ReferenceEquals(objA: subjectType, objB: stored) &&
+            ctx.Registry.LookupMemberRoutine(type: subjectType, memberRoutineName: "read_in_place") is { } readInPlace)
+        {
+            value = new CallExpression(
+                Callee: new MemberExpression(Object: subject, MemberName: "read_in_place", Location: loc)
+                {
+                    ResolvedType = subjectType
+                },
+                Arguments: [],
+                Location: loc)
+            {
+                ResolvedRoutine = readInPlace,
+                ResolvedType = stored,
+                LoweringKind = CallLoweringKind.DirectMemberRoutine
+            };
+        }
+
+        TypeSymbol armType = tp.Type.ResolvedType ?? ErrorTypeSymbol.Instance;
+        TypeSymbol? u32 = ctx.Registry.LookupType(name: "U32");
+        var cond = new BinaryExpression(
+            Left: MakeMemberAccess(subject: value, field: RuntimeContract.Dispatch.TypeHash, fieldType: u32, loc: loc),
+            Operator: BinaryOperator.Equal,
+            Right: new LiteralExpression(Value: TypeRegistry.DispatchTypeHash(type: armType).ToString(),
+                LiteralType: TokenType.U32Literal,
+                Location: loc) { ResolvedType = u32 },
+            Location: loc) { ResolvedType = boolType };
+        if (tp.VariableName == null)
+        {
+            return (cond, null);
+        }
+
+        (string helper, TypeSymbol typeArgument) = armType switch
+        {
+            EntityTypeSymbol => (RuntimeContract.Dispatch.ModifyAt, armType),
+            _ when TypeRegistry.DispatchArmEntity(type: armType) is { } entity => (RuntimeContract.Dispatch.HandleOut,
+                (TypeSymbol)entity),
+            _ => (RuntimeContract.Dispatch.CopyOut, armType)
+        };
+        if (ctx.Registry.LookupDispatchHelper(name: helper) is not { } helperDef ||
+            ctx.Registry.LookupType(name: "Addr") is not { } addr)
+        {
+            return (cond, null);
+        }
+
+        RoutineInfo read = ctx.Registry.GetOrCreateRoutineResolution(genericDef: helperDef, typeArguments: [typeArgument]);
+        var call = new CallExpression(
+            Callee: new IdentifierExpression(Name: helper, Location: loc) { ResolvedType = read.ReturnType },
+            Arguments:
+            [
+                new NamedArgumentExpression(Name: "at",
+                    Value: MakeMemberAccess(subject: value, field: RuntimeContract.Dispatch.Address, fieldType: addr,
+                        loc: loc),
+                    Location: loc) { ResolvedType = addr }
+            ],
+            Location: loc)
+        {
+            ResolvedRoutine = read,
+            ResolvedType = read.ReturnType,
+            LoweringKind = CallLoweringKind.DirectRoutine
+        };
+        TypeSymbol boundType = read.ReturnType ?? armType;
+        var binding = new DeclarationStatement(
+            Declaration: new VariableDeclaration(Name: tp.VariableName,
+                Type: TypeInfoToExpr(type: boundType, loc: loc),
+                Initializer: call,
+                Visibility: VisibilityModifier.Secret,
+                Location: loc),
+            Location: loc);
+        return (cond, binding);
     }
 
     /// <summary>Builds a member-access expression with a known field type.</summary>

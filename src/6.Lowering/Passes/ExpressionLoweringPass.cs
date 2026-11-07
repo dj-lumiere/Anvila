@@ -2727,6 +2727,23 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                     boolType: boolType));
         }
 
+        // `x is Boss` on a stored value of a protocol: its type hash is Boss's.
+        if (ipe.Pattern is TypePattern { Type.ResolvedType: { } storedArm } &&
+            TypeRegistry.DispatchedProtocol(type: operandType) != null &&
+            ctx.Registry.LookupType(name: "U32") is { } u32)
+        {
+            return (hoisted, new BinaryExpression(
+                Left: new MemberExpression(Object: loweredExpr, MemberName: RuntimeContract.Dispatch.TypeHash,
+                    Location: ipe.Location) { ResolvedType = u32 },
+                Operator: ipe.IsNegated
+                    ? BinaryOperator.NotEqual
+                    : BinaryOperator.Equal,
+                Right: new LiteralExpression(Value: TypeRegistry.DispatchTypeHash(type: storedArm).ToString(),
+                    LiteralType: TokenType.U32Literal,
+                    Location: ipe.Location) { ResolvedType = u32 },
+                Location: ipe.Location) { ResolvedType = boolType });
+        }
+
         if (ipe.Pattern is TypePattern tp)
         {
             (List<Statement> Hoisted, Expression Expr)? dispatched =

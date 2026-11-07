@@ -1485,7 +1485,10 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol? ElementTokenBinding(Expression initializer, TypeSymbol elementType)
     {
-        if (!_registry.Rules.ChecksAccessTokens || elementType is not EntityTypeSymbol ||
+        // A stored value of a protocol that keeps entities is read the same way: a token on the element.
+        bool storesEntity = Declaration.TypeRegistry.DispatchedProtocol(type: elementType) != null &&
+                            _registry.IsEntityKind(type: elementType);
+        if (!_registry.Rules.ChecksAccessTokens || elementType is not EntityTypeSymbol && !storesEntity ||
             initializer is not IndexExpression { Index: not RangeExpression } element ||
             element.Index.ResolvedType is RecordTypeSymbol { GenericDefinition.Name: "Range" } ||
             ElementContainerType(container: element.Object) is not { } containerType ||
@@ -1633,7 +1636,11 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                 message: KeptEntityMessage(action: $"You are keeping in '{varDecl.Name}'",
-                    value: varDecl.Initializer, type: varType),
+                    value: varDecl.Initializer,
+                    type: Declaration.TypeRegistry.DispatchedProtocol(type: varType) != null &&
+                          varDecl.Initializer.ResolvedType is { } initType
+                        ? initType
+                        : varType),
                 location: varDecl.Location);
         }
 

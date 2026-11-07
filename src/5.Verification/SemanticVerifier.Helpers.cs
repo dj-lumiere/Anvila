@@ -718,6 +718,12 @@ public sealed partial class SemanticVerifier
                         "which can change it. A read token only lets you read: pass a write token instead.",
                         location: argExpr.Location);
                 }
+                else if (argType is GenericParameterTypeSymbol &&
+                         Declaration.TypeRegistry.DispatchedProtocol(type: paramType) is { } storedProtocol)
+                {
+                    ReportTypeParameterIntoProtocolPlace(protocol: storedProtocol, argType: argType,
+                        location: argExpr.Location);
+                }
                 else if (OtherRealmOfSameType(source: argType, target: paramType) is { } crossing)
                 {
                     ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
@@ -887,7 +893,11 @@ public sealed partial class SemanticVerifier
         // (`xs.add_last(value: x)` with `x: T`): the call hands it over, so it takes `steal` like an entity does,
         // checked on the template. The standard library's own generic bodies hand values to lookup helpers that only
         // read them, and are not judged by this.
+        // An entity handed to a place that stores a value of a protocol keeping entities moves into it the same way.
         bool handsOverEntity = argType is EntityTypeSymbol && paramType is EntityTypeSymbol ||
+                               argType is EntityTypeSymbol &&
+                               Declaration.TypeRegistry.DispatchedProtocol(type: paramType) != null &&
+                               _registry.IsEntityKind(type: paramType) ||
                                !isOperator && argType is GenericParameterTypeSymbol &&
                                paramType is GenericParameterTypeSymbol && MayHoldEntity(type: argType) &&
                                !IsStdlibFile(filePath: _currentFilePath);
@@ -1035,7 +1045,8 @@ public sealed partial class SemanticVerifier
                    $"to values with 'needs RecordType {parameter}'.";
         }
 
-        string copy = ImplementsProtocol(type: type, protocolName: "Copyable")
+        string copy = Declaration.TypeRegistry.DispatchedProtocol(type: type) == null &&
+                      ImplementsProtocol(type: type, protocolName: "Copyable")
             ? ", or make an explicit copy with '.duplicate()'"
             : "";
         string fix = value is IndexExpression
@@ -1247,6 +1258,22 @@ public sealed partial class SemanticVerifier
         return type.FullName != other.FullName
             ? type.FullName
             : $"{type.Realm}::{type.FullName}";
+    }
+
+    /// <summary>
+    /// A value whose type is a type parameter (<c>T</c>, or the hidden one of a parameter written <c>e: Enemy</c>)
+    /// handed to a place that stores a value of a protocol: the type hash the value would carry depends on each use
+    /// of the routine, which isn't known where the value goes in.
+    /// </summary>
+    private void ReportTypeParameterIntoProtocolPlace(ProtocolTypeSymbol protocol, TypeSymbol argType,
+        SourceLocation location)
+    {
+        ReportError(code: SemanticDiagnosticCode.TypeParameterValueIntoProtocolPlace,
+            message: $"This puts a value of the type parameter '{argType.Name}' where a value of '{protocol.Name}' is " +
+                     $"stored, and a stored value keeps its own type, which isn't known inside a routine written for " +
+                     $"any type. Put the value in where its type is known (in the code that calls this routine), or " +
+                     $"take a value of '{protocol.Name}' that is stored already.",
+            location: location);
     }
 
     private bool IsAssignableTo(TypeSymbol source, TypeSymbol target)

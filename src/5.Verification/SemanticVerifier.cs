@@ -53,15 +53,59 @@ public sealed partial class SemanticVerifier
     /// <summary>Adds an error unless an identical one (same code/message/location) was already recorded.</summary>
     private void AddError(SemanticError error)
     {
+        error = error with { Message = ShowStoredProtocols(message: error.Message) };
         if (_seenErrors.Add(item: error))
         {
             _errors.Add(item: error);
         }
     }
 
+    /// <summary>A program writes a protocol where it stores a value of one, and the builder holds the value as
+    /// <c>Dispatched[P]</c>: a message names the type as the program wrote it, the protocol.</summary>
+    internal static string ShowStoredProtocols(string message)
+    {
+        const string stored = RuntimeContract.Dispatch.Dispatched + "[";
+        int at = message.IndexOf(value: stored, comparisonType: StringComparison.Ordinal);
+        while (at >= 0)
+        {
+            int start = at;
+            if (start >= "System.".Length &&
+                message.AsSpan(start: start - "System.".Length, length: "System.".Length).SequenceEqual(other: "System."))
+            {
+                start -= "System.".Length;
+            }
+
+            int open = at + stored.Length;
+            int depth = 1;
+            int close = open;
+            while (close < message.Length && depth > 0)
+            {
+                depth += message[index: close] switch
+                {
+                    '[' => 1,
+                    ']' => -1,
+                    _ => 0
+                };
+                close++;
+            }
+
+            if (depth != 0)
+            {
+                break;
+            }
+
+            string inner = message[open..(close - 1)];
+            message = message[..start] + inner + message[close..];
+            at = message.IndexOf(value: stored, startIndex: start, comparisonType: StringComparison.Ordinal);
+        }
+
+        return message;
+    }
+
     /// <summary>Adds a warning unless an identical one (same code/message/location) was already recorded.</summary>
     private void AddWarning(SemanticWarning warning)
     {
+        warning = warning with { Message = ShowStoredProtocols(message: warning.Message) };
         if (_seenWarnings.Add(item: warning))
         {
             _warnings.Add(item: warning);

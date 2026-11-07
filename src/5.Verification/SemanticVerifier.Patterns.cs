@@ -184,6 +184,15 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol patternType = ResolveType(typeExpr: typePat.Type);
 
+        // A stored value of a protocol (or a token on one, an element a `for` hands out) holds a value of one of the
+        // types that obey it.
+        if (Declaration.TypeRegistry.DispatchedProtocol(type: ValueTokenTarget(type: matchedType) ?? matchedType) is
+            { } storedProtocol)
+        {
+            HandleStoredProtocolTypePattern(typePat: typePat, protocol: storedProtocol, patternType: patternType);
+            return;
+        }
+
         // Check type compatibility between matched type and pattern type
         if (patternType is not ErrorTypeSymbol && matchedType is not ErrorTypeSymbol &&
             !IsTypePatternCompatible(matchedType: matchedType, patternType: patternType))
@@ -222,6 +231,62 @@ public sealed partial class SemanticVerifier
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// <c>is T as b</c> on a stored value of a protocol: <c>T</c> must obey the protocol, and <c>b</c> is the value as a
+    /// <c>T</c>: a write token on a Revare entity (the place keeps the entity, as an element read gives one), a copy
+    /// of a record, a Mielia entity's handle.
+    /// </summary>
+    private void HandleStoredProtocolTypePattern(TypePattern typePat, ProtocolTypeSymbol protocol,
+        TypeSymbol patternType)
+    {
+        if (patternType is ErrorTypeSymbol)
+        {
+            return;
+        }
+
+        if (patternType.Category is not (TypeCategory.Record or TypeCategory.Entity or TypeCategory.Crashable) ||
+            Declaration.TypeRegistry.DispatchedProtocol(type: patternType) != null ||
+            !ImplementsProtocol(type: Unroamed(type: patternType), protocolName: protocol.Name))
+        {
+            ReportError(code: SemanticDiagnosticCode.PatternTypeMismatch,
+                message: $"'is {Unroamed(type: patternType).Name}' can never match here: the value is one of the types " +
+                         $"that obey '{protocol.Name}', and '{Unroamed(type: patternType).Name}' doesn't. Name a type " +
+                         $"that has the routines of '{protocol.Name}'.",
+                location: typePat.Location);
+            if (typePat.VariableName != null)
+            {
+                DeclarePatternVariable(name: typePat.VariableName, type: ErrorTypeSymbol.Instance,
+                    location: typePat.Location);
+            }
+
+            return;
+        }
+
+        if (typePat.Bindings is { Count: > 0 })
+        {
+            ReportError(code: SemanticDiagnosticCode.PatternTypeMismatch,
+                message: $"An 'is {patternType.Name}' arm on a value of '{protocol.Name}' binds the whole value with " +
+                         "'as', not its member variables. Write 'as' and a name, then read the member variables " +
+                         "from it.",
+                location: typePat.Location);
+            return;
+        }
+
+        if (typePat.VariableName == null)
+        {
+            return;
+        }
+
+        TypeSymbol bound = patternType;
+        if (patternType is EntityTypeSymbol && _registry.LookupType(name: Declaration.RuntimeContract.Modifying) is
+                { } modifyingDef)
+        {
+            bound = _registry.GetOrCreateResolution(genericDef: modifyingDef, typeArguments: [patternType]);
+        }
+
+        DeclarePatternVariable(name: typePat.VariableName, type: bound, location: typePat.Location);
     }
 
     /// <summary>
