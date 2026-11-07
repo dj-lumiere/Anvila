@@ -1049,9 +1049,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // which `skip` already keeps alive, and literals: nothing it reads is torn down, so it needs no spill.
         // Spilling would also move `skip` off the local and free the value being returned.
         if (retVal is null or IdentifierExpression ||
-            retVal is CreatorExpression { MemberVariables: var carrierMembers } &&
-            ReturnedName(stmt: exit) is { } carried && carried == skip &&
-            carrierMembers.All(predicate: m => m.Value is IdentifierExpression or LiteralExpression) ||
+            retVal is CreatorExpression carrierValue &&
+            ReturnedName(stmt: exit) is { } carried && carried == skip && ReadsOnlyNamesAndLiterals(carrier: carrierValue) ||
             !WillDestroyAny(live: live, from: from, skip: skip))
         {
             return exit;
@@ -1452,19 +1451,41 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             } => released.Name,
             // A recovery variant's `return x` wrapped in its carrier (`return Optional(present: true, value: x)`)
             // still returns `x`: it moves out, as RecordCopyLoweringPass treats it.
-            ReturnStatement
-            {
-                Value: CreatorExpression
-                {
-                    ResolvedType.BareName: RuntimeContract.OptionalCarrier or RuntimeContract.CheckCarrier,
-                    MemberVariables: var members
-                }
-            } => members.Select(selector: m => m.Value)
-                        .OfType<IdentifierExpression>()
-                        .FirstOrDefault()
-                       ?.Name,
+            // The carrier of a routine that returns a carrier itself (`Optional[Optional[Text]]`) wraps it twice.
+            ReturnStatement { Value: CreatorExpression carrier } => CarriedName(carrier: carrier),
             _ => null
         };
+    }
+
+    /// <summary>The local a recovery carrier, however deeply nested, holds as its value, or null.</summary>
+    private static string? CarriedName(CreatorExpression carrier)
+    {
+        if (carrier.ResolvedType?.BareName is not (RuntimeContract.OptionalCarrier or RuntimeContract.CheckCarrier))
+        {
+            return null;
+        }
+
+        foreach ((string _, Expression value) in carrier.MemberVariables)
+        {
+            switch (value)
+            {
+                case IdentifierExpression id:
+                    return id.Name;
+                case CreatorExpression inner when CarriedName(carrier: inner) is { } name:
+                    return name;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether a recovery carrier, and the carriers it holds, read only names and literals.</summary>
+    private static bool ReadsOnlyNamesAndLiterals(CreatorExpression carrier)
+    {
+        return carrier.MemberVariables.All(predicate: m => m.Value is IdentifierExpression or LiteralExpression ||
+                                                           m.Value is CreatorExpression inner &&
+                                                           CarriedName(carrier: inner) != null &&
+                                                           ReadsOnlyNamesAndLiterals(carrier: inner));
     }
 
     private static List<Owned> Copy(List<Owned> live)

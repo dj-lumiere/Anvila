@@ -401,8 +401,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         // Checked operators and subscripts in the body are failable calls too: spell them out before the
         // propagation below, so their failures become this variant's carrier instead of a crash. A library
         // routine recovered only for the routine values it reaches keeps its own operators as they are.
+        // The registry lets a call to a member of a specialization family (`me.lines().to[List[Text]]()` in a Mielia
+        // surface routine) be re-picked on its concrete receiver, as it is in the plain body.
         Statement variantSourceBody =
-            GenericAstRewriter.RewriteStatement(stmt: baseBody, subs: new Dictionary<string, string>());
+            GenericAstRewriter.RewriteStatement(stmt: baseBody, subs: new Dictionary<string, string>(),
+                typeSubs: new Dictionary<string, TypeSymbol>(), registry: registry);
         if (resolveFailurePoints)
         {
             variantSourceBody = FailurePointCalls.Resolve(body: variantSourceBody, registry: registry);
