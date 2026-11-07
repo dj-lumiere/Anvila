@@ -426,7 +426,7 @@ internal static class PresetEvaluation
         var psi = new ProcessStartInfo
         {
             FileName = executable,
-            ArgumentList = { "buildandrun", evaluatorEntry },
+            ArgumentList = { "run", evaluatorEntry },
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,

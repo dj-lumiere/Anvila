@@ -208,7 +208,7 @@ internal partial class Program
             : 0;
 
         (int exit, string stdout, string stderr, bool timedOut) = RunSelf(
-            arguments: [BuildAndRunCommand, program],
+            arguments: [RunCommand, program],
             input: ReadIfExists(path: stem + ".input") ?? "");
         if (timedOut)
         {

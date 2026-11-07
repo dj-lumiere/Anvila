@@ -1,6 +1,6 @@
 # Kills any lingering Revare or Mielia resident compile-daemon before a build.
 #
-# A daemon (spawned by a non-jit `build`/`buildandrun`) runs the OLD Revare.dll and holds an open
+# A daemon (spawned by a non-jit `build`/`run`) runs the OLD Revare.dll and holds an open
 # handle to it, so a subsequent `dotnet build` cannot overwrite bin\...\Revare.dll (MSB3021 "being
 # used by another process"). The daemon is stale after any C# change anyway — it would be shut down as
 # stale on the next client ping — so killing it here is free; the next run cold-spawns a fresh warm daemon.

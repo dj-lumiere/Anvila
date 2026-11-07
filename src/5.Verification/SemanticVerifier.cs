@@ -81,7 +81,7 @@ public sealed partial class SemanticVerifier
                         .ToList();
     }
 
-    /// <summary>The notices of the user's files (see <see cref="ReportNotice"/>): shown by <c>check</c>, <c>lint</c>
+    /// <summary>The notices of the user's files (see <see cref="ReportNotice"/>): shown by <c>check</c>
     /// and the language server, never by a build.</summary>
     private List<SemanticWarning> UserVisibleNotices()
     {
@@ -3692,7 +3692,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Reports a notice: something that is most likely a slip but builds as written (a Mielia result left unused).
-    /// A build stays quiet about it. <c>check</c>, <c>lint</c> and the language server show it.
+    /// A build stays quiet about it. <c>check</c> and the language server show it.
     /// </summary>
     internal void ReportNotice(SemanticWarningCode code, string message, SourceLocation location,
         int? endLine = null, bool neverRuns = false, SuggestedFix? fix = null)

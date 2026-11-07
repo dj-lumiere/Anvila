@@ -6,7 +6,7 @@ internal partial class Program
     /// <c>new [folder]</c>: starts a project in <paramref name="args"/>' folder (the current one when none is given, made
     /// when missing) for the language of the command that runs it. Writes <c>config.toml</c> (the package named after the
     /// folder), a first source that prints a greeting, a <c>.gitignore</c> for build output, and the VS Code files that
-    /// recommend the language's extension and bind buildandrun and build. A file that is already there is kept as it is.
+    /// recommend the language's extension and bind run and build. A file that is already there is kept as it is.
     /// </summary>
     private static int RunNewCommand(string[] args)
     {
@@ -61,9 +61,9 @@ internal partial class Program
                   "version": "2.0.0",
                   "tasks": [
                     {
-                      "label": "buildandrun",
+                      "label": "run",
                       "type": "shell",
-                      "command": "{{tool}} buildandrun",
+                      "command": "{{tool}} run",
                       "group": { "kind": "build", "isDefault": true },
                       "problemMatcher": []
                     },
@@ -81,8 +81,8 @@ internal partial class Program
 
         WriteNewProjectFiles(folder: folder, files: files);
         Console.WriteLine(value: args.Length > 1
-            ? $"Run it with: cd {args[1]} && {tool} buildandrun"
-            : $"Run it with: {tool} buildandrun");
+            ? $"Run it with: cd {args[1]} && {tool} run"
+            : $"Run it with: {tool} run");
         return 0;
     }
 

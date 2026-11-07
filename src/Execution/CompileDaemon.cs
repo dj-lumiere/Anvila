@@ -10,7 +10,7 @@ internal partial class Program
 {
     /// <summary>
     /// The warm-compile daemon: a long-lived process that captures the fully-processed stdlib
-    /// (<see cref="SemanticVerifier.CompiledStdlibState"/>) in RAM once, then serves build/buildandrun
+    /// (<see cref="SemanticVerifier.CompiledStdlibState"/>) in RAM once, then serves build/run
     /// requests over a per-user named pipe. Each request restores from that snapshot (the ~5 s of stdlib
     /// desugaring/verification/monomorphization is skipped) and only the user program is compiled, so the
     /// edit→result loop drops from ~6.5 s toward the sub-250 ms goal. Nested in <see cref="Program"/> so it
@@ -563,7 +563,7 @@ internal partial class Program
         /// <summary>Redirects an auto-spawned daemon's console to its log file and (on Windows) detaches it
         /// from the client's console process group, so a Ctrl-C in the developer's shell (or the client's
         /// console closing after one build) does NOT deliver a console CTRL event to this daemon and shut it
-        /// down — the bug where the daemon died and re-spawned on every buildandrun. An auto-spawned daemon is
+        /// down — the bug where the daemon died and re-spawned on every run. An auto-spawned daemon is
         /// stopped only by an explicit `shutdown` request (daemon-stop).</summary>
         private static void DetachAutoSpawnedConsole(string logPath)
         {
@@ -927,7 +927,7 @@ internal partial class Program
             return true;
         }
 
-        /// <summary>Client entry for <c>buildandrun</c>: the daemon performs the warm COMPILE and returns
+        /// <summary>Client entry for <c>run</c>: the daemon performs the warm COMPILE and returns
         /// the exe path; this process runs it locally so interactive stdin/stdout stays here.</summary>
         internal static bool TryClientBuildAndRun(ResolvedEntry resolved, out int exitCode)
         {
@@ -1672,7 +1672,7 @@ internal partial class Program
             //   • via the apphost `Revare.exe`  → ProcessPath IS Revare.exe → spawn `Revare.exe
             //     daemon` (the exe already knows its DLL; passing the DLL as arg[0] makes the child read
             //     "Revare.dll" as the VERB, fail immediately, and never reach the daemon loop — the bug
-            //     where every buildandrun re-spawned a stillborn daemon and fell back to a cold compile).
+            //     where every run re-spawned a stillborn daemon and fell back to a cold compile).
             //   • via the muxer `dotnet Revare.dll` → ProcessPath is dotnet(.exe) → spawn `dotnet
             //     Revare.dll daemon`.
             if (BuilderLocation.RunsThroughDotnetHost)

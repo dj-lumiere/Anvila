@@ -1,7 +1,7 @@
 namespace Builder;
 
 /// <summary>
-/// Caches the parsed <c>config.toml</c> of an explicit-entry build (<c>buildandrun file.rvr</c>) as a small binary
+/// Caches the parsed <c>config.toml</c> of an explicit-entry build (<c>run file.rvr</c>) as a small binary
 /// file, so a dev-loop run does not load and JIT the TOML parser (its first use costs ~20 ms per process). The key
 /// covers the manifest's full path, its exact text, and the builder DLL's timestamp, so any edit to the manifest
 /// or a rebuilt builder misses the cache. Only manifests whose parse depends on nothing but their own text are

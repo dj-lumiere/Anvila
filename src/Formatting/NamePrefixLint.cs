@@ -5,7 +5,7 @@ namespace Builder.Formatting;
 
 /// <summary>
 /// A name that carries a prefix for its kind or its scope, which a name here does not: the scope shows in the code
-/// (<c>me.pos</c>, <c>global</c>), the type in its declaration and in the editor. Reported by <c>lint</c> as a hint
+/// (<c>me.pos</c>, <c>global</c>), the type in its declaration and in the editor. Reported by <c>check</c> on folders as a hint
 /// with the name without the prefix: <c>m_pos</c> → <c>pos</c>, <c>_count</c> → <c>count</c>, <c>p_node</c> →
 /// <c>node</c>, <c>bDone</c> → <c>done</c>, a protocol <c>IComparable</c> → <c>Comparable</c>. A generic type parameter's
 /// <c>T</c> (<c>TKey</c>) is a name of its own and is left alone.

@@ -21,7 +21,13 @@ namespace Builder.Execution;
 internal partial class Program
 {
     private const string BuildCommand = "build";
-    private const string BuildAndRunCommand = "buildandrun";
+    private const string RunCommand = "run";
+
+    /// <summary>Commands of earlier releases, each with the command that does its job now.</summary>
+    private static readonly Dictionary<string, string> RetiredCommands = new()
+    {
+        ["buildandrun"] = "run", ["fmt"] = "format", ["lint"] = "check <folder>"
+    };
     /// <summary>The language of the command that is running (<c>revare</c> or <c>mielia</c>). Selects
     /// the branding (version/usage) and is the DEFAULT language when a source's extension does not decide
     /// it; a registered extension always wins over this default. Set by <see cref="Run"/> from the command
@@ -69,15 +75,15 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "new" or "migrate" or "parse" or "tokenize" or "codegen" or BuildCommand
-            or "test" or "lint" or BuildAndRunCommand or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "rv-stubs";
+            or "test" or RunCommand or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "format" or "docs" or "rv-stubs";
 
         if (!isCommand)
         {
-            // Every action has its command, so a bare file does nothing on its own: running it is `buildandrun`.
+            // Every action has its command, so a bare file does nothing on its own: running it is `run`.
             Console.Error.WriteLine(value: File.Exists(path: args[0])
-                ? $"error: '{args[0]}' is a file, not a command. To build and run it: {CliRules.ToolName} buildandrun {args[0]}"
-                : command == "run"
-                    ? $"error: there is no 'run' command. To build and run the program: {CliRules.ToolName} buildandrun"
+                ? $"error: '{args[0]}' is a file, not a command. To build and run it: {CliRules.ToolName} run {args[0]}"
+                : RetiredCommands.TryGetValue(key: command, value: out string? now)
+                    ? $"error: there is no '{command}' command. Use '{CliRules.ToolName} {now}'."
                     : $"error: unknown command '{args[0]}'. See {CliRules.ToolName} help.");
             return 1;
         }
@@ -126,7 +132,7 @@ internal partial class Program
         }
 
         // `daemon`: run the warm-compile daemon (foreground). Captures the fully-processed stdlib in RAM
-        // and serves warm build/check/buildandrun requests over a per-user named pipe, so a client skips
+        // and serves warm build/check/run requests over a per-user named pipe, so a client skips
         // the ~5 s stdlib reprocessing on every invocation. Started explicitly by the developer; clients
         // opt in via REVARE_DAEMON=1. Ctrl-C / `daemon-stop` shuts it down.
         if (command is "daemon")
@@ -185,7 +191,7 @@ internal partial class Program
             case BuildCommand:
                 return RunBuildCommand(args: args);
 
-            case BuildAndRunCommand:
+            case RunCommand:
                 return RunBuildAndRunCommand(args: args);
 
             case "check":
@@ -193,9 +199,6 @@ internal partial class Program
 
             case "test":
                 return RunTestCommand(args: args);
-
-            case "lint":
-                return RunLintCommand(args: args);
 
             case "validate-stdlib":
                 return RunValidateStdlibCommand(args: args);
@@ -206,7 +209,7 @@ internal partial class Program
             case "emit-ingrid":
                 return EmitIngrid();
 
-            case "fmt":
+            case "format":
                 return RunFormatCommand(args: args);
 
             case "rv-stubs":
@@ -248,6 +251,13 @@ internal partial class Program
     /// <summary>Runs the <c>check</c> command: resolves the entry file and type-checks without codegen.</summary>
     private static int RunCheckCommand(string[] args)
     {
+        // Folders, or several files, are checked as sources: canonical layout, hints and notes, each file alone.
+        string[] given = args.Skip(count: 1).Where(predicate: a => !a.StartsWith(value: '-')).ToArray();
+        if (given.Length > 1 || given.Any(predicate: Directory.Exists))
+        {
+            return RunSourceCheck(targets: given);
+        }
+
         bool json = args.Contains(value: "--json");
         ResolvedEntry resolved = ResolveEntryFile(args: args.Where(predicate: a => a != "--json").ToArray(),
             needsOutputArg: false);
@@ -317,12 +327,12 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Handles the <c>buildandrun</c> verb: builds and executes. Prefers the in-process ORC-JIT dev loop and
+    /// Handles the <c>run</c> verb: builds and executes. Prefers the in-process ORC-JIT dev loop and
     /// the warm-daemon compile path (both skip work) before falling back to a full local AOT build+run.
     /// </summary>
     private static int RunBuildAndRunCommand(string[] args)
     {
-        ClientClock.Mark(label: "buildandrun entered (host startup + Main)");
+        ClientClock.Mark(label: "run entered (host startup + Main)");
         ResolvedEntry resolved = ResolveEntryFile(args: args, needsOutputArg: false);
         ClientClock.Mark(label: "manifest resolved");
         if (resolved.EntryFile == null)
@@ -541,7 +551,7 @@ internal partial class Program
         Action<BuildObservation>? BuildObserver = null);
 
     /// <summary>
-    /// The fully-resolved build configuration for a <c>build</c>/<c>buildandrun</c>/<c>check</c> invocation:
+    /// The fully-resolved build configuration for a <c>build</c>/<c>run</c>/<c>check</c> invocation:
     /// entry file, project root, build mode, and the external-library link config. Produced by
     /// <see cref="ResolveEntryFile"/> from the CLI args + the nearest <c>config.toml</c>. A resolution
     /// FAILURE is signalled by <see cref="EntryFile"/> being null (all other fields keep their defaults).
@@ -589,7 +599,7 @@ internal partial class Program
         /// <summary>Route builds through a running warm daemon (manifest <c>[target] use-daemon</c>).</summary>
         public bool UseDaemon { get; init; }
 
-        /// <summary>Use the ORC-JIT dev-loop path for buildandrun (manifest <c>mode = "debug-jit"</c>).</summary>
+        /// <summary>Use the ORC-JIT dev-loop path for run (manifest <c>mode = "debug-jit"</c>).</summary>
         public bool Jit { get; init; }
 
         /// <summary>The backend that translates the program (manifest <c>[target] backend</c>).</summary>
@@ -606,7 +616,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Resolves the <see cref="ResolvedEntry"/> for build/buildandrun/check commands.
+    /// Resolves the <see cref="ResolvedEntry"/> for build/run/check commands.
     /// Searches for a config.toml manifest in all cases: when no entry file is given the
     /// manifest supplies the executable; when an explicit entry file is given it overrides
     /// [target] executable but the manifest's other settings still apply.
@@ -616,7 +626,7 @@ internal partial class Program
     /// </summary>
     private static ResolvedEntry ResolveEntryFile(string[] args, bool needsOutputArg, bool acceptOldManifest = false)
     {
-        // args[0] is the command name (build/buildandrun/check)
+        // args[0] is the command name (build/run/check)
         if (!ParsePositionalArgs(args: args,
                 needsOutputArg: needsOutputArg,
                 explicitEntry: out string? explicitEntry,
@@ -911,7 +921,7 @@ internal partial class Program
     /// bypassing the warm daemon entirely. A safety valve for when the daemon misbehaves (e.g. a wedged
     /// pipe read in a constrained sandbox) — cold builds are slower but never depend on the daemon.
     /// The ORC-JIT dev loop still runs in-process (its daemon IR fetch is optional, with a cold branch),
-    /// so <c>buildandrun</c> in <c>debug-jit</c> mode stays fast; only the daemon round-trip is skipped.</summary>
+    /// so <c>run</c> in <c>debug-jit</c> mode stays fast; only the daemon round-trip is skipped.</summary>
     private static bool DaemonDisabledByEnv()
     {
         string? v = Environment.GetEnvironmentVariable(variable: "RV_NO_DAEMON");
@@ -964,12 +974,12 @@ internal partial class Program
         Console.WriteLine(value: $"  {tool} new [folder]                     - Start a project (config.toml, main{CliRules.FileExtension}, editor files)");
         Console.WriteLine(value: $"  {tool} migrate [--check] <paths>...      - Move sources from the previous release to this one");
         Console.WriteLine(value: $"  {tool} check [--json] [entry-file]      - Check the program without building it (--json: as JSON)");
+        Console.WriteLine(value: $"  {tool} check <folder>...                - Check every source in the folders: canonical layout, hints and notes");
         Console.WriteLine(value: $"  {tool} build [entry-file]               - Build a native executable");
-        Console.WriteLine(value: $"  {tool} buildandrun [entry-file]         - Build the program and run it");
+        Console.WriteLine(value: $"  {tool} run [entry-file]                 - Build the program and run it");
         Console.WriteLine(value: $"  {tool} codegen [entry-file] [out.ll]    - Write the program's LLVM IR without building it");
         Console.WriteLine(value: $"  {tool} test <dir-or-file>...            - Run test programs against their expected output");
-        Console.WriteLine(value: $"  {tool} fmt [--check] <file-or-dir>...   - Format sources in place (--check: only list)");
-        Console.WriteLine(value: $"  {tool} lint <file-or-dir>...            - Report code that is not in the canonical style, and notes");
+        Console.WriteLine(value: $"  {tool} format [--check] <file-or-dir>... - Format sources in place (--check: only list)");
         Console.WriteLine(value: $"  {tool} docs <source-dir> <output-dir>    - Write the API reference pages of a library");
         Console.WriteLine(value: $"  {tool} lsp                              - Run the language server (for an editor)");
         Console.WriteLine(value: $"  {tool} help                             - Show this help");
@@ -2110,7 +2120,7 @@ internal partial class Program
     /// declaration → desugaring → collection → verification → instantiation → codegen) WITHOUT
     /// opt/clang/link and WITHOUT executing the produced program, returning the build exit code
     /// (0 = success) and the emitted IR. This lets the test suite exercise the codegen/desugaring/
-    /// collection/instantiation stack IN-PROCESS — a subprocess <c>buildandrun</c> runs that stack in
+    /// collection/instantiation stack IN-PROCESS — a subprocess <c>run</c> runs that stack in
     /// a child process, invisible to coverage instrumentation. Diagnostics are printed to the console
     /// by <see cref="BuildMultiFile"/> as usual; the caller may redirect the console to capture them.
     /// </summary>

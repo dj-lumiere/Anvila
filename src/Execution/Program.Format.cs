@@ -7,11 +7,11 @@ using TypeModel.Enums;
 
 namespace Builder.Execution;
 
-/// <summary>The <c>fmt</c> command: formats source files in the language's canonical layout.</summary>
+/// <summary>The <c>format</c> command: formats source files in the language's canonical layout.</summary>
 internal partial class Program
 {
     /// <summary>
-    /// Runs <c>fmt [--check] [--keep-order] &lt;files or directories...&gt;</c>. <c>--keep-order</c> keeps top-level
+    /// Runs <c>format [--check] [--keep-order] &lt;files or directories...&gt;</c>. <c>--keep-order</c> keeps top-level
     /// declarations in source order (for code examples in documentation). Without <c>--check</c> each file that is not in
     /// the canonical layout is rewritten in place. With <c>--check</c> nothing is written: the files that would
     /// change are listed. Either way a file the formatter refuses is listed with the reason and left as it is.
@@ -28,7 +28,7 @@ internal partial class Program
                                    .ToList();
         if (targets.Count == 0)
         {
-            Console.WriteLine(value: "Error: fmt needs at least one file or directory");
+            Console.WriteLine(value: "Error: format needs at least one file or directory");
             return 1;
         }
 
@@ -99,11 +99,6 @@ internal partial class Program
             : 0;
     }
 
-    /// <summary>
-    /// Runs <c>lint &lt;files or directories...&gt;</c>: reports every file that is not in its language's canonical
-    /// layout (the one <c>fmt</c> writes), at the first line that differs, with what the line should read. Nothing is
-    /// written. Returns 1 when a file has a style error or cannot be read as source, 0 otherwise.
-    /// </summary>
     /// <summary>Prints a hint for each name in <paramref name="source"/> that carries a kind or scope prefix
     /// (<see cref="NamePrefixLint"/>), and returns how many. A file that does not parse has its own error.</summary>
     private static int ReportPrefixedNames(string file, string source)
@@ -170,21 +165,16 @@ internal partial class Program
         return own.Count;
     }
 
-    /// <summary>A line as the lint message shows it: a blank line says so instead of leaving a gap.</summary>
+    /// <summary>A line as the layout message shows it: a blank line says so instead of leaving a gap.</summary>
     private static string ShownLine(string text)
     {
         return text.Trim().Length == 0 ? "(an empty line)" : text;
     }
 
-    private static int RunLintCommand(string[] args)
+    /// <summary><c>check</c> given folders or several files: every source in them is read on its own for the canonical
+    /// layout (an error), prefixed names (hints) and notes. Fails when a file is not in the canonical layout.</summary>
+    private static int RunSourceCheck(string[] targets)
     {
-        List<string> targets = args.Skip(count: 1).ToList();
-        if (targets.Count == 0)
-        {
-            Console.WriteLine(value: "Error: lint needs at least one file or directory");
-            return 1;
-        }
-
         var files = new List<string>();
         foreach (string target in targets)
         {
@@ -217,39 +207,15 @@ internal partial class Program
             string source = File.ReadAllText(path: file);
             hints += ReportPrefixedNames(file: file, source: source);
             notes += ReportNotices(file: file);
-            FormatResult result = SourceFormatter.Format(source: source, fileName: file,
-                language: SourceLanguage(path: file), keepOrder: false);
-            if (!result.Succeeded)
+            if (ReportLayout(file: file, source: source))
             {
                 problems++;
-                Console.WriteLine(value: $"error[style]: {file}: the formatter cannot read it: {result.Refusal}");
-                continue;
             }
-
-            if (result.Output == source)
-            {
-                continue;
-            }
-
-            problems++;
-            string[] have = source.Replace(oldValue: "\r\n", newValue: "\n").Split(separator: '\n');
-            string[] want = result.Output.Replace(oldValue: "\r\n", newValue: "\n").Split(separator: '\n');
-            int line = 0;
-            while (line < have.Length && line < want.Length && have[line] == want[line])
-            {
-                line++;
-            }
-
-            string should = line < want.Length ? ShownLine(text: want[line]) : "(nothing)";
-            string actual = line < have.Length ? ShownLine(text: have[line]) : "(nothing)";
-            Console.WriteLine(value: $"error[style]: {file}:{line + 1}: this is not in the canonical layout");
-            Console.WriteLine(value: $"  it reads:       {actual}");
-            Console.WriteLine(value: $"  it should read: {should}");
         }
 
         Console.WriteLine(value: problems == 0
             ? $"{files.Count} files: no style errors"
-            : $"{files.Count} files: {problems} with style errors (fmt fixes them)");
+            : $"{files.Count} files: {problems} with style errors (format fixes them)");
         if (hints > 0)
         {
             Console.WriteLine(value: $"{hints} names carry a prefix (hints, not errors)");
@@ -262,5 +228,37 @@ internal partial class Program
         return problems == 0
             ? 0
             : 1;
+    }
+
+    /// <summary>Prints where <paramref name="file"/> first leaves the canonical layout and returns whether it does.</summary>
+    private static bool ReportLayout(string file, string source)
+    {
+        FormatResult result = SourceFormatter.Format(source: source, fileName: file,
+            language: SourceLanguage(path: file), keepOrder: false);
+        if (!result.Succeeded)
+        {
+            Console.WriteLine(value: $"error[style]: {file}: the formatter cannot read it: {result.Refusal}");
+            return true;
+        }
+
+        if (result.Output == source)
+        {
+            return false;
+        }
+
+        string[] have = source.Replace(oldValue: "\r\n", newValue: "\n").Split(separator: '\n');
+        string[] want = result.Output.Replace(oldValue: "\r\n", newValue: "\n").Split(separator: '\n');
+        int line = 0;
+        while (line < have.Length && line < want.Length && have[line] == want[line])
+        {
+            line++;
+        }
+
+        string should = line < want.Length ? ShownLine(text: want[line]) : "(nothing)";
+        string actual = line < have.Length ? ShownLine(text: have[line]) : "(nothing)";
+        Console.WriteLine(value: $"error[style]: {file}:{line + 1}: this is not in the canonical layout");
+        Console.WriteLine(value: $"  it reads:       {actual}");
+        Console.WriteLine(value: $"  it should read: {should}");
+        return true;
     }
 }

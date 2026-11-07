@@ -139,7 +139,7 @@ public sealed class DebugOptions
     /// which were redundant (phase-timing already forced sa-timing on).</summary>
     public bool Timing { get; set; }
 
-    /// <summary>Print build-stage banners ("=== SEMANTIC ANALYSIS ===", etc.) during build/buildandrun
+    /// <summary>Print build-stage banners ("=== SEMANTIC ANALYSIS ===", etc.) during build/run
     /// (<c>show-build-stages</c>). Default off: only errors/warnings print, program stdout passes unframed.</summary>
     public bool ShowBuildStages { get; set; }
 
@@ -151,7 +151,7 @@ public sealed class DebugOptions
     public bool JitTrace { get; set; }
 
     /// <summary>Keep the emitted LLVM IR as <c>&lt;entry&gt;.ll</c> next to the source (<c>dump-ir</c>).
-    /// Forces the local AOT path for <c>buildandrun</c> (the daemon / in-memory JIT never write a
+    /// Forces the local AOT path for <c>run</c> (the daemon / in-memory JIT never write a
     /// <c>.ll</c>) and suppresses the post-run <c>.ll</c> cleanup.</summary>
     public bool DumpIr { get; set; }
 

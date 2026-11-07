@@ -38,7 +38,7 @@ public sealed record AnalysisResult(
     IReadOnlyCollection<string> LiveOwnerTypeNames,
     IReadOnlyCollection<string> MaySuspendRoutineKeys)
 {
-    /// <summary>The notices of the user's files: likely slips that build as written, which <c>check</c>, <c>lint</c>
+    /// <summary>The notices of the user's files: likely slips that build as written, which <c>check</c>
     /// and the language server show and a build doesn't.</summary>
     public List<SemanticWarning> Notices { get; init; } = [];
 
