@@ -3069,6 +3069,24 @@ public sealed partial class SemanticVerifier
                     return ErrorTypeSymbol.Instance;
                 }
 
+                // A routine of the protocol that takes or gives the protocol's own type can't be called on a stored
+                // value, whose type is one of several.
+                if (Declaration.TypeRegistry.DispatchedProtocol(type: ValueTokenTarget(type: objectType) ?? objectType) is
+                        { } storedProtocol &&
+                    _registry.ProtocolAndParents(protocol: _registry.CanonicalProtocol(protocol: storedProtocol))
+                             .SelectMany(selector: p => p.MemberRoutines)
+                             .Any(predicate: m => m.Name == member.MemberName))
+                {
+                    ReportError(code: SemanticDiagnosticCode.ProtocolRoutineNotDispatchable,
+                        message: $"'{member.MemberName}' of '{storedProtocol.Name}' takes or gives a value of the type " +
+                                 $"that obeys '{storedProtocol.Name}' ('Me'), and a stored value of '{storedProtocol.Name}' " +
+                                 "may be any of those types, so there is no one 'Me' to call it with. Take the value apart " +
+                                 $"with `when` (`is T as t`) and call it on 't', or give '{storedProtocol.Name}' a routine " +
+                                 "that doesn't name 'Me'.",
+                        location: call.Location);
+                    return ErrorTypeSymbol.Instance;
+                }
+
                 string hint = BuildUnresolvedMemberCallHint(callLookupName: callLookupName,
                     namedField: namedField);
                 if (hint.Length == 0)

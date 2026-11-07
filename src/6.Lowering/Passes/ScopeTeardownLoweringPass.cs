@@ -1274,7 +1274,21 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private bool OwnsReplacedEntity(TypeSymbol fieldType, SourceLocation location)
     {
         string file = location.FileName ?? "";
-        if (ctx.Registry.IsStandardLibraryFile(filePath: file) || ctx.Registry.EntitiesAreSharedIn(filePath: file))
+        if (ctx.Registry.IsStandardLibraryFile(filePath: file))
+        {
+            return false;
+        }
+
+        // A stored value of a protocol owns what it keeps (an entity, a record's memory, a handle), in both languages.
+        TypeSymbol held = fieldType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [{ } inner] }
+            ? inner
+            : fieldType;
+        if (TypeRegistry.DispatchedProtocol(type: held) != null)
+        {
+            return true;
+        }
+
+        if (ctx.Registry.EntitiesAreSharedIn(filePath: file))
         {
             return false;
         }

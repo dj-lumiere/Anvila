@@ -743,7 +743,9 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             return false;
         }
 
+        // A stored value of a protocol owns its entity or its record's memory, whatever its kind.
         return lc.Store != null || TypeRegistry.GetRcWrapperBaseName(type: rec) is not null ||
+               TypeRegistry.DispatchedProtocol(type: rec) != null ||
                rec.MemberVariables.Any(predicate: f =>
                    TypeRegistry.GetRcWrapperBaseName(type: f.Type) is not null);
     }
