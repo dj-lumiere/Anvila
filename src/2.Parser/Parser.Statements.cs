@@ -1852,9 +1852,8 @@ public partial class Parser
     /// <returns>A <see cref="DestructuringStatement"/> AST node.</returns>
     private DestructuringStatement ParseDestructuringDeclaration()
     {
-        SourceLocation
-            location =
-                GetLocation(token: PeekToken(offset: -2)); // -2 because we already consumed 'var'
+        // The 'var' just consumed, the one token before the '('.
+        SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
         // Parse the destructuring pattern (reuse ParseDestructuringBindings from Expressions)
         List<DestructuringBinding> bindings = ParseDestructuringBindings();

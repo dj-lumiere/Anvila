@@ -1467,6 +1467,12 @@ public sealed partial class SemanticVerifier
         return names;
     }
 
+    private TypeSymbol AnalyzeAddressOfExpression(AddressOfExpression address)
+    {
+        TypeSymbol target = AnalyzeExpression(expression: address.Target);
+        return address.ResolvedType ?? target;
+    }
+
     private ErrorTypeSymbol HandleUnknownExpression(Expression expression)
     {
         ReportWarning(code: SemanticWarningCode.UnknownExpressionType,

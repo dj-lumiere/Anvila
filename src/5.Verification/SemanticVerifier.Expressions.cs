@@ -113,6 +113,9 @@ public sealed partial class SemanticVerifier
             // A lambda inside a lambda is lifted before the outer one's recovery body is recorded and analyzed:
             // it is a closure value by then, typed as the lambda it came from.
             ClosureValueExpression closure => closure.ResolvedType ?? ErrorTypeSymbol.Instance,
+            // A key handed through a token in a recovery body (`check d["k"]`) is built as the address of its place,
+            // typed as the parameter it fills.
+            AddressOfExpression address => AnalyzeAddressOfExpression(address: address),
             WhenExpression whenExpr => AnalyzeWhenExpression(when: whenExpr, expectedType: expectedType),
             InsertedTextExpression insertedText => AnalyzeInsertedTextExpression(
                 insertedText: insertedText),

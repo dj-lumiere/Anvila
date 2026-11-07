@@ -950,6 +950,28 @@ public sealed partial class SemanticVerifier
     /// realm of the file that declares it: in a Mielia file, <c>List</c> is Mielia's own list, as it is everywhere
     /// else in that file. Declarations are collected before the per-file analysis sets that realm.
     /// </summary>
+    /// <summary>
+    /// A member routine of a generic record or entity written outside it names the type's parameters on the
+    /// receiver (<c>routine Box[T].get()</c>). Without them the routine is never made for a concrete <c>Box[S64]</c>,
+    /// so it is a build error here instead of a missing symbol at link time.
+    /// </summary>
+    private void ReportGenericReceiverWithoutParameters(RoutineDeclaration routine, TypeSymbol? ownerType)
+    {
+        if (routine.HasReceiverTypeArgs || ownerType is not (RecordTypeSymbol or EntityTypeSymbol) ||
+            ownerType.GenericParameters is not { Count: > 0 } parameters ||
+            string.IsNullOrEmpty(value: _currentFilePath) || IsStdlibFile(filePath: _currentFilePath))
+        {
+            return;
+        }
+
+        string written = $"{ownerType.Name}[{string.Join(separator: ", ", values: parameters)}]";
+        ReportError(code: SemanticDiagnosticCode.GenericReceiverWithoutParameters,
+            message: $"'{ownerType.Name}' takes {(parameters.Count == 1 ? "a parameter" : "parameters")}, so a routine " +
+                     $"written outside it names {(parameters.Count == 1 ? "it" : "them")} on the receiver. Write " +
+                     $"'routine {written}.{routine.MemberRoutineName}(...)'.",
+            location: routine.Location);
+    }
+
     private TypeSymbol? LookupOwnerInFileRealm(string name)
     {
         return InFileRealm(resolve: () => LookupTypeWithImports(name: name));
@@ -1009,6 +1031,7 @@ public sealed partial class SemanticVerifier
             // OwnerName is the bare owner base (e.g. "Stack" for "Stack[T].push") — already the
             // generic-definition key, so no generic-param strip needed here.
             ownerType = LookupOwnerInFileRealm(name: routine.OwnerName!);
+            ReportGenericReceiverWithoutParameters(routine: routine, ownerType: ownerType);
 
             // A constructor is only ever `routine Type(...)`; `routine Type.create(...)` is an ordinary
             // member routine named `create`.

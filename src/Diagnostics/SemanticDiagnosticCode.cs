@@ -278,6 +278,10 @@ public enum SemanticDiagnosticCode
     /// shadowed by the auto-derive. Mark it <c>@override</c> to replace the derive, or remove it.</summary>
     OverridableDeriveNeedsOverrideMarker = 164,
 
+    /// <summary>A member routine declared outside a generic type names the type without its parameters
+    /// (<c>routine Box.get()</c> for <c>record Box[T]</c>). Write them on the receiver: <c>routine Box[T].get()</c>.</summary>
+    GenericReceiverWithoutParameters = 165,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // STATEMENT ERRORS (RV-S200 - RV-S249)
     // ═══════════════════════════════════════════════════════════════════════════
