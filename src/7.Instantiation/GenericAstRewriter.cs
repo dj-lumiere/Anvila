@@ -1239,7 +1239,8 @@ internal static class GenericAstRewriter
             IReadOnlyList<TypeExpression>? typeArgExprs)
         {
             RoutineInfo? specialization = current?.RecoveryOf ?? current;
-            if (specialization is not { IsSpecialization: true, TypeArguments: { } fixedArgs } ||
+            // A copy of a body made without a registry (a recovery variant's source) keeps each call as it is bound.
+            if (Registry == null || specialization is not { IsSpecialization: true, TypeArguments: { } fixedArgs } ||
                 typeArgExprs is not { Count: > 0 } || typeArgExprs.Count != fixedArgs.Count)
             {
                 return null;
@@ -1274,7 +1275,7 @@ internal static class GenericAstRewriter
                 return null;
             }
 
-            RoutineInfo? picked = Registry!.LookupFamilyMember(owner: concreteOwner,
+            RoutineInfo? picked = Registry.LookupFamilyMember(owner: concreteOwner,
                 name: specialization.Name,
                 typeArguments: args);
             return picked != null && current!.Recovery is { } recovery

@@ -838,9 +838,49 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         List<Owned> live = Copy(live: outerLive);
         int blockStart = live.Count;
         var stmts = new List<Statement>(capacity: block.Statements.Count + 2);
+        LowerBlockItems(items: block.Statements, live: live, loopBoundary: loopBoundary, stmts: stmts);
 
-        foreach (Statement s in block.Statements)
+        // Fall-through end-of-block: destroy this block's own locals in REVERSE declaration order
+        // (LIFO) — a later-declared local may reference an earlier one, so destroying dependents
+        // before dependencies is the safe RAII order (and matches this pass's documented contract).
+        // Skip entirely when the block already unconditionally terminates (its last statement is a
+        // return/throw/break/continue, possibly wrapped by PrefixDestroys): the fall-through
+        // is unreachable, and the terminator's own PrefixDestroys already tore these locals down.
+        // Emitting them here anyway produced redundant post-terminator `x.destruct()` calls that
+        // codegen silently dropped but that polluted the AST (and the dump).
+        if (!(stmts.Count > 0 && AlwaysTerminates(s: stmts[^1])))
         {
+            for (int i = live.Count - 1; i >= blockStart; i--)
+            {
+                if (!IsKeptParameter(owned: live[index: i]))
+                {
+                    stmts.Add(item: MakeDestroyStmt(owned: live[index: i], loc: block.Location));
+                }
+            }
+        }
+
+        return block with { Statements = stmts };
+    }
+
+    /// <summary>
+    /// Lowers the statements of a block in order: <paramref name="live"/> grows with the locals they declare and
+    /// <paramref name="stmts"/> receives the lowered statements. A block a lowering pass made only to keep a statement
+    /// next to its cleanup (<see cref="BlockStatement.IntroducesScope"/> false) is not a scope: the locals it declares
+    /// belong to the block around it, so they are torn down there and not where the grouping ends.
+    /// </summary>
+    private void LowerBlockItems(IEnumerable<Statement> items, List<Owned> live, int loopBoundary,
+        List<Statement> stmts)
+    {
+        foreach (Statement s in items)
+        {
+            if (s is BlockStatement { IntroducesScope: false } grouping)
+            {
+                var grouped = new List<Statement>(capacity: grouping.Statements.Count);
+                LowerBlockItems(items: grouping.Statements, live: live, loopBoundary: loopBoundary, stmts: grouped);
+                stmts.Add(item: grouping with { Statements = grouped });
+                continue;
+            }
+
             if (s is DeclarationStatement { Declaration: VariableDeclaration v } declaration)
             {
                 if (v.Initializer is CallExpression carried &&
@@ -893,27 +933,6 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 RegisterGlobalsSingleton(target: g, live: live);
             }
         }
-
-        // Fall-through end-of-block: destroy this block's own locals in REVERSE declaration order
-        // (LIFO) — a later-declared local may reference an earlier one, so destroying dependents
-        // before dependencies is the safe RAII order (and matches this pass's documented contract).
-        // Skip entirely when the block already unconditionally terminates (its last statement is a
-        // return/throw/break/continue, possibly wrapped by PrefixDestroys): the fall-through
-        // is unreachable, and the terminator's own PrefixDestroys already tore these locals down.
-        // Emitting them here anyway produced redundant post-terminator `x.destruct()` calls that
-        // codegen silently dropped but that polluted the AST (and the dump).
-        if (!(stmts.Count > 0 && AlwaysTerminates(s: stmts[^1])))
-        {
-            for (int i = live.Count - 1; i >= blockStart; i--)
-            {
-                if (!IsKeptParameter(owned: live[index: i]))
-                {
-                    stmts.Add(item: MakeDestroyStmt(owned: live[index: i], loc: block.Location));
-                }
-            }
-        }
-
-        return block with { Statements = stmts };
     }
 
     // A global's init assignment (Mielia's one singleton `__globals__ = __ModuleGlobals(...)`, or each Revare
