@@ -746,9 +746,15 @@ internal sealed class WrapperForwardingPass
         }
 
         TypeSymbol tokenType = reached.ResolvedType!;
-        reached = ReachCall(receiver: reached, receiverType: tokenType,
-            name: token == RuntimeContract.Viewing ? RuntimeContract.Access : RuntimeContract.Control,
-            resultType: ctx.InnerType);
+        // A stored value of a protocol is reached where it is: its routines act on the value it keeps, so a copy
+        // (`access()` / `control()` copy a record out) would be one more value to end.
+        string reach = ctx.InnerType.BareName == RuntimeContract.Dispatch.Dispatched ||
+                       ctx.InnerMemberRoutine.OwnerType?.BareName == RuntimeContract.Dispatch.Dispatched
+            ? RuntimeContract.ReadInPlace
+            : token == RuntimeContract.Viewing
+                ? RuntimeContract.Access
+                : RuntimeContract.Control;
+        reached = ReachCall(receiver: reached, receiverType: tokenType, name: reach, resultType: ctx.InnerType);
         var innerCall = new CallExpression(
             Callee: new MemberExpression(Object: reached,
                 MemberName: ctx.CallPropertyName,

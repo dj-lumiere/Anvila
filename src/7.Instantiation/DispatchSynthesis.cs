@@ -71,7 +71,7 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
 
     /// <summary>
     /// <c>destruct</c>: nothing for the zero value, else the value's own end on its arm (the entity's
-    /// <c>destruct</c>, a handle let go, a record ended and its memory given back).
+    /// <c>destruct</c>, or a record or handle ended and its memory given back).
     /// </summary>
     private Statement DestructBody(IReadOnlyList<TypeSymbol> arms, SourceLocation loc)
     {
@@ -100,7 +100,7 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
 
     /// <summary>
     /// <c>share</c> (a place that keeps values): the zero value as it is, else the same type hash with a copy of
-    /// the record in memory of its own, or with one more holder of a handle.
+    /// the record (or one more holder of a Mielia entity's handle) in memory of its own.
     /// </summary>
     private Statement ShareBody(IReadOnlyList<TypeSymbol> arms, SourceLocation loc)
     {
@@ -115,9 +115,7 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
         };
         statements.Add(item: Switch(arms: arms, loc: loc, arm: arm =>
         {
-            Expression copied = TypeRegistry.DispatchArmEntity(type: arm) is { } entity
-                ? Helper(name: RuntimeContract.Dispatch.CopyHandle, typeArgument: entity, loc: loc)
-                : Helper(name: RuntimeContract.Dispatch.CopyRecord, typeArgument: arm, loc: loc);
+            Expression copied = Helper(name: RuntimeContract.Dispatch.CopyRecord, typeArgument: arm, loc: loc);
             var withAddress = new CallExpression(
                 Callee: new MemberExpression(Object: new IdentifierExpression(Name: "me", Location: loc),
                     MemberName: "with_address",
@@ -162,20 +160,29 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
         return chain;
     }
 
-    /// <summary>A write token on the value of an arm: the entity or the record at the address, or the entity a
-    /// handle reaches.</summary>
+    /// <summary>The receiver of an arm's call: a write token on the Revare entity at the address, or the record or
+    /// Mielia entity's handle read where it is kept.</summary>
     private static Expression Token(TypeSymbol arm, SourceLocation loc)
     {
-        return TypeRegistry.DispatchArmEntity(type: arm) is { } entity
-            ? Helper(name: RuntimeContract.Dispatch.ModifyHandle, typeArgument: entity, loc: loc)
-            : Helper(name: RuntimeContract.Dispatch.ModifyAt, typeArgument: arm, loc: loc);
+        Expression token = Helper(name: RuntimeContract.Dispatch.ModifyAt, typeArgument: arm, loc: loc);
+        if (arm is EntityTypeSymbol)
+        {
+            return token;
+        }
+
+        // A record, and a Mielia entity's handle (its routines take the handle as `me`), is read where it is kept:
+        // a copy would be one more value to end.
+        return new CallExpression(
+            Callee: new MemberExpression(Object: token, MemberName: RuntimeContract.ReadInPlace, Location: loc),
+            Arguments: [],
+            Location: loc);
     }
 
-    /// <summary>Whether an arm's value is a record kept in memory of its own (not an entity or a handle kept by its
-    /// bits).</summary>
+    /// <summary>Whether an arm's value is kept in memory of its own (a record, a Mielia entity's handle), not by its
+    /// bits (a Revare entity).</summary>
     private static bool IsRecordArm(TypeSymbol arm)
     {
-        return arm is not EntityTypeSymbol && TypeRegistry.DispatchArmEntity(type: arm) == null;
+        return arm is not EntityTypeSymbol;
     }
 
     /// <summary><c>helper[T](at: me.address)</c>.</summary>

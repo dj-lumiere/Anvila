@@ -1162,8 +1162,6 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         (string helper, TypeSymbol typeArgument) = armType switch
         {
             EntityTypeSymbol => (RuntimeContract.Dispatch.ModifyAt, armType),
-            _ when TypeRegistry.DispatchArmEntity(type: armType) is { } entity => (RuntimeContract.Dispatch.HandleOut,
-                (TypeSymbol)entity),
             _ => (RuntimeContract.Dispatch.CopyOut, armType)
         };
         if (ctx.Registry.LookupDispatchHelper(name: helper) is not { } helperDef ||

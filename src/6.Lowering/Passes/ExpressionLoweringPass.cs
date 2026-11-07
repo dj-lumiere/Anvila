@@ -1920,8 +1920,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// A value of a concrete type going into a place that stores a value of a protocol (<c>Dispatched[P]</c>, or a
-    /// <c>Dispatched[P]?</c>): the value is kept with its type hash by the library routine for its kind, an entity
-    /// (or a Mielia entity's handle) by its own bits, a record as a copy in memory of its own. The type is noted as
+    /// <c>Dispatched[P]?</c>): the value is kept with its type hash by the library routine for its kind, a Revare
+    /// entity by its own bits, a record (and a Mielia entity's handle) in memory of its own. The type is noted as
     /// one the protocol's dispatch routines switch over. Returns null when the target stores no protocol value or
     /// the value is one already.
     /// </summary>
@@ -1944,7 +1944,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return null;
         }
 
-        bool byBits = concrete is EntityTypeSymbol || TypeRegistry.DispatchArmEntity(type: concrete) != null;
+        // A Revare entity is kept where it is. A record, and a Mielia entity's handle, is kept in memory of its own.
+        bool byBits = concrete is EntityTypeSymbol;
         string helper = byBits
             ? RuntimeContract.Dispatch.KeepInline
             : RuntimeContract.Dispatch.KeepRecord;

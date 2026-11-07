@@ -611,34 +611,28 @@ public static class RuntimeContract
         /// <summary>Its address member variable.</summary>
         public const string Address = "address";
 
-        /// <summary>Keeps an entity, or a one-address handle, by its own bits.</summary>
+        /// <summary>Keeps a Revare entity by its own bits.</summary>
         public const string KeepInline = "dispatched_keep_inline";
 
-        /// <summary>Keeps a record copy in memory of its own.</summary>
+        /// <summary>Keeps a record copy, or a Mielia entity's handle, in memory of its own.</summary>
         public const string KeepRecord = "dispatched_keep_record";
 
         /// <summary>A write token on the value kept at an address.</summary>
         public const string ModifyAt = "dispatched_modify";
 
-        /// <summary>A write token on the entity a kept handle reaches.</summary>
-        public const string ModifyHandle = "dispatched_modify_handle";
 
-        /// <summary>A copy of a kept record (an <c>is</c> arm's binding).</summary>
+        /// <summary>A copy of a kept record, or one more holder of a kept handle (an <c>is</c> arm's binding).</summary>
         public const string CopyOut = "dispatched_copy_out";
 
-        /// <summary>One more holder of a kept handle (an <c>is</c> arm's binding in Mielia).</summary>
-        public const string HandleOut = "dispatched_handle_out";
 
         /// <summary>Copies a kept record into new memory.</summary>
         public const string CopyRecord = "dispatched_copy_record";
 
-        /// <summary>One more holder of a kept handle.</summary>
-        public const string CopyHandle = "dispatched_copy_handle";
 
-        /// <summary>Ends a value kept by its own bits.</summary>
+        /// <summary>Ends a Revare entity kept by its own bits.</summary>
         public const string EndInline = "dispatched_end_inline";
 
-        /// <summary>Ends a kept record and gives its memory back.</summary>
+        /// <summary>Ends a kept record or handle and gives its memory back.</summary>
         public const string EndRecord = "dispatched_end_record";
     }
 
