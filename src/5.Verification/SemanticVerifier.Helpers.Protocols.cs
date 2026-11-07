@@ -950,6 +950,12 @@ public sealed partial class SemanticVerifier
     /// memberRoutine's declared return type. Extracted from
     /// <see cref="memberRoutineSignatureMatches"/>.
     /// </summary>
+    /// <summary>Whether a routine's result type says it gives nothing: none written, or <c>None</c>.</summary>
+    private static bool ReturnsNothing(TypeSymbol? type)
+    {
+        return type is null or { Name: "None" };
+    }
+
     private bool MemberRoutineReturnTypeMatches(RoutineInfo typeMemberRoutine,
         ProtocolMemberRoutineInfo protoMemberRoutine)
     {
@@ -975,7 +981,8 @@ public sealed partial class SemanticVerifier
                 return false;
             }
         }
-        else if (protoMemberRoutine.ReturnType == null != (typeMemberRoutine.ReturnType == null))
+        // A routine that gives nothing has no return type written, or `None`: the two are the same.
+        else if (ReturnsNothing(type: protoMemberRoutine.ReturnType) != ReturnsNothing(type: typeMemberRoutine.ReturnType))
         {
             return false;
         }
