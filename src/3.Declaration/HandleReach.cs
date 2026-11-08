@@ -5,9 +5,9 @@ namespace Builder.Declaration;
 
 /// <summary>
 /// Whether a value of a type holds a handle to a shared entity (<c>Roamed[E]</c>), directly or inside a record,
-/// tuple or variant it owns by value. The answer behind the <c>reaches_entity</c> BuilderQuery, so library code that
-/// stores a value somewhere another task can reach (a container's places) pays for the promotion only for a type
-/// that can need it.
+/// tuple or variant it owns by value, or a routine value (its lambda payload is counted like a shared entity). The
+/// answer behind the <c>reaches_entity</c> BuilderQuery, so library code that stores a value somewhere another task
+/// can reach (a container's places) pays for the promotion only for a type that can need it.
 /// </summary>
 internal static class HandleReach
 {
@@ -37,6 +37,8 @@ internal static class HandleReach
 
         return type switch
         {
+            // A routine value's lambda payload may hold handles, and it is a node of the collector's graph itself.
+            RoutineTypeSymbol => true,
             TupleTypeSymbol t => t.ElementTypes.Any(predicate: e => Reaches(type: e, depth: depth + 1)),
             VariantTypeSymbol v => v.Members.Any(predicate: m => m.Type is { } member && Reaches(type: member, depth: depth + 1)),
             RecordTypeSymbol { IsGenericDefinition: false } r when

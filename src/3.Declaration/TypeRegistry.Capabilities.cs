@@ -301,7 +301,7 @@ public sealed partial class TypeRegistry
     ///   <item><description>Choice/Flags: always (tag-only layout).</description></item>
     ///   <item><description>Tuples: every element is auto-deriveable.</description></item>
     ///   <item><description>Entities, wrappers, variants, crashables, protocols: never (always ptr-shaped).</description></item>
-    ///   <item><description>Routines: yes — a routine value is a NON-OWNING ptr (fnptr / closure blob), bitwise-copyable like a stored C function pointer.</description></item>
+    ///   <item><description>Routines: yes — a routine value's copy step adds a holder of its lambda's payload.</description></item>
     ///   <item><description>Generic parameters: false (decision deferred to instantiation).</description></item>
     /// </list>
     /// Raw-pointer types like <c>Hijacked[T]</c> and <c>Addr</c> are ptr-shaped and
@@ -313,10 +313,9 @@ public sealed partial class TypeRegistry
         {
             ChoiceTypeSymbol => true,
             FlagsTypeSymbol => true,
-            // A routine VALUE is a plain, NON-OWNING ptr (a bare fnptr / a closure blob = C's
-            // `(fnptr[, userdata])`). Bitwise-dup is sound — it aliases the same callable with no
-            // owned resource to double-free (its lifecycle Store/Destroy are both null). So a routine
-            // is a freely-copyable ptr leaf, like a stored C function pointer.
+            // A routine VALUE is C's `(fnptr, userdata)` pair, the userdata a lambda's counted payload. Its copy
+            // step is one more holder of that payload (its `share`), balanced by its `destruct`, so it is
+            // always Assignable, like an RC handle.
             RoutineTypeSymbol => true,
             TupleTypeSymbol tuple => tuple.ElementTypes.All(predicate: CanAutoDeriveAssignable),
             RecordTypeSymbol record => !record.IsGenericDefinition &&

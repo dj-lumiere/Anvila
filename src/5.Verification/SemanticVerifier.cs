@@ -1760,7 +1760,7 @@ public sealed partial class SemanticVerifier
                 {
                     if (routine.Body is not { } body ||
                         routine.ResolvedInfo is { IsGenericDefinition: true } or { OwnerType.IsGenericDefinition: true } ||
-                        live != null && routine.ResolvedInfo is { } info && !info.IsLambda &&
+                        live != null && routine.ResolvedInfo is { } info && !info.IsLiftedFromLambda &&
                         !live.Contains(item: info.RegistryKey))
                     {
                         continue;

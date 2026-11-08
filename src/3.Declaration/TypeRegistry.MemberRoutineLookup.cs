@@ -4451,6 +4451,12 @@ public sealed partial class TypeRegistry
                                    ? 1
                                    : 0)
                               .FirstOrDefault();
+        // A routine type owns no routines until a lookup writes its derives for it, so they are looked up here.
+        if (type is RoutineTypeSymbol)
+        {
+            destroy ??= LookupMemberRoutine(type: type, memberRoutineName: RuntimeContract.Destroy);
+        }
+
         RoutineInfo? store = ResolveStoreHook(type: type, own: own);
         return new Lifecycle(Store: store, Destroy: destroy, IsBorrow: false);
     }
@@ -4488,6 +4494,15 @@ public sealed partial class TypeRegistry
             // `store` so it reads as the explicit-share op and is distinct from value-record `store`.
             return LookupMemberRoutine(type: type,
                 memberRoutineName: RuntimeContract.RefCount.Share);
+        }
+
+        // A routine value holds its lambda's counted payload: its copy step is one more holder (the `share` derive for
+        // a RoutineType in Derivation.rvr), balanced by its `destruct` at teardown.
+        if (type is RoutineTypeSymbol)
+        {
+            return own.FirstOrDefault(predicate: m =>
+                       m.Name == RuntimeContract.Duplication.Share && m.Parameters.Count == 0) ??
+                   LookupMemberRoutine(type: type, memberRoutineName: RuntimeContract.Duplication.Share);
         }
 
         if (type is VariantTypeSymbol variant)
@@ -4626,6 +4641,12 @@ public sealed partial class TypeRegistry
 
         foreach (MemberVariableInfo field in record.MemberVariables)
         {
+            // A routine value holds a counted payload: copying it adds a holder.
+            if (field.Type is RoutineTypeSymbol)
+            {
+                return true;
+            }
+
             if (field.Type is not RecordTypeSymbol fieldRec)
             {
                 continue;

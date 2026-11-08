@@ -324,10 +324,10 @@ public partial class LlvmEmitter
         }
 
         // Reachability gate: when LiveRoutineKeys is populated, skip routines not reachable from
-        // program entry points. Lifted lambdas are exempt — LambdaLiftingPass runs after
+        // program entry points. Lifted lambdas and their payload hooks are exempt — LambdaLiftingPass runs after
         // reachability, so their keys aren't in the live set even when referenced by address.
         return liveRoutineKeys.Count > 0 &&
-               !liveRoutineKeys.Contains(value: routineInfo.RegistryKey) && !routineInfo.IsLambda;
+               !liveRoutineKeys.Contains(value: routineInfo.RegistryKey) && !routineInfo.IsLiftedFromLambda;
     }
 
     /// <summary>

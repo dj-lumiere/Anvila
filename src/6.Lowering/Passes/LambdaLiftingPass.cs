@@ -926,7 +926,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                 liftedStatements.Add(item: closure.CaptureLocal(name: CapturedLocalName(name: closureCaptures[index: i].Name),
                     type: closureCaptures[index: i].Type,
                     slot: i,
-                    isBound: lambda.BoundTo?.Any(predicate: b => b.Name == closureCaptures[index: i].Name) == true));
+                    isBound: IsBoundCapture(lambda: lambda, name: closureCaptures[index: i].Name)));
             }
         }
 
@@ -998,9 +998,42 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             return function;
         }
 
+        // The payload's hook routines (the drop hook, and the collector's trace and free hooks when a capture can
+        // reach a handle) are lifted next to the lambda's own routine.
+        (Expression payload, List<(RoutineDeclaration Declaration, RoutineInfo Info)> hooks) = closure.BuildPayload(
+            captures: closureCaptures.Select(selector: c => (c.Name, c.Type,
+                                          IsBound: IsBoundCapture(lambda: lambda, name: c.Name)))
+                                     .ToList(),
+            hookName: HookName(lambda: lambda),
+            module: _currentModuleName);
+        foreach ((RoutineDeclaration hookDeclaration, RoutineInfo hookInfo) in hooks)
+        {
+            _liftedRoutines.Add(item: hookDeclaration);
+            ctx.Registry.RegisterRoutine(routine: hookInfo);
+        }
+
         return new ClosureValueExpression(Function: function,
-            Bound: closure.BuildPayload(captures: closureCaptures),
+            Bound: payload,
             Location: lambda.Location) { ResolvedType = lambda.ResolvedType };
+    }
+
+    /// <summary>
+    /// The prefix of the names of a lambda's payload hooks: its file and place, like the name a lifted lambda is
+    /// emitted under. A recovery variant body lifts its own copy of the lambda, and that copy's hooks then share the
+    /// symbols of the routine body's, whose definitions are the ones emitted.
+    /// </summary>
+    private static string HookName(LambdaExpression lambda)
+    {
+        string stem = Path.GetFileNameWithoutExtension(path: lambda.Location.FileName ?? "");
+        string file = new(value: stem.Select(selector: c => char.IsLetterOrDigit(c: c) ? c : '_').ToArray());
+        return $"__closure_{file}_{lambda.Location.Line}_{lambda.Location.Column}";
+    }
+
+    /// <summary>Whether the lambda is bound to its capture <paramref name="name"/> (a token or entity it reaches), which
+    /// the payload keeps where it is.</summary>
+    private static bool IsBoundCapture(LambdaExpression lambda, string name)
+    {
+        return lambda.BoundTo?.Any(predicate: b => b.Name == name) == true;
     }
 
     /// <summary>

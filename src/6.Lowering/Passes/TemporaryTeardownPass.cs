@@ -732,6 +732,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// ScopeTeardownLoweringPass.</summary>
     private bool IsReleasedOnReassign(TypeSymbol? t)
     {
+        // A routine value holds a counted payload, released like an RC wrapper's.
+        if (t is RoutineTypeSymbol)
+        {
+            return ctx.Registry.GetLifecycle(type: t) is { IsBorrow: false, Destroy: not null, Store: not null };
+        }
+
         if (t is not RecordTypeSymbol rec)
         {
             return false;
@@ -1315,7 +1321,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// producers (which yield a borrow of a referent owned elsewhere).</summary>
     private bool IsSpillableProducer(Expression e)
     {
-        if (e is not (CallExpression or CreatorExpression))
+        // A capturing lambda's value is made with one holder of its payload, like a call's fresh result.
+        if (e is not (CallExpression or CreatorExpression or ClosureValueExpression))
         {
             return false;
         }
@@ -1359,8 +1366,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // safe. Entities are deliberately excluded for now (their single-owner lifetime and fluent `me`
         // returns are trickier to prove alias-free); plain value records / scalars have a no-op destroy
         // and would only bloat the IR.
+        // A routine value holds a counted payload: its destroy releases one holder, as an RC wrapper's does.
         return t is RecordTypeSymbol rec && (lc.Store != null || rec.HasRCMemberVariables ||
-                                             TypeRegistry.GetRcWrapperBaseName(type: rec) is not null);
+                                             TypeRegistry.GetRcWrapperBaseName(type: rec) is not null) ||
+               t is RoutineTypeSymbol && lc.Store != null;
     }
 
     /// <summary>Whether <paramref name="call"/> reads a record out of its token (<c>v.access()</c> on a

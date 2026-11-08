@@ -508,6 +508,15 @@ public sealed class RoutineInfo
     /// <summary>Whether this routine is a lambda / closure expression.</summary>
     public bool IsLambda => Kind == RoutineKind.Lambda;
 
+    /// <summary>Whether this routine is a hook of a capturing lambda's payload (its drop, trace or free hook), written
+    /// next to the lambda's routine when the lambda is lifted.</summary>
+    public bool IsClosureHook { get; init; }
+
+    /// <summary>Whether this routine was written when a lambda was lifted: the lambda's own routine or a hook of its
+    /// payload. Such a routine may be lifted after the demand collection ran, so it is emitted whenever it is
+    /// referenced.</summary>
+    public bool IsLiftedFromLambda => IsLambda || IsClosureHook;
+
     /// <summary>Whether this routine is a constructor. Structured identity — a constructor is identified
     /// ONLY by its <see cref="RoutineKind.Creator"/> kind, NEVER by a name string. Creators carry no
     /// member name (see <see cref="CreatorName"/>).</summary>

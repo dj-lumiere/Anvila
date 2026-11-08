@@ -38,11 +38,13 @@ internal static class ReceiverFacts
     /// True when a routine of <paramref name="ownerType"/> takes <c>me</c> by reference (the caller's storage, so an
     /// in-place change reaches it): a struct record, or a backend-represented aggregate (an array <c>[N x T]</c>, a
     /// vector <c>&lt;N x E&gt;</c>), which is always reached through memory. A scalar backend type (<c>i64</c>,
-    /// <c>ptr</c>) is a plain value its operators work on directly, and an entity is already a pointer.
+    /// <c>ptr</c>) is a plain value its operators work on directly, and an entity is already a pointer. A routine
+    /// value (two words) is reached through memory too, so its teardown takes one address wherever it is called from
+    /// (a cancelled coroutine's cleanup passes the local's address).
     /// </summary>
     public static bool MeByReference(TypeSymbol? ownerType)
     {
-        return ownerType is RecordTypeSymbol { BackendType: null } ||
+        return ownerType is RecordTypeSymbol { BackendType: null } or RoutineTypeSymbol ||
                ownerType is RecordTypeSymbol { BackendType: { } backend } && backend.Length > 0 && backend[0] is '[' or '<';
     }
 

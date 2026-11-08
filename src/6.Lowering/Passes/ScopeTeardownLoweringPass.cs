@@ -1324,7 +1324,18 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // or copies it first (Mielia's RecordLoopElementPass, before this pass), so a member write never releases a value
         // through that read.
         string file = location.FileName ?? "";
-        if (ctx.Registry.IsStandardLibraryFile(filePath: file) || fieldType is not RecordTypeSymbol record)
+        if (ctx.Registry.IsStandardLibraryFile(filePath: file))
+        {
+            return false;
+        }
+
+        // A routine value holds its lambda's counted payload: the old one is released like a handle.
+        if (fieldType is RoutineTypeSymbol)
+        {
+            return ctx.Registry.GetLifecycle(type: fieldType) is { IsBorrow: false, Destroy: not null, Store: not null };
+        }
+
+        if (fieldType is not RecordTypeSymbol record)
         {
             return false;
         }

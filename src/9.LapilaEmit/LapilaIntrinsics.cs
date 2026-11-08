@@ -133,6 +133,8 @@ internal sealed class LapilaIntrinsics
             // zero_value is zeroed under an older name: every byte of a T zero.
             "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"({Argument(index: 0)} === {Argument(index: 1)})",
+            // A routine value is the record RoutineValueRecord names, and its payload is the field `bound`.
+            "routine_bound" => $"{Argument(index: 0)}.bound",
             // The crash trace the routines keep (LapilaTrace), read by System's crash_report.
             "trace_depth" => "RV_TRACE_DEPTH.load()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]

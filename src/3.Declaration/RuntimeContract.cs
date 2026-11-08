@@ -243,6 +243,43 @@ public static class RuntimeContract
         public const string Duplicate = "duplicate";
     }
 
+    /// <summary>The System routines a capturing lambda's value is built and read with (System/Memory/Closure.rvr).
+    /// LambdaLiftingPass writes the calls (see <see cref="Builder.Lowering.Passes.ClosurePlumbing"/>): the payload is
+    /// a counted entity whose data is a slot table, and the lambda's hook routines end its captures.</summary>
+    public static class Closure
+    {
+        /// <summary><c>closure_new(slots:)</c>: allocates the slot table.</summary>
+        public const string New = "closure_new";
+
+        /// <summary><c>closure_put[T](bound:, slot:, value:)</c>: copies a captured value into its cell.</summary>
+        public const string Put = "closure_put";
+
+        /// <summary><c>closure_seal(table:, drop_hook:)</c>: the payload of a lambda the collector need not trace.</summary>
+        public const string Seal = "closure_seal";
+
+        /// <summary><c>closure_seal_traced(table:, drop_hook:, trace_hook:, free_hook:)</c>: the payload of a lambda
+        /// whose captures may reach a shared entity or another routine value.</summary>
+        public const string SealTraced = "closure_seal_traced";
+
+        /// <summary><c>closure_get[T](bound:, slot:)</c>: a copy of a captured value.</summary>
+        public const string Get = "closure_get";
+
+        /// <summary><c>closure_get_bound[T](bound:, slot:)</c>: a token or entity the lambda is bound to, as it is.</summary>
+        public const string GetBound = "closure_get_bound";
+
+        /// <summary><c>closure_drop[T](table:, slot:)</c>: ends a captured value (the drop hook).</summary>
+        public const string Drop = "closure_drop";
+
+        /// <summary><c>closure_trace[T](table:, slot:)</c>: reports a captured value's handles (the trace hook).</summary>
+        public const string Trace = "closure_trace";
+
+        /// <summary><c>closure_reap[T](table:, slot:)</c>: ends a captured value except its handles (the free hook).</summary>
+        public const string Reap = "closure_reap";
+
+        /// <summary><c>closure_end(table:, slots:)</c>: frees the cells and the table.</summary>
+        public const string End = "closure_end";
+    }
+
     /// <summary>The kind a buildtime type switch tests (<c>when T</c> / <c>is DerivedDisplay</c>) for a record or entity
     /// whose <c>represent</c> is the one the builder derives (see <see cref="TypeRegistry.DisplaysByDerive"/>).</summary>
     public const string DerivedDisplayKind = "DerivedDisplay";
