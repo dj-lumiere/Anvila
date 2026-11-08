@@ -276,8 +276,9 @@ public class RecordTypeSymbol : TypeSymbol
     /// </summary>
     public bool IsLinkOptional =>
         CarrierKind == CarrierKind.Optional &&
-        TypeArguments is [RecordTypeSymbol { TypeArguments: [EntityTypeSymbol { IsRetroactive: true }] } token] &&
-        (token.GenericDefinition?.Name ?? token.Name) is RuntimeContract.Viewing or RuntimeContract.Modifying;
+        TypeArguments is [RecordTypeSymbol { TypeArguments: [EntityTypeSymbol entity] } token] &&
+        (token.GenericDefinition?.Name ?? token.Name) is RuntimeContract.Viewing or RuntimeContract.Modifying &&
+        entity.ReadRetroactivity();
 
     /// <summary>Whether a <see cref="CarrierKind.Optional"/> carrier over <paramref name="typeArguments"/> is laid out as
     /// an address: its one argument is an entity reached through its address.</summary>

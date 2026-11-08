@@ -1163,7 +1163,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// A routine of the program handed a token taken from a link (<c>node.parent.rename()</c>, an arm's token passed
-    /// on) checks that token where it uses it (LinkLiveCheckPass), so it can fail: marked here, while the calls above it
+    /// on) checks that token where it uses it (RuntimeCheckPass), so it can fail: marked here, while the calls above it
     /// are analyzed, so a <c>try</c> or <c>check</c> there receives the failure.
     /// </summary>
     private void NoteLinkTokenHandedOn(CallExpression call)

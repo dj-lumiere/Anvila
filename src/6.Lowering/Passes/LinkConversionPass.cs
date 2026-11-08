@@ -281,6 +281,14 @@ internal sealed class LinkConversionPass : AstRewriter
     protected override Expression VisitCall(CallExpression e)
     {
         Expression visited = base.VisitCall(e: e);
+        // A construction written as a call of its type (`Creature(x: 0, parent: herd[0])`) is bound to its creator
+        // later (CallBindingPass): its arguments are the member variables.
+        if (visited is CallExpression { ResolvedRoutine: null, Callee: IdentifierExpression, ResolvedType: { } made } construction &&
+            MembersOf(type: made) is { } members)
+        {
+            return ConvertConstruction(construction: construction, members: members);
+        }
+
         // The take of a link's token is handed the link itself (or a token on it, read later), never a new link.
         if (visited is not CallExpression { ResolvedRoutine: { } routine } call ||
             (routine.GenericDefinition ?? routine).Name is RuntimeContract.TakeModifyingLink or RuntimeContract.TakeViewingLink)
@@ -322,6 +330,46 @@ internal sealed class LinkConversionPass : AstRewriter
         return arguments == null ? call : call with { Arguments = arguments };
     }
 
+    /// <summary>The member variables a construction of <paramref name="type"/> sets, or null for another type.</summary>
+    private static List<MemberVariableInfo>? MembersOf(TypeSymbol type)
+    {
+        return type switch
+        {
+            EntityTypeSymbol entity => entity.MemberVariables,
+            RecordTypeSymbol record => record.MemberVariables,
+            _ => null
+        };
+    }
+
+    /// <summary>A construction written as a call: each argument made into a link where its member variable keeps one.
+    /// Arguments without a label fill the member variables in order.</summary>
+    private Expression ConvertConstruction(CallExpression construction, List<MemberVariableInfo> members)
+    {
+        List<Expression>? arguments = null;
+        for (int i = 0; i < construction.Arguments.Count; i++)
+        {
+            Expression argument = construction.Arguments[index: i];
+            TypeSymbol? target = argument is NamedArgumentExpression named
+                ? members.FirstOrDefault(predicate: m => m.Name == named.Name)?.Type
+                : i < members.Count
+                    ? members[index: i].Type
+                    : null;
+            Expression inner = argument is NamedArgumentExpression wrapped ? wrapped.Value : argument;
+            Expression converted = Convert(value: inner, target: target);
+            if (ReferenceEquals(objA: converted, objB: inner))
+            {
+                continue;
+            }
+
+            arguments ??= [.. construction.Arguments];
+            arguments[index: i] = argument is NamedArgumentExpression named2
+                ? named2 with { Value = converted, ResolvedType = converted.ResolvedType }
+                : converted;
+        }
+
+        return arguments == null ? construction : construction with { Arguments = arguments };
+    }
+
     /// <summary>A parameter's type with the owner's type parameters read from the receiver
     /// (<c>T</c> of <c>List[T].add_last</c> is the <c>Modifying[Node]?</c> of a <c>List[Modifying[Node]?]</c>).</summary>
     private static TypeSymbol Substitute(TypeSymbol type, RoutineInfo routine, TypeSymbol? receiver)
@@ -358,13 +406,7 @@ internal sealed class LinkConversionPass : AstRewriter
             return read;
         }
 
-        List<MemberVariableInfo>? members = made switch
-        {
-            EntityTypeSymbol entity => entity.MemberVariables,
-            RecordTypeSymbol record => record.MemberVariables,
-            _ => null
-        };
-        if (members == null)
+        if (MembersOf(type: made) is not { } members)
         {
             return visited;
         }

@@ -368,8 +368,9 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private Dictionary<string, Statement> _variantBodies = new();
 
-    /// <summary>The checks of tokens a link may have given, kept to put them into the bodies variants are made from.</summary>
-    private LinkLiveCheckPass? _linkLiveChecks;
+    /// <summary>The checks that can fail which the builder puts into the program's routines (a token a link may have
+    /// given, a container a running loop may walk), kept to put them into the bodies variants are made from.</summary>
+    private RuntimeCheckPass? _runtimeChecks;
 
     /// <summary>
     /// Concrete generic memberRoutine bodies produced by <see cref="GenericMonomorphizationPass"/>.
@@ -885,9 +886,10 @@ public sealed partial class SemanticVerifier
         // Every instance the program's own bodies made is known now: a link one of them names makes its entity type
         // retroactive before anything is lowered.
         _registry.NoteLinksInInstances();
-        // A token a link may have given is checked where it is used, before the recovery variants are made.
-        _linkLiveChecks = new LinkLiveCheckPass(registry: _registry);
-        _linkLiveChecks.Run(programs: _registry.UserPrograms.Select(selector: p => p.Program));
+        // A token a link may have given is checked where it is used, and a container a running loop may walk where it
+        // is changed, before the recovery variants are made.
+        _runtimeChecks = new RuntimeCheckPass(registry: _registry);
+        _runtimeChecks.Run(programs: _registry.UserPrograms.Select(selector: p => p.Program));
         DecideTasksCross();
         Stopwatch? swSub = SaTiming
             ? Stopwatch.StartNew()

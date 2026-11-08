@@ -103,7 +103,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
         {
             _tokenSources.Clear();
             CheckStatementShapes(stmt: routine.Body, guards: [], preceding: []);
-            AstWalker.Walk(root: routine.Body, visit: node =>
+            AstWalker.WalkWritten(root: routine.Body, visit: node =>
             {
                 if (node is CallExpression call)
                 {
@@ -280,7 +280,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
             collection: routine.Parameters.Select(selector: p => p.Name).Append(element: MeSlot),
             comparer: StringComparer.Ordinal);
         var found = new List<string>();
-        AstWalker.WalkExpressions(root: routine.Body,
+        AstWalker.WalkWrittenExpressions(root: routine.Body,
             visit: e =>
             {
                 // `d[k] = v` through a parameter whose setitem may add the key changes that parameter's shape.
@@ -635,7 +635,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
         var active = new List<ShapeGuard>(collection: guards);
         foreach (Expression e in exprs)
         {
-            AstWalker.WalkExpressions(root: e,
+            AstWalker.WalkWrittenExpressions(root: e,
                 visit: node =>
                 {
                     Expression? owner = node switch
@@ -660,7 +660,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
 
         foreach (Expression e in exprs)
         {
-            AstWalker.WalkExpressions(root: e,
+            AstWalker.WalkWrittenExpressions(root: e,
                 visit: node =>
                 {
                     switch (node)
@@ -682,6 +682,13 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                                         why: $"it may add an element to '{ShownPath(path: writtenPath)}'",
                                         location: node.Location);
                                 }
+                                else if (!direct && MayBeSameContainer(operand: written, path: writtenPath, guard: g))
+                                {
+                                    GuardOrReportAlias(operand: written, guard: g,
+                                        attempt: $"put a value into '{ShownPath(path: writtenPath)}[...]'",
+                                        shown: ShownPath(path: writtenPath),
+                                        location: node.Location);
+                                }
                             }
 
                             break;
@@ -701,6 +708,29 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     }
                 });
         }
+    }
+
+    /// <summary>
+    /// A change through a name the build cannot prove different from the container a guard keeps still: a loop
+    /// (not over a shared handle) then checks its container at run time, anything else is reported.
+    /// </summary>
+    private void GuardOrReportAlias(Expression operand, ShapeGuard guard, string attempt, string shown,
+        SourceLocation location)
+    {
+        if (guard is { IsLoop: true, Holder: null, Loop: { } guardedLoop } &&
+            (operand.ResolvedType is null || SharedHandleInner(type: operand.ResolvedType) == null) &&
+            (guard.Type is null || SharedHandleInner(type: guard.Type) == null))
+        {
+            guardedLoop.ChecksShapeAtRunTime = true;
+            RuntimeShapeUses = true;
+            RuntimeShapeLoops.Add(item: guardedLoop.Location);
+            return;
+        }
+
+        ReportShapeChange(guard: guard, attempt: attempt,
+            why: $"'{shown}' and '{guard.Shown}' are both tokens or shared handles on a {AliasInner(type: guard.Type)?.Name}, " +
+                 "so they may be the same one",
+            location: location);
     }
 
     /// <summary>The container of a subscript write whose <c>setitem</c> is <c>@reshaping</c> (<c>d[k] = v</c> on a
@@ -776,15 +806,14 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     string change = callee.Length == 0 ? $"pass '{shown}' to a routine value" : $"change '{shown}' through '{callee}'";
                     string same = $"'{shown}' and '{g.Shown}' are both tokens or shared handles on a {AliasInner(type: g.Type)!.Name}, " +
                                   "so they may be the same one";
-                    string other = g.IsLoop ? $"viewing {RootName(path: g.Path)}" : RootName(path: g.Path);
-                    string multi = $"open both with `modifying {RootName(path: path)}, {other}`, which checks that they differ";
                     if (g.Holder != null)
                     {
                         report(code: SemanticDiagnosticCode.HeldElementOfAliasReshaped,
                             message:
                             $"You are trying to {change} while '{g.Holder}' (line {g.HolderLine}) holds an element of '{g.Shown}': " +
-                            $"{same}, and the change could move or free the element '{g.Holder}' holds. Finish with " +
-                            $"'{g.Holder}' before the change, or {multi}.",
+                            $"{same}, and the change could move or free the element '{g.Holder}' holds. The build cannot " +
+                            "prove them different here, and a check at run time guards only a `for` loop: finish with " +
+                            $"'{g.Holder}' before the change.",
                             location: call.Location);
                     }
                     else if (g.IsLoop)
@@ -792,8 +821,9 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                         report(code: SemanticDiagnosticCode.ReshapingDuringIteration,
                             message:
                             $"You are trying to {change} while a `for` loop is going through '{g.Shown}': {same}, and after " +
-                            $"such a change the loop could no longer trust that its next element is really the next one. " +
-                            $"Make the change after the loop, or {multi}.",
+                            "such a change the loop could no longer trust that its next element is really the next one. " +
+                            "A loop over a shared handle goes through the handle, so the build cannot check it at run " +
+                            "time: make the change after the loop.",
                             location: call.Location);
                     }
                     else
@@ -841,7 +871,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
             }
 
             bool reported = false;
-            AstWalker.WalkExpressions(root: lambda.Body, visit: node =>
+            AstWalker.WalkWrittenExpressions(root: lambda.Body, visit: node =>
             {
                 if (reported || node is not CallExpression inner)
                 {
@@ -1028,7 +1058,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
             }
 
             TypeSymbol? found = null;
-            AstWalker.WalkExpressions(root: init,
+            AstWalker.WalkWrittenExpressions(root: init,
                 visit: e =>
                 {
                     if (e.ResolvedType is { } t && ShapePath(expr: e) == path)

@@ -610,6 +610,38 @@ internal sealed class LapilaWriter
         return name;
     }
 
+    /// <summary>The slot stores declared so far, by the qualified name of their entity type.</summary>
+    private readonly Dictionary<string, string> _typeStores = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The address of the slot store of the retroactive entity type <paramref name="type"/>: a zeroed 16-byte global
+    /// (its free list and its number, Ingrid's slots.lpa), one per type. Its name comes from the type's qualified
+    /// name, so a resident base and a delta name the same store alike.
+    /// </summary>
+    public string TypeStore(TypeSymbol type)
+    {
+        if (!_typeStores.TryGetValue(key: type.FullName, value: out string? global))
+        {
+            global = $"RV_STORE_{Sanitize(text: type.FullName)}_{StableHash(text: type.FullName):x8}";
+            _globals.Append(value: $"global {global}: &U128\n\n");
+            _typeStores[key: type.FullName] = global;
+        }
+
+        return $"bitcast[@U128, Addr]({global})";
+    }
+
+    /// <summary>A hash of <paramref name="text"/> that is the same in every process (FNV-1a over its UTF-16 units).</summary>
+    private static uint StableHash(string text)
+    {
+        uint hash = 2166136261;
+        foreach (char unit in text)
+        {
+            hash = unchecked((hash ^ unit) * 16777619);
+        }
+
+        return hash;
+    }
+
     /// <summary>
     /// The read-only memory holding <paramref name="data"/>'s elements (a Lapila preset in memory, a private constant
     /// as in the LLVM emitter, so each module keeps its own), laid down once per distinct content; its name is the
@@ -857,6 +889,9 @@ internal sealed class LapilaWriter
                 return "Addr";
             case RoutineTypeSymbol:
                 return RoutineValueRecord;
+            // A link of a retroactive type is 128 bits: the entity's address and its slot's generation (Link.rvr).
+            case RecordTypeSymbol { IsLinkOptional: true }:
+                return "U128";
             case ConstGenericValueTypeSymbol constant:
                 return TypeText(type: ConstantType(constant: constant));
             case RecordTypeSymbol { BackendType: { } backend } record:
@@ -891,6 +926,13 @@ internal sealed class LapilaWriter
                                  throw new NotSupportedException(message: "The Lapila backend found no Addr type.");
             return _input.Registry.GetOrCreateTupleType(elementTypes: [pointer, pointer, pointer]);
         }
+    }
+
+    /// <summary>The builder's type of the name <paramref name="name"/> (<c>U128</c>).</summary>
+    public TypeSymbol NamedType(string name)
+    {
+        return _input.Registry.LookupType(name: name) ??
+               throw new NotSupportedException(message: $"The Lapila backend found no {name} type.");
     }
 
     /// <summary>The builder's <c>U64</c> type.</summary>

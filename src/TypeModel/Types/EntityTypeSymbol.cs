@@ -27,6 +27,21 @@ public class EntityTypeSymbol : TypeSymbol
     /// <summary>Whether this entity type is retroactive (see <see cref="RetroactiveSite"/>).</summary>
     public bool IsRetroactive => RetroactiveSite != null;
 
+    /// <summary>
+    /// Whether code or a layout the builder made already relies on whether this type is retroactive: an answer of
+    /// <c>T.is_retroactive()</c> written into a body, an entity given its box, a link laid out. The type cannot become
+    /// retroactive after that (<c>TypeRegistry.MarkRetroactive</c> fails loudly), since that code would be wrong.
+    /// </summary>
+    public bool RetroactivityRelied { get; set; }
+
+    /// <summary><see cref="IsRetroactive"/> for code or a layout the builder makes from the answer (see
+    /// <see cref="RetroactivityRelied"/>).</summary>
+    public bool ReadRetroactivity()
+    {
+        RetroactivityRelied = true;
+        return IsRetroactive;
+    }
+
     /// <summary>MemberVariables declared in this entity.</summary>
     public List<MemberVariableInfo> MemberVariables
     {

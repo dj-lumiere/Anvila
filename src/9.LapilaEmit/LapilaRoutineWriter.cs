@@ -680,11 +680,9 @@ internal sealed class LapilaRoutineWriter
     {
         switch (expression)
         {
-            case EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity }:
+            case EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity } allocation:
             {
-                string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
-                    returnType: "Addr");
-                string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
+                string block = EntityBlock(entity: entity, box: allocation.Box);
                 Emit(line: $"{block}.to[@{_module.EntityRecord(entity: entity)}]().zeroinit(1)");
                 return new Operand(Text: block, Type: entity, IsPlace: false);
             }
@@ -1227,7 +1225,9 @@ internal sealed class LapilaRoutineWriter
                 typeText: TypeText,
                 zero: ZeroValue,
                 spill: (value, type) => Place(operand: new Operand(Text: value, Type: type, IsPlace: false)),
-                emit: Emit);
+                emit: Emit,
+                typeStore: _module.TypeStore,
+                typeNamed: _module.NamedType);
             if (LapilaWriter.IsVoid(type: routine.ReturnType))
             {
                 Emit(line: operation);
@@ -1355,8 +1355,10 @@ internal sealed class LapilaRoutineWriter
             return EvaluateEntityCreator(creator: creator, entity: entity);
         }
 
-        // A backend-represented record (a number, an Items) built from nothing is its zero value.
-        if (type is RecordTypeSymbol { BackendType: not null } && creator.MemberVariables.Count == 0)
+        // A backend-represented record (a number, an Items) built from nothing is its zero value. So is a link that is
+        // never present (the lowering wrote every present one as a call, LinkLoweringPass).
+        if (type is RecordTypeSymbol { BackendType: not null } && creator.MemberVariables.Count == 0 ||
+            type is RecordTypeSymbol { IsLinkOptional: true })
         {
             return new Operand(Text: Temp(type: type, expression: ZeroValue(type: type)), Type: type, IsPlace: false);
         }
@@ -1411,9 +1413,7 @@ internal sealed class LapilaRoutineWriter
                                      to: entity.MemberVariables[index: i].Type);
                              })
                             .ToList();
-        string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
-            returnType: "Addr");
-        string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
+        string block = EntityBlock(entity: entity, box: creator.Box);
         for (int i = 0; i < values.Count; i++)
         {
             Emit(line: $"{block}.to[@{_module.EntityRecord(entity: entity)}]()." +
@@ -1421,6 +1421,22 @@ internal sealed class LapilaRoutineWriter
         }
 
         return new Operand(Text: block, Type: entity, IsPlace: false);
+    }
+
+    /// <summary>
+    /// The bytes a new entity goes to: the box the lowering wrote (a slot of a retroactive type's store, Link.rvr), else
+    /// a heap block from the runtime.
+    /// </summary>
+    private string EntityBlock(EntityTypeSymbol entity, Expression? box)
+    {
+        if (box != null)
+        {
+            return Temp(type: entity, expression: Value(operand: Evaluate(expression: box)));
+        }
+
+        string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
+            returnType: "Addr");
+        return Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
     }
 
     /// <summary>A variant (Check and Lookup among them) built from its tag and payload: zeroed storage, the tag,

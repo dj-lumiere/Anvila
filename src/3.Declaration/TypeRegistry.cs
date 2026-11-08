@@ -812,6 +812,16 @@ public sealed partial class TypeRegistry
             return;
         }
 
+        // Once retroactivity is decided, code and layouts are made from it. A type found retroactive later (by an
+        // instance made while a generic body is made concrete) is still safe until something relied on the answer.
+        if (RetroactivityDecided && entity.RetroactivityRelied)
+        {
+            throw new InvalidOperationException(
+                message: $"The entity type '{entity.FullName}' became retroactive at {site} after code or a layout the " +
+                         "builder made already relied on it not being retroactive. Decide its retroactivity before that " +
+                         "code is lowered.");
+        }
+
         entity.RetroactiveSite = site;
         RetroactiveTypes.Add(item: entity);
     }
@@ -860,13 +870,31 @@ public sealed partial class TypeRegistry
         }
     }
 
-    /// <summary><see cref="NoteInstanceLinks"/> for every instance made so far.</summary>
+    /// <summary>
+    /// Whether retroactivity is decided: the program's bodies are analyzed and every instance they made was looked at.
+    /// From then on code and layouts are made from <see cref="EntityTypeSymbol.IsRetroactive"/>, and a type that
+    /// becomes retroactive after something relied on it fails the build loudly (<see cref="MarkRetroactive"/>).
+    /// </summary>
+    public bool RetroactivityDecided { get; private set; }
+
+    /// <summary><see cref="NoteInstanceLinks"/> for every instance made so far, then retroactivity is decided: what
+    /// was read of it during analysis (a size asked for) relied on nothing lowered.</summary>
     public void NoteLinksInInstances()
     {
         foreach (TypeSymbol instance in AllConcreteGenericInstancesUnfiltered.ToList())
         {
             NoteInstanceLinks(instance: instance);
         }
+
+        foreach (TypeSymbol type in GetAllTypes().Concat(second: AllConcreteGenericInstancesUnfiltered))
+        {
+            if (type is EntityTypeSymbol entity)
+            {
+                entity.RetroactivityRelied = false;
+            }
+        }
+
+        RetroactivityDecided = true;
     }
 
     private void NoteLinkIn(TypeSymbol type, SourceLocation? site, HashSet<TypeSymbol> seen)

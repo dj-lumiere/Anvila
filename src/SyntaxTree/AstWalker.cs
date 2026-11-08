@@ -29,6 +29,41 @@ public static class AstWalker
         }
     }
 
+    /// <summary>
+    /// <see cref="Walk"/> over the code as written: a <c>try</c> / <c>check</c> that analysis already turned into a
+    /// call is walked through the expression it was written over, not the call it became (which takes each name once
+    /// and reaches the calls as written only through a routine of its own).
+    /// </summary>
+    public static void WalkWritten(object? root, Action<object> visit)
+    {
+        if (root == null)
+        {
+            return;
+        }
+
+        visit(obj: root);
+        IEnumerable<object> children = root is RecoveryExpression { Inner: var written }
+            ? [written]
+            : EnumerateChildren(node: root);
+        foreach (object child in children)
+        {
+            WalkWritten(root: child, visit: visit);
+        }
+    }
+
+    /// <summary><see cref="WalkExpressions"/> over the code as written (see <see cref="WalkWritten"/>).</summary>
+    public static void WalkWrittenExpressions(object? root, Action<Expression> visit)
+    {
+        WalkWritten(root: root,
+            visit: n =>
+            {
+                if (n is Expression e)
+                {
+                    visit(obj: e);
+                }
+            });
+    }
+
     /// <summary>The names a routine (or a body) binds: its parameters, its variables, the names its loops, its
     /// patterns, its access and `using` blocks and its `steal ... as` statements give.</summary>
     public static HashSet<string> BoundNames(object node)

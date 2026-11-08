@@ -20,11 +20,23 @@ internal sealed class LapilaIntrinsics
     private readonly Func<TypeSymbol?, string> _zero;
     private readonly Func<string, TypeSymbol?, string> _spill;
     private readonly Action<string> _emit;
+    private readonly Func<TypeSymbol, string> _typeStore;
+    private readonly Func<string, TypeSymbol> _typeNamed;
+
+    /// <summary>The builder's <c>U64</c>, <c>U128</c> and <c>Addr</c> types, for the slots the link primitives use.</summary>
+    private TypeSymbol _u64 => _typeNamed(arg: "U64");
+
+    private TypeSymbol _u128 => _typeNamed(arg: "U128");
+
+    private TypeSymbol _pointer => _typeNamed(arg: "Addr");
 
     private LapilaIntrinsics(RoutineInfo routine, List<(string Value, TypeSymbol? Type)> arguments,
         TypeSymbol? resultType, Func<TypeSymbol?, string> typeText, Func<TypeSymbol?, string> zero,
-        Func<string, TypeSymbol?, string> spill, Action<string> emit)
+        Func<string, TypeSymbol?, string> spill, Action<string> emit, Func<TypeSymbol, string> typeStore,
+        Func<string, TypeSymbol> typeNamed)
     {
+        _typeStore = typeStore;
+        _typeNamed = typeNamed;
         _routine = routine;
         _arguments = arguments;
         _resultType = resultType;
@@ -41,13 +53,18 @@ internal sealed class LapilaIntrinsics
     /// <param name="typeText">The Lapila spelling of a type.</param>
     /// <param name="zero">An expression for the all-zero value of a type.</param>
     /// <param name="spill">Stores a value of a type in a fresh slot and returns the slot.</param>
-    /// <param name="emit">Writes a statement before the expression.</param>
+    /// <param name="emit">Writes a statement before the expression. A line that starts with four spaces is nested in the
+    /// line before it.</param>
+    /// <param name="typeStore">The address of a retroactive entity type's slot store.</param>
+    /// <param name="typeNamed">A builder type by its name (<c>U64</c>).</param>
     public static string Translate(RoutineInfo routine, List<(string Value, TypeSymbol? Type)> arguments,
         TypeSymbol? resultType, Func<TypeSymbol?, string> typeText, Func<TypeSymbol?, string> zero,
-        Func<string, TypeSymbol?, string> spill, Action<string> emit)
+        Func<string, TypeSymbol?, string> spill, Action<string> emit, Func<TypeSymbol, string> typeStore,
+        Func<string, TypeSymbol> typeNamed)
     {
         return new LapilaIntrinsics(routine: routine, arguments: arguments, resultType: resultType,
-            typeText: typeText, zero: zero, spill: spill, emit: emit).Translate();
+            typeText: typeText, zero: zero, spill: spill, emit: emit, typeStore: typeStore,
+            typeNamed: typeNamed).Translate();
     }
 
     private string Translate()
@@ -168,10 +185,61 @@ internal sealed class LapilaIntrinsics
                 $".stride({Index(index: 1)}).peek()",
             "set_byte_at" => SetElement(),
             "entity_from_hijacked" => Argument(index: 0),
+            // Links of retroactive entity types (Link.rvr): 128 bits, the entity's address in the low half and its
+            // slot's generation in the high half.
+            "slot_store" => Store(),
+            "link_make" => LinkMake(),
+            "link_live" => LinkLive(),
+            "link_token" => $"inttoptr[U64, Addr](trunc[U128, U64]({Argument(index: 0)}))",
+            "link_same" => $"ieq[U128]({Argument(index: 0)}, {Argument(index: 1)})",
+            "link_other" => $"ine[U128]({Argument(index: 0)}, {Argument(index: 1)})",
             _ => throw new NotSupportedException(
                 message: $"The Lapila backend has no translation for the primitive LLVM::{_routine.Name} yet " +
                          $"(result {_resultType?.FullName ?? "none"}).")
         };
+    }
+
+    /// <summary>The slot store of the entity type the primitive is instantiated for.</summary>
+    private string Store()
+    {
+        return _routine.TypeArguments is [{ } entity]
+            ? _typeStore(arg: entity)
+            : throw new NotSupportedException(
+                message: $"The Lapila backend found an LLVM::{_routine.Name} without its entity type.");
+    }
+
+    /// <summary>
+    /// The generation now in the header of the slot at <paramref name="address"/> (a U64 expression), read from the
+    /// type's store when the address is zero, so no read goes to address 0.
+    /// </summary>
+    private string Generation(string address)
+    {
+        string header = _spill(arg1: Store(), arg2: _pointer);
+        _emit(obj: $"if ine[U64]({address}, 0)");
+        _emit(obj: $"    {header}.store(inttoptr[U64, Addr]({address}) -% ByteSize.construct(bytes: 16))");
+        return $"{header}.load().to[@U64]().peek()";
+    }
+
+    /// <summary>A link from a token: its address and its slot's generation now, all zero when not present.</summary>
+    private string LinkMake()
+    {
+        string address = _spill(arg1: $"ptrtoint[Addr, U64]({Argument(index: 1)})", arg2: _u64);
+        string generation = Generation(address: $"{address}.load()");
+        string link = _spill(arg1: _zero(arg: _u128), arg2: _u128);
+        _emit(obj: $"if {Argument(index: 0)}");
+        _emit(obj: $"    {link}.store(bor[U128](shl[U128](val: zext[U64, U128]({generation}), amt: 64), " +
+                   $"zext[U64, U128]({address}.load())))");
+        return $"{link}.load()";
+    }
+
+    /// <summary>Whether a link names its entity still: its address is not zero and its slot's generation is the
+    /// link's.</summary>
+    private string LinkLive()
+    {
+        string address = _spill(arg1: $"trunc[U128, U64]({Argument(index: 0)})", arg2: _u64);
+        string generation = Generation(address: $"{address}.load()");
+        return $"(ine[U64]({address}.load(), 0) and ieq[U64]({generation}, " +
+               $"trunc[U128, U64](lshr[U128](val: {Argument(index: 0)}, amt: 64))))";
     }
 
     /// <summary>

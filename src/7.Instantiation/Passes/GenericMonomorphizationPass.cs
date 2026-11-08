@@ -3782,6 +3782,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         candidates = NarrowCandidatesByModuleAndRealm(candidates: candidates,
             expectedOwnerModule: expectedOwnerModule,
             expectedOwnerRealm: expectedOwnerRealm);
+        // A routine written for a program type is that type's own: another type that only shares its name
+        // (`Box[T]` declared in two modules) never takes its body, even when it has no routine of that name itself.
+        if (expectedOwnerModule != null)
+        {
+            candidates = candidates.Where(predicate: d => !WrittenForAnotherProgramType(decl: d,
+                                        expectedOwnerModule: expectedOwnerModule))
+                                   .ToList();
+        }
         // A realm's surface routine and the shared routine it stands in for have the same owner and name: the
         // routine being built says which of the two it is.
         if (candidates.Any(predicate: d => d.ResolvedInfo?.SurfaceRealm != null))
@@ -3819,6 +3827,15 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             expectedParamCount: expectedParamCount,
             expectedParamNames: expectedParamNames,
             expectedParamTypeNames: expectedParamTypeNames);
+    }
+
+    /// <summary>Whether <paramref name="decl"/> is a member routine of a type the program declares whose qualified name
+    /// is not <paramref name="expectedOwnerModule"/>.</summary>
+    private bool WrittenForAnotherProgramType(RoutineDeclaration decl, string expectedOwnerModule)
+    {
+        return decl.ResolvedInfo?.OwnerType is { FullName: { } ownerName, Location.FileName: { } ownerFile } &&
+               !ctx.Registry.IsStandardLibraryFile(filePath: ownerFile) &&
+               TypeSymbol.StripTypeArgs(name: ownerName) != expectedOwnerModule;
     }
 
     /// <summary>

@@ -643,7 +643,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
             case RuntimeContract.IsRetroactive when _boolType != null:
             {
-                bool retroactive = type is EntityTypeSymbol { IsRetroactive: true };
+                bool retroactive = type is EntityTypeSymbol entity && entity.ReadRetroactivity();
                 return new LiteralExpression(Value: retroactive,
                     LiteralType: retroactive
                         ? TokenType.True

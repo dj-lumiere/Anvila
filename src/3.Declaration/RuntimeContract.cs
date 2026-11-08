@@ -406,7 +406,7 @@ public static class RuntimeContract
 
     /// <summary>Link.rvr: <c>T.require_live()</c>, put before a statement that uses a token a link may have given, which
     /// fails with <c>EntityEndedError</c> once the entity ended.</summary>
-    /// <remarks>Sites: LinkLiveCheckPass.</remarks>
+    /// <remarks>Sites: RuntimeCheckPass.</remarks>
     public const string RequireLive = "require_live";
 
     /// <summary>Link.rvr: <c>take_modifying_link(link:)</c>, the token a link holds for a use that does not take the link

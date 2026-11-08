@@ -12,9 +12,11 @@ namespace Builder.Lowering.Passes;
 /// (<see cref="LoopStatement.ChecksShapeAtRunTime"/>, set by the shape check): each opens a use of its container's
 /// shape while it runs (<c>var __su_N = xs.begin_shape_use()</c> right before the loop, in a block of their own, so
 /// the use ends with the loop at every exit). When the program has such a loop, every call of a routine that can add
-/// to or remove from a container (<c>@reshaping</c>) in the program's own routines first checks its receiver
-/// (<c>xs.require_shape_free()</c>), which fails with <c>ReshapingWhileInUseError</c> while a use of it is open. A
-/// program without such a loop is left as it is and pays nothing.
+/// to or remove from a container (<c>@reshaping</c>) first checks its receiver (<c>xs.require_shape_free()</c>), which
+/// fails with <c>ReshapingWhileInUseError</c> while a use of it is open. RuntimeCheckPass puts those checks into the
+/// program's routines before their recovery variants are made, so a <c>try</c> above receives the failure. This pass
+/// adds them only where that one did not reach (a lambda's body, lifted here). A program without such a loop is left
+/// as it is and pays nothing.
 /// </summary>
 internal sealed class RuntimeShapeUseLoweringPass : AstRewriter
 {
@@ -70,9 +72,11 @@ internal sealed class RuntimeShapeUseLoweringPass : AstRewriter
         {
             Statement statement = block.Statements[index: i];
             List<Statement> lowered = [];
-            foreach (Expression receiver in ReshapedReceivers(statement: statement))
+            HashSet<string> checkedAlready = CheckedBefore(statements: block.Statements, index: i);
+            foreach (Expression receiver in RuntimeCheckPass.ReshapedReceivers(stmt: statement))
             {
-                if (Call(receiver: receiver, name: RuntimeContract.ShapeUse.RequireFree) is { } check)
+                if (RuntimeCheckPass.PathText(expr: receiver) is { } path && checkedAlready.Add(item: path) &&
+                    Call(receiver: receiver, name: RuntimeContract.ShapeUse.RequireFree) is { } check)
                 {
                     lowered.Add(item: new ExpressionStatement(Expression: check, Location: statement.Location));
                 }
@@ -130,80 +134,43 @@ internal sealed class RuntimeShapeUseLoweringPass : AstRewriter
         return null;
     }
 
-    /// <summary>The receivers the statement's own calls of <c>@reshaping</c> routines change, when each is a plain name
-    /// or member variable path (evaluated again by the check without effect). Calls inside a nested block, lambda or
-    /// conditional belong to their own statement.</summary>
-    private static List<Expression> ReshapedReceivers(Statement statement)
+    /// <summary>The containers the checks right before a statement already check (put there by RuntimeCheckPass).</summary>
+    private static HashSet<string> CheckedBefore(List<Statement> statements, int index)
     {
-        var found = new List<Expression>();
-        IEnumerable<Expression> roots = statement switch
+        var paths = new HashSet<string>(comparer: StringComparer.Ordinal);
+        for (int j = index - 1; j >= 0; j--)
         {
-            ExpressionStatement e => [e.Expression],
-            AssignmentStatement a => [a.Target, a.Value],
-            DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } init } } => [init],
-            ReturnStatement { Value: { } v } => [v],
-            DropStatement d => [d.Expression],
-            _ => []
-        };
-        foreach (Expression root in roots)
-        {
-            AstWalker.WalkExpressions(root: root,
-                visit: e =>
+            if (statements[index: j] is not ExpressionStatement
                 {
-                    if (e is CallExpression
-                        {
-                            ResolvedRoutine.IsReshaping: true, Callee: MemberExpression { Object: var receiver }
-                        } && IsPlainPath(expr: receiver) && receiver.ResolvedType is not null)
+                    Expression: CallExpression
                     {
-                        found.Add(item: receiver);
-                    }
-                });
+                        ResolvedRoutine.Name: RuntimeContract.ShapeUse.RequireFree or RuntimeContract.RequireLive,
+                        Callee: MemberExpression { Object: var receiver }
+                    } check
+                })
+            {
+                break;
+            }
+
+            if (check.ResolvedRoutine.Name == RuntimeContract.ShapeUse.RequireFree &&
+                RuntimeCheckPass.PathText(expr: receiver) is { } path)
+            {
+                paths.Add(item: path);
+            }
         }
 
-        return found;
+        return paths;
     }
 
     private static bool IsPlainPath(Expression expr)
     {
-        return expr switch
-        {
-            IdentifierExpression => true,
-            MemberExpression { TakesLink: false } member => IsPlainPath(expr: member.Object),
-            _ => false
-        };
+        return RuntimeCheckPass.PathText(expr: expr) != null;
     }
 
-    /// <summary>
-    /// <c>receiver.name()</c> on the container a plain path names: a token is a way to the entity, so the routine is
-    /// the entity's own (<c>T.begin_shape_use</c>, ShapeUse.rvr). Null when the container is not an entity.
-    /// </summary>
+    /// <summary><c>receiver.name()</c> on the container a plain path names, or null when it is not an entity.</summary>
     private CallExpression? Call(Expression receiver, string name)
     {
-        TypeSymbol? type = receiver.ResolvedType;
-        if (type?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying && type.TypeArguments is [{ } inner])
-        {
-            type = inner;
-        }
-
-        if (type is not EntityTypeSymbol entity ||
-            _registry.LookupMemberRoutineOverload(type: entity, memberRoutineName: name, argTypes: []) is not { } routine)
-        {
-            return null;
-        }
-
-        Expression copy = receiver with { };
-        return new CallExpression(
-            Callee: new MemberExpression(Object: copy, MemberName: name, Location: receiver.Location)
-            {
-                ResolvedType = routine.ReturnType
-            },
-            Arguments: [],
-            Location: receiver.Location)
-        {
-            ResolvedRoutine = routine,
-            ResolvedType = routine.ReturnType,
-            LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine),
-            IsSynthesizedLowering = true
-        };
+        return RuntimeCheckPass.MemberCall(receiver: receiver, name: name, registry: _registry,
+            location: receiver.Location);
     }
 }

@@ -215,7 +215,7 @@ public sealed partial class SemanticVerifier
                     DeclarationStatement
                     {
                         Declaration: VariableDeclaration { Initializer: CallExpression }
-                    }
+                    } or ExpressionStatement { Expression: CallExpression }
                 ] &&
             residual is IdentifierExpression &&
             inner is CallExpression { ResolvedRoutine: { } singleBase } singleCall &&
@@ -774,6 +774,14 @@ public sealed partial class SemanticVerifier
 
         private Expression HoistFailable(CallExpression call)
         {
+            // A call that returns nothing runs as a statement of its own, and `None` stands where it was. Its recovery
+            // variant gives only whether it succeeded, which a statement passes on and a local of type None could not.
+            if (call.ResolvedType is { IsNone: true } nothing)
+            {
+                Hoisted.Add(item: new ExpressionStatement(Expression: call, Location: call.Location));
+                return new IdentifierExpression(Name: "None", Location: call.Location) { ResolvedType = nothing };
+            }
+
             string tempName = $"{RecoveryTempPrefix}{_seq++}";
             var decl = new VariableDeclaration(Name: tempName,
                 Type: null,

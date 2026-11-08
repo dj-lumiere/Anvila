@@ -85,7 +85,7 @@ internal sealed class LinkLoweringPass : AstRewriter
         }
 
         TypeSymbol? made = creator.ConstructedType ?? creator.ResolvedType;
-        if (made is EntityTypeSymbol { IsRetroactive: true } entity && creator.Box == null)
+        if (made is EntityTypeSymbol entity && entity.ReadRetroactivity() && creator.Box == null)
         {
             return creator with { Box = TakeSlot(entity: entity, location: creator.Location) };
         }
@@ -129,6 +129,16 @@ internal sealed class LinkLoweringPass : AstRewriter
             return token;
         }
 
+        // A token on a link (`at` of a `for` over a list of links) given where a link is kept is read as that link
+        // before demand collection (LinkConversionPass). Made into a new link here, it would read the link's own bytes
+        // as an entity.
+        if (Verification.LinkTaking.ReadTokenOnLink(value: token, registry: _registry) != null)
+        {
+            throw new InvalidOperationException(
+                message: $"A link is made from a token on a link at {creator.Location}: LinkConversionPass did not read " +
+                         "the link it reaches.");
+        }
+
         return Call(name: RuntimeContract.Link.Make,
             entity: linked,
             arguments: [("present", present), ("token", token)],
@@ -139,7 +149,8 @@ internal sealed class LinkLoweringPass : AstRewriter
     /// <inheritdoc/>
     public override Expression VisitExpression(Expression expr)
     {
-        if (expr is EntityAllocationExpression { ResolvedType: EntityTypeSymbol { IsRetroactive: true } entity, Box: null } allocation)
+        if (expr is EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity, Box: null } allocation &&
+            entity.ReadRetroactivity())
         {
             return allocation with { Box = TakeSlot(entity: entity, location: allocation.Location) };
         }

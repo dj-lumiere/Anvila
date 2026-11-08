@@ -2814,7 +2814,7 @@ internal static class GenericAstRewriter
                 Location: location) { ResolvedType = boolType },
 
             RuntimeContract.IsRetroactive when boolType != null => new LiteralExpression(
-                Value: typeInfo is EntityTypeSymbol { IsRetroactive: true },
+                Value: typeInfo is EntityTypeSymbol retroactive && retroactive.ReadRetroactivity(),
                 LiteralType: typeInfo is EntityTypeSymbol { IsRetroactive: true }
                     ? TokenType.True
                     : TokenType.False,
