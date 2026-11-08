@@ -746,15 +746,31 @@ internal sealed class WrapperForwardingPass
         }
 
         TypeSymbol tokenType = reached.ResolvedType!;
-        // A stored value of a protocol is reached where it is: its routines act on the value it keeps, so a copy
-        // (`access()` / `control()` copy a record out) would be one more value to end.
-        string reach = ctx.InnerType.BareName == RuntimeContract.Dispatch.Dispatched ||
-                       ctx.InnerMemberRoutine.OwnerType?.BareName == RuntimeContract.Dispatch.Dispatched
-            ? RuntimeContract.ReadInPlace
-            : token == RuntimeContract.Viewing
-                ? RuntimeContract.Access
-                : RuntimeContract.Control;
-        reached = ReachCall(receiver: reached, receiverType: tokenType, name: reach, resultType: ctx.InnerType);
+        bool dispatched = ctx.InnerType.BareName == RuntimeContract.Dispatch.Dispatched ||
+                          ctx.InnerMemberRoutine.OwnerType?.BareName == RuntimeContract.Dispatch.Dispatched;
+        if (!dispatched && ctx.InnerType is RecordTypeSymbol && !_registry.IsEntityKind(type: ctx.InnerType))
+        {
+            // A record is reached at its place: the token is the record's address, and the routine gets that address
+            // as `me`. A routine that changes the record changes the element (`for p in points` then `p.move()`), and
+            // no copy is made that would have to end.
+            reached = new WrapperProjectionExpression(Wrapper: reached,
+                Kind: WrapperProjectionKind.RecordAddress,
+                Controller: null,
+                FieldIndex: 0,
+                Location: _synthLoc) { ResolvedType = ctx.InnerType };
+        }
+        else
+        {
+            // A stored value of a protocol is reached where it is: its routines act on the value it keeps, so a copy
+            // (`access()` / `control()` copy a record out) would be one more value to end.
+            string reach = dispatched
+                ? RuntimeContract.ReadInPlace
+                : token == RuntimeContract.Viewing
+                    ? RuntimeContract.Access
+                    : RuntimeContract.Control;
+            reached = ReachCall(receiver: reached, receiverType: tokenType, name: reach, resultType: ctx.InnerType);
+        }
+
         var innerCall = new CallExpression(
             Callee: new MemberExpression(Object: reached,
                 MemberName: ctx.CallPropertyName,
@@ -765,6 +781,65 @@ internal sealed class WrapperForwardingPass
             ? new ReturnStatement(Value: innerCall, Location: _synthLoc)
             : new ExpressionStatement(Expression: innerCall, Location: _synthLoc);
         return [callStmt];
+    }
+
+    /// <summary>
+    /// A token forwarder made concrete for a record (<c>Modifying[Point].move</c>): its <c>me.control().move()</c>
+    /// (or <c>access()</c>) becomes a call on the record at the token's address. The record read out would be a copy
+    /// that takes the change instead of the element and that nothing ends. The reach forwarder reads its record only
+    /// through a <c>Viewing</c> or <c>Modifying</c> token, so the receiver of the read is that token. Other bodies come
+    /// back unchanged.
+    /// </summary>
+    internal static Statement ReachRecordInPlace(Statement body, TypeSymbol inner, TypeRegistry registry)
+    {
+        if (inner is not RecordTypeSymbol record || registry.IsEntityKind(type: inner))
+        {
+            return body;
+        }
+
+        return Rewrite(stmt: body);
+
+        Statement Rewrite(Statement stmt)
+        {
+            return stmt switch
+            {
+                BlockStatement block => block with { Statements = block.Statements.Select(selector: Rewrite).ToList() },
+                DangerStatement danger => danger with { Body = (BlockStatement)Rewrite(stmt: danger.Body) },
+                ReturnStatement { Value: CallExpression call } ret => ret with { Value = Reach(call: call) },
+                ExpressionStatement { Expression: CallExpression call } es => es with { Expression = Reach(call: call) },
+                _ => stmt
+            };
+        }
+
+        CallExpression Reach(CallExpression call)
+        {
+            if (call.Callee is not MemberExpression
+                {
+                    Object: CallExpression
+                    {
+                        Callee: MemberExpression
+                        {
+                            MemberName: RuntimeContract.Control or RuntimeContract.Access, Object: var token
+                        },
+                        Arguments.Count: 0
+                    }
+                } member)
+            {
+                return call;
+            }
+
+            return call with
+            {
+                Callee = member with
+                {
+                    Object = new WrapperProjectionExpression(Wrapper: token,
+                        Kind: WrapperProjectionKind.RecordAddress,
+                        Controller: null,
+                        FieldIndex: 0,
+                        Location: token.Location) { ResolvedType = record }
+                }
+            };
+        }
     }
 
     /// <summary><c>receiver.name()</c>, bound to the receiver type's routine when there is one routine of that name

@@ -1320,7 +1320,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// </summary>
     private bool HoldsManagedValue(TypeSymbol fieldType, SourceLocation location)
     {
-        if (ctx.Registry.IsStandardLibraryFile(filePath: location.FileName ?? "") ||
+        // A Mielia `for` element is read where it is kept without a copy, so a member write through it would release
+        // the element's own value. Mielia keeps its member writes as they were until its elements are reached in place.
+        string file = location.FileName ?? "";
+        if (ctx.Registry.IsStandardLibraryFile(filePath: file) || ctx.Registry.EntitiesAreSharedIn(filePath: file) ||
             fieldType is not RecordTypeSymbol record)
         {
             return false;

@@ -2695,6 +2695,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             };
         }
 
+        rewrittenDecl = rewrittenDecl with { Body = ReachForwardedRecord(routine: resolvedRoutine, body: rewrittenDecl.Body) };
+
         ctx.CheckInstanceBody?.Invoke(arg1: resolvedRoutine, arg2: astDecl.Body, arg3: rewrittenDecl.Body);
         ctx.InstantiatedGenericBodies[key: resolvedRoutine.RegistryKey] = new MonomorphizedBody(
             Ast: rewrittenDecl,
@@ -2703,6 +2705,15 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             VariantStatus: null,
             VariantInnerType: null,
             IsSynthesized: false);
+    }
+
+    /// <summary>A token forwarder made for a record calls the routine on the record where it is
+    /// (<see cref="WrapperForwardingPass.ReachRecordInPlace"/>). Any other body comes back unchanged.</summary>
+    private Statement ReachForwardedRecord(RoutineInfo routine, Statement body)
+    {
+        return routine is { WrapperForwarderInnerMemberRoutine: not null, OwnerType.TypeArguments: [{ } inner] }
+            ? WrapperForwardingPass.ReachRecordInPlace(body: body, inner: inner, registry: ctx.Registry)
+            : body;
     }
 
     /// <summary>
@@ -2759,7 +2770,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             ctx.InstantiatedGenericBodies[key: resolvedRoutine.RegistryKey] =
                 new MonomorphizedBody(
                     Ast: WrapInShellDecl(name: resolvedRoutine.Name,
-                        body: rewritten,
+                        body: ReachForwardedRecord(routine: resolvedRoutine, body: rewritten),
                         info: resolvedRoutine),
                     Info: resolvedRoutine,
                     TypeSubs: typeSubs,
@@ -2789,7 +2800,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             ctx.InstantiatedGenericBodies[key: resolvedRoutine.RegistryKey] =
                 new MonomorphizedBody(
                     Ast: WrapInShellDecl(name: resolvedRoutine.Name,
-                        body: rewritten3,
+                        body: ReachForwardedRecord(routine: resolvedRoutine, body: rewritten3),
                         info: resolvedRoutine),
                     Info: resolvedRoutine,
                     TypeSubs: typeSubs,
