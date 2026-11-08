@@ -778,6 +778,13 @@ public sealed partial class TypeRegistry
     /// </summary>
     public List<EntityTypeSymbol> RetroactiveTypes { get; } = [];
 
+    /// <summary>
+    /// Whether some Revare loop of the program opens a use of its container's shape at run time (the shape check could
+    /// not prove a change inside it reaches another container), so the program's calls that can add to or remove from a
+    /// container check first that no use of it is open (RuntimeShapeUseLoweringPass).
+    /// </summary>
+    public bool RuntimeShapeUses { get; set; }
+
     /// <summary>Whether any entity type of the build is retroactive.</summary>
     public bool HasRetroactiveTypes => RetroactiveTypes.Count > 0;
 

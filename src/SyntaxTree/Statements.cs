@@ -574,6 +574,14 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// <see cref="IterationSourcePath"/>.
     /// </summary>
     public string? AdapterSourcePath { get; set; }
+
+    /// <summary>
+    /// Set by the Revare shape check on a <c>for</c> loop whose container a change inside it may reach through
+    /// another name the build cannot prove different (two token parameters of the same type, a token taken from a
+    /// link): the loop opens a use of its container's shape while it runs, and the change fails with
+    /// <c>ReshapingWhileInUseError</c> when it is the same container.
+    /// </summary>
+    public bool ChecksShapeAtRunTime { get; set; }
 }
 
 /// <summary>

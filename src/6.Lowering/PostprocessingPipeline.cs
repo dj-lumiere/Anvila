@@ -57,6 +57,8 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         new LambdaLiftingPass(ctx: ctx).Run(program: program);
         // A place that keeps a link given the entity or a token gets the call that makes the link.
         new LinkConversionPass(ctx: ctx).Run(program: program);
+        // A Revare loop the shape check could not prove safe opens a use of its container's shape at run time.
+        new RuntimeShapeUseLoweringPass(ctx: ctx).Run(program: program);
         new AccessLoweringPass(registry: ctx.Registry).Run(program: program);
         // Route Mielia module-level `global`s through the hidden __ModuleGlobals entity FIRST, so every
         // subsequent pass (f-string, operator, Roamed projection/lock-bracket) sees the field accesses

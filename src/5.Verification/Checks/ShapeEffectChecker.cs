@@ -50,6 +50,13 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
     /// the token is going through those containers, so their shape stays still too.</summary>
     private readonly Dictionary<string, List<string>> _tokenSources = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>The names in scope that hold a token taken from a link.</summary>
+    private readonly HashSet<string> _linkTokens = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>Whether some loop of the program opens a use of its container's shape at run time, so the routines
+    /// that can add to or remove from a container check first that no use of it is open.</summary>
+    internal bool RuntimeShapeUses { get; private set; }
+
     /// <summary>A container whose shape must stay still: its access path, its type, and why.</summary>
     private sealed record ShapeGuard(string Path, TypeSymbol? Type, bool IsLoop)
     {
@@ -59,6 +66,10 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
 
         /// <summary>The line the holder was bound on.</summary>
         public int HolderLine { get; init; }
+
+        /// <summary>For a loop's guard, the loop: a change the build cannot prove reaches another container makes it
+        /// open a use of its container's shape at run time instead.</summary>
+        public LoopStatement? Loop { get; init; }
 
         /// <summary>The path as a message shows it.</summary>
         public string Shown => ShownPath(path: Path);
@@ -457,7 +468,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 if (sourcePath != null)
                 {
                     TypeSymbol? sourceType = LoopSourceType(path: sourcePath, preceding: preceding);
-                    inner = [.. guards, new ShapeGuard(Path: sourcePath, Type: sourceType, IsLoop: true)];
+                    inner = [.. guards, new ShapeGuard(Path: sourcePath, Type: sourceType, IsLoop: true) { Loop = loop }];
                 }
 
                 CheckStatementShapes(stmt: loop.Body, guards: inner, preceding: []);
@@ -473,13 +484,30 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
 
                 return;
             case WhenStatement whenStmt:
+            {
                 CheckOwnExpressions(exprs: [whenStmt.Expression], guards: guards);
+                // The token a link gives may be any container of its type, an original included.
+                bool fromLink = ImplicitToken.IsLink(type: whenStmt.Expression.ResolvedType);
                 foreach (WhenClause clause in whenStmt.Clauses)
                 {
+                    string? bound = fromLink
+                        ? clause.Pattern switch
+                        {
+                            ElsePattern { VariableName: { } name } => name,
+                            TypePattern { VariableName: { } name } => name,
+                            _ => null
+                        }
+                        : null;
+                    bool added = bound != null && _linkTokens.Add(item: bound);
                     CheckStatementShapes(stmt: clause.Body, guards: guards, preceding: []);
+                    if (added)
+                    {
+                        _linkTokens.Remove(item: bound!);
+                    }
                 }
 
                 return;
+            }
             case UsingStatement usingStmt:
                 CheckOwnExpressions(exprs: [usingStmt.Resource], guards: guards);
                 CheckStatementShapes(stmt: usingStmt.Body, guards: guards, preceding: []);
@@ -728,6 +756,14 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                             : $"'{callee}' can add to or remove from it";
                     ReportShapeChange(guard: g, attempt: attempt, why: why, location: call.Location);
                 }
+                else if (path != null && MayBeSameContainer(operand: operand, path: path, guard: g) &&
+                         g is { IsLoop: true, Holder: null, Loop: { } guardedLoop })
+                {
+                    // The build cannot prove the two containers apart: the loop opens a use of its container's
+                    // shape at run time, and the change fails with ReshapingWhileInUseError when it is the same one.
+                    guardedLoop.ChecksShapeAtRunTime = true;
+                    RuntimeShapeUses = true;
+                }
                 else if (path != null && MayBeSameContainer(operand: operand, path: path, guard: g))
                 {
                     string change = callee.Length == 0 ? $"pass '{shown}' to a routine value" : $"change '{shown}' through '{callee}'";
@@ -890,6 +926,19 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
     /// so two names of bare entities are two entities), and no block that opened both showed they differ.</summary>
     private bool MayBeSameContainer(Expression operand, string path, ShapeGuard guard)
     {
+        // A token taken from a link (a `when` arm over one, or the link used directly) may be any container of its
+        // type, an original the routine holds included.
+        TypeSymbol? linked = ImplicitToken.IsLink(type: operand.ResolvedType)
+            ? operand.ResolvedType!.TypeArguments![index: 0].TypeArguments![index: 0]
+            : _linkTokens.Contains(item: RootName(path: path))
+                ? AliasInner(type: operand.ResolvedType)
+                : null;
+        if (linked != null)
+        {
+            TypeSymbol? guarded = AliasInner(type: guard.Type) ?? guard.Type;
+            return guarded != null && guarded.FullName == linked.FullName;
+        }
+
         TypeSymbol? a = AliasInner(type: operand.ResolvedType);
         TypeSymbol? b = AliasInner(type: guard.Type);
         if (a == null || b == null || a.FullName != b.FullName)
