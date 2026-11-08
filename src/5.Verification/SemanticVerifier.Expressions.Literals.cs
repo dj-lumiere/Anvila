@@ -583,7 +583,11 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private bool IsFixedWidthIntegerType(TypeSymbol type)
     {
-        return ImplementsProtocol(type: type, protocolName: "FixedIntegral");
+        // Which kind of number a type is comes from its `obeys` line. A token over a number has every routine of
+        // `FixedIntegral`'s parents but is not a number a literal can be.
+        return type is GenericParameterTypeSymbol
+            ? ImplementsProtocol(type: type, protocolName: "FixedIntegral")
+            : _registry.TypeObeysProtocol(type: type, protocolName: "FixedIntegral");
     }
 
     /// <summary>

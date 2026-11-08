@@ -499,6 +499,14 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
+        return ImplementsResolvedProtocol(type: type, protocol: protocol, protocolName: protocolName);
+    }
+
+    /// <summary><see cref="ImplementsProtocol"/> for a protocol already looked up: a parent protocol is checked
+    /// by its own symbol, since its bare name may not resolve from the file being analyzed.</summary>
+    private bool ImplementsResolvedProtocol(TypeSymbol type, TypeSymbol protocol, string protocolName)
+    {
+
         // Type-category protocols are satisfied by category membership itself: a record obeys
         // RecordType by BEING a record — no declaration needed (their parent protocols like
         // Equatable/Hashable are auto-derived for these categories). Without this, a
@@ -710,10 +718,25 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private bool CheckStructuralConformance(TypeSymbol type, ProtocolTypeSymbol protocol)
     {
-        // Marker protocols (no memberRoutines) require explicit conformance — never structurally satisfied
-        if (protocol.MemberRoutines.Count == 0)
+        // A marker protocol (no routines and no parents) is obeyed only by writing `obeys`. A protocol that only puts
+        // parents together (`protocol Combatant obeys Enemy, Attackable`) is obeyed by a type that obeys every parent.
+        if (protocol.MemberRoutines.Count == 0 && protocol.ParentProtocols.Count == 0)
         {
             return false;
+        }
+
+        // A type obeys a protocol by its routines only when it also obeys each parent: a value of the protocol is
+        // asked for the parents' routines too.
+        foreach (ProtocolTypeSymbol parent in protocol.ParentProtocols)
+        {
+            TypeSymbol latestParent = parent.ParentProtocols.Count == 0 &&
+                                      _registry.LookupType(name: parent.Name) is ProtocolTypeSymbol latest
+                ? latest
+                : parent;
+            if (!ImplementsResolvedProtocol(type: type, protocol: latestParent, protocolName: latestParent.Name))
+            {
+                return false;
+            }
         }
 
         foreach (ProtocolMemberRoutineInfo requiredMemberRoutine in protocol.MemberRoutines)
