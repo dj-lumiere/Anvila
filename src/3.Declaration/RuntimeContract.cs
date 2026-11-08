@@ -526,6 +526,15 @@ public static class RuntimeContract
     /// <summary>An emitter's step (`Emitter.emit`): what it returns is the emitter's `Item`.</summary>
     public const string Emit = "emit";
 
+    /// <summary>The walk over the places of a memory (Mielia's <c>List</c>, <c>RotatableList</c>, <c>Memory</c> and
+    /// <c>Span</c> loops): each <c>emit</c> reads one place of the row.</summary>
+    public const string MemoryEmitter = "MemoryEmitter";
+
+    /// <summary>The <c>MemoryEmitter[T]</c> routine that gives the place its last <c>emit</c> read (a
+    /// <c>Hijacked[T]</c>): a Mielia <c>for</c> loop over records reaches its element there, so a change to the
+    /// element changes the record in its place.</summary>
+    public const string EmittedPlace = "emitted_place";
+
     /// <summary>The <c>Emittable[T]</c> routine that gives a fresh emitter; what it returns is the type's <c>Emitter</c>.</summary>
     public const string Iter = "emitter";
 

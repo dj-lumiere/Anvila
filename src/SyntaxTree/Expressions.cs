@@ -1575,6 +1575,11 @@ public record WrapperProjectionExpression(
     int FieldIndex,
     SourceLocation Location) : Expression(Location: Location)
 {
+    /// <summary>Set on the record a Mielia <c>for</c> loop reaches at its element's place (in place of the loop
+    /// variable): a use of it as a value (a new variable, a stored or returned value) copies the record, as a use of
+    /// a variable does.</summary>
+    public bool ReadsLoopElement { get; init; }
+
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

@@ -573,7 +573,9 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
 
         // A narrowed `E?` read (`stack.add_last((step, node.next))` under `node.next isnot None`) is the carrier's payload:
         // still a borrowed reference to what the carrier holds, so a new holder takes its own share.
-        if (!_inRcCopyVerb && expr is IdentifierExpression or MemberExpression or CarrierPayloadExpression &&
+        // The record a Mielia `for` loop reaches at its element's place is still the element: a new holder takes a copy.
+        if (!_inRcCopyVerb && expr is IdentifierExpression or MemberExpression or CarrierPayloadExpression
+                or WrapperProjectionExpression { Kind: WrapperProjectionKind.RecordAddress, ReadsLoopElement: true } &&
             NeedsRetainingCopy(type: expr.ResolvedType,
                 copyMemberRoutine: out RoutineInfo? copyMemberRoutine))
         {
