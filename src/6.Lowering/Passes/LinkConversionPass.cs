@@ -283,8 +283,10 @@ internal sealed class LinkConversionPass : AstRewriter
         Expression visited = base.VisitCall(e: e);
         // A construction written as a call of its type (`Creature(x: 0, parent: herd[0])`) is bound to its creator
         // later (CallBindingPass): its arguments are the member variables.
-        if (visited is CallExpression { ResolvedRoutine: null, Callee: IdentifierExpression, ResolvedType: { } made } construction &&
-            MembersOf(type: made) is { } members)
+        if (visited is CallExpression
+            {
+                ResolvedRoutine: null, Callee: IdentifierExpression { Name: var typeName }, ResolvedType: { } made
+            } construction && typeName == made.BareName && MembersOf(type: made) is { } members)
         {
             return ConvertConstruction(construction: construction, members: members);
         }
