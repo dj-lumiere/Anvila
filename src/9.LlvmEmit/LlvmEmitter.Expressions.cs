@@ -68,8 +68,8 @@ public partial class LlvmEmitter
                 NativeCallbackExpression callback => EmitForeignRoutineValueArg(sb: sb, valueExpr: callback.Value),
                 TagOfExpression { Value: { ResolvedType: VariantTypeSymbol tagged } value } =>
                     EmitVariantTagAccess(sb: sb, variantValue: EmitExpression(sb: sb, expr: value), variant: tagged),
-                EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity } =>
-                    EmitEntityAllocation(sb: sb, entity: entity),
+                EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity } allocation =>
+                    EmitEntityAllocation(sb: sb, entity: entity, box: allocation.Box),
                 ClosureValueExpression closure => EmitClosureValueExpression(sb: sb, closure: closure),
                 // Named arguments appear inside synthesized AST bodies (e.g., me.eq(you: you)).
                 // The name is irrelevant to codegen -> just emit the inner value positionally.
@@ -666,7 +666,7 @@ public partial class LlvmEmitter
         // `Optional[T]` is the entity's address itself.
         if (carrierType is RecordTypeSymbol { IsEntityOptional: true } addressLike)
         {
-            return addressLike.IsLinkOptional ? EmitTokenFromLink(sb: sb, link: carrierVal) : carrierVal;
+            return addressLike.IsLinkOptional ? throw UnloweredLink(member: "payload") : carrierVal;
         }
 
         // Both a Check/Optional carrier and a general user variant store their payload at field 1

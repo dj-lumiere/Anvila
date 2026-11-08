@@ -1693,6 +1693,7 @@ public sealed partial class SemanticVerifier
         WrapperProjectionLoweringPass.Run(body: body, registry: _registry);
         AddressLoweringPass.Run(body: body, registry: _registry);
         CallBindingPass.Run(body: body, routine: routine, registry: _registry);
+        LinkLoweringPass.Run(body: body, registry: _registry);
         TextLiteralLoweringPass.Run(body: body, registry: _registry);
         BitArrayLiteralLoweringPass.Run(body: body, registry: _registry);
         RepresentationCastPass.Run(body: body);

@@ -587,6 +587,10 @@ public abstract class AstRewriter
             BitPackExpression e => VisitBitPack(e: e),
             ClosureValueExpression e => VisitClosureValue(e: e),
             WhenExpression e => VisitWhenExpression(e: e),
+            EntityAllocationExpression { Box: { } box } e => VisitExpression(expr: box) is var visitedBox &&
+                                                              ReferenceEquals(objA: visitedBox, objB: box)
+                ? e
+                : e with { Box = visitedBox },
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
     }
@@ -893,9 +897,10 @@ public abstract class AstRewriter
                     ? mv
                     : (mv.Name, v);
             });
-        return ReferenceEquals(objA: mvs, objB: e.MemberVariables)
+        Expression? box = e.Box == null ? null : VisitExpression(expr: e.Box);
+        return ReferenceEquals(objA: mvs, objB: e.MemberVariables) && ReferenceEquals(objA: box, objB: e.Box)
             ? e
-            : e with { MemberVariables = mvs };
+            : e with { MemberVariables = mvs, Box = box };
     }
 
     /// <summary>

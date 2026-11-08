@@ -132,7 +132,7 @@ public sealed partial class SemanticVerifier
         if (topLevel && Declaration.ImplicitToken.IsLink(type: type) &&
             Declaration.ImplicitToken.LinkedEntity(token: type.TypeArguments![index: 0]) is { RetroactiveSite: null } linked)
         {
-            linked.RetroactiveSite = location;
+            _registry.MarkRetroactive(entity: linked, site: location);
         }
 
         IEnumerable<TypeSymbol> parts = type is TupleTypeSymbol tuple ? tuple.ElementTypes : type.TypeArguments ?? [];

@@ -293,6 +293,10 @@ public static class AstWalker
                 e.Value
             },
             CreatorExpression e => CreatorExpressionChildren(e: e),
+            EntityAllocationExpression { Box: { } box } => new object[]
+            {
+                box
+            },
             MemberExpression e => new object[]
             {
                 e.Object
@@ -492,6 +496,11 @@ public static class AstWalker
         foreach ((string Name, Expression Value) mv in e.MemberVariables)
         {
             yield return mv.Value;
+        }
+
+        if (e.Box != null)
+        {
+            yield return e.Box;
         }
     }
 

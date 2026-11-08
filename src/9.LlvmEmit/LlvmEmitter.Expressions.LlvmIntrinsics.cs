@@ -110,6 +110,8 @@ public partial class LlvmEmitter
         string? lastResult = null;
         string? prevResult = null;
         string? firstResult = null;
+        // `{$name}`: a temporary of the template's own, the same one wherever the template names it.
+        var named = new Dictionary<string, string>(comparer: StringComparer.Ordinal);
 
         foreach (string rawLine in lines)
         {
@@ -118,6 +120,21 @@ public partial class LlvmEmitter
             {
                 continue;
             }
+
+            line = System.Text.RegularExpressions.Regex.Replace(input: line,
+                pattern: @"\{\$(\w+)\}",
+                evaluator: m =>
+                {
+                    string key = m.Groups[groupnum: 1].Value;
+                    if (!named.TryGetValue(key: key, value: out string? temp))
+                    {
+                        temp = NextTemp();
+                        named[key: key] = temp;
+                    }
+
+                    return temp;
+                });
+            line = SubstituteTypeStores(line: line, routine: memberRoutine);
 
             string currentResult = NextTemp();
             bool hasResult = line.Contains(value: "{result}");
@@ -156,6 +173,52 @@ public partial class LlvmEmitter
         return lastResult ?? (args.Count > 0
             ? args[index: 0]
             : "undef");
+    }
+
+    /// <summary>The type stores made so far, by type.</summary>
+    private readonly Dictionary<string, string> _typeStores = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// Replaces each <c>{store T}</c> of a template line with the address of the zeroed 16-byte global that belongs to
+    /// the type the instantiated routine binds <c>T</c> to: one per type in the program, the same one in every module
+    /// (a retroactive entity type's slot store, Link.rvr).
+    /// </summary>
+    private string SubstituteTypeStores(string line, RoutineInfo routine)
+    {
+        if (!line.Contains(value: "{store "))
+        {
+            return line;
+        }
+
+        List<string>? parameters = routine.GenericParameters ?? routine.GenericDefinition?.GenericParameters;
+        List<TypeSymbol>? arguments = routine.TypeArguments;
+        if (parameters == null || arguments == null)
+        {
+            throw new InvalidOperationException(
+                message: $"The template of '{routine.Name}' names a type store, but the routine is not instantiated, in " +
+                         $"[{_currentRoutineDiagName}].");
+        }
+
+        for (int i = 0; i < parameters.Count && i < arguments.Count; i++)
+        {
+            string hole = $"{{store {parameters[index: i]}}}";
+            if (!line.Contains(value: hole))
+            {
+                continue;
+            }
+
+            string typeName = arguments[index: i].FullName;
+            if (!_typeStores.TryGetValue(key: typeName, value: out string? global))
+            {
+                global = $"@\"rv.store.{typeName.Replace(oldValue: "\"", newValue: "")}\"";
+                EmitLine(sb: _globalDeclarations, line: $"{global} = linkonce_odr global [2 x i64] zeroinitializer, align 16");
+                _typeStores[key: typeName] = global;
+            }
+
+            line = line.Replace(oldValue: hole, newValue: global);
+        }
+
+        return line;
     }
 
     /// <summary>

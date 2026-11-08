@@ -772,6 +772,31 @@ public sealed partial class TypeRegistry
     public bool TasksCross { get; set; } = true;
 
     /// <summary>
+    /// The entity types the build made retroactive, in the order it did: a link (<c>Modifying[T]?</c> /
+    /// <c>Viewing[T]?</c>) to each is kept somewhere in the program, so its entities live in slots whose generation goes
+    /// up when one ends. <c>check --json</c> lists them with the place of the first link.
+    /// </summary>
+    public List<EntityTypeSymbol> RetroactiveTypes { get; } = [];
+
+    /// <summary>Whether any entity type of the build is retroactive.</summary>
+    public bool HasRetroactiveTypes => RetroactiveTypes.Count > 0;
+
+    /// <summary>
+    /// Makes <paramref name="entity"/> retroactive, remembering <paramref name="site"/> as the first place a link to it
+    /// is kept. A type already retroactive keeps its first place.
+    /// </summary>
+    public void MarkRetroactive(EntityTypeSymbol entity, SourceLocation site)
+    {
+        if (entity.RetroactiveSite != null)
+        {
+            return;
+        }
+
+        entity.RetroactiveSite = site;
+        RetroactiveTypes.Add(item: entity);
+    }
+
+    /// <summary>
     /// Whether the build checks the sharing invariant: a debug build takes an entity's access lock with
     /// <c>lock_enter_checked</c>, which also stops the program when the entity has escaped to another task and holds a
     /// handle that has not. A release build never does, and its code is the same as before.

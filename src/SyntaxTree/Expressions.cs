@@ -685,6 +685,12 @@ public record CreatorExpression(
     /// through the routine instead of doing inline field initialization.
     /// </summary>
     public RoutineInfo? ResolvedCreatorRoutine { get; set; }
+
+    /// <summary>
+    /// For an entity, the call that gives the address its bytes go to, when it is not the heap block every entity
+    /// gets: an entity of a retroactive type lives in a slot of its type's store (LinkLoweringPass). Null otherwise.
+    /// </summary>
+    public Expression? Box { get; init; }
 }
 
 /// <summary>
@@ -1421,6 +1427,10 @@ public record SharedConstantListExpression(
 /// <param name="Location">Source location of the routine body it starts.</param>
 public record EntityAllocationExpression(SourceLocation Location) : Expression(Location: Location)
 {
+    /// <summary>The call that gives the address the entity's bytes go to, when it is not a heap block: a slot of a
+    /// retroactive type's store (LinkLoweringPass). Null otherwise.</summary>
+    public Expression? Box { get; init; }
+
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

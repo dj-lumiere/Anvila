@@ -411,6 +411,30 @@ public static class RuntimeContract
     /// <summary>BuilderQuery: whether an entity type is retroactive (a link to it is kept in the program).</summary>
     public const string IsRetroactive = "is_retroactive";
 
+    /// <summary>The routines (Link.rvr, NativeDeclarations.rvr) a link's layout and a retroactive entity's slot are
+    /// written with. A link of a retroactive type is 128 bits: the entity's address and its slot's generation.</summary>
+    /// <remarks>Sites: LinkLoweringPass.</remarks>
+    public static class Link
+    {
+        /// <summary><c>LLVM::slot_store[T]()</c>: the address of a retroactive type's slot store.</summary>
+        public const string SlotStore = "slot_store";
+
+        /// <summary><c>C::rf_slot_take(store:, size:)</c>: a slot for a new entity of a retroactive type.</summary>
+        public const string SlotTake = "rf_slot_take";
+
+        /// <summary><c>LLVM::link_make[T](present:, token:)</c>: a link from a token.</summary>
+        public const string Make = "link_make";
+
+        /// <summary><c>LLVM::link_live[T](link:)</c>: whether a link names its entity still.</summary>
+        public const string Live = "link_live";
+
+        /// <summary><c>LLVM::link_token[T](link:)</c>: the token a link holds.</summary>
+        public const string Token = "link_token";
+
+        /// <summary><c>LLVM::link_same[T](a:, b:)</c>: whether two links name the same entity.</summary>
+        public const string Same = "link_same";
+    }
+
     /// <summary><c>Stamped[T].same_entity</c> (Stamped.rvr): what <c>a === b</c> on two stamps runs, the same slot and
     /// generation. A stamp is a value of eight bytes, so the builder compares both fields instead of one address.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
