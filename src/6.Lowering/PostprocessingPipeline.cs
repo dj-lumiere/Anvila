@@ -55,6 +55,8 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // below lowers its body (f-strings, conversions, operators) like any other. Lifted last, its body
         // reached the emitter unlowered — the rewriters do not descend into a lambda expression.
         new LambdaLiftingPass(ctx: ctx).Run(program: program);
+        // A place that keeps a link given the entity or a token gets the call that makes the link.
+        new LinkConversionPass(ctx: ctx).Run(program: program);
         new AccessLoweringPass(registry: ctx.Registry).Run(program: program);
         // Route Mielia module-level `global`s through the hidden __ModuleGlobals entity FIRST, so every
         // subsequent pass (f-string, operator, Roamed projection/lock-bracket) sees the field accesses

@@ -2806,6 +2806,13 @@ internal static class GenericAstRewriter
                     : TokenType.False,
                 Location: location) { ResolvedType = boolType },
 
+            RuntimeContract.IsRetroactive when boolType != null => new LiteralExpression(
+                Value: typeInfo is EntityTypeSymbol { IsRetroactive: true },
+                LiteralType: typeInfo is EntityTypeSymbol { IsRetroactive: true }
+                    ? TokenType.True
+                    : TokenType.False,
+                Location: location) { ResolvedType = boolType },
+
             RuntimeContract.SharesEntityAcrossTasks when boolType != null => new LiteralExpression(
                 Value: ctx.Registry.TasksCross && HandleReach.Reaches(type: typeInfo),
                 LiteralType: ctx.Registry.TasksCross && HandleReach.Reaches(type: typeInfo)

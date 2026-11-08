@@ -87,6 +87,18 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        if (IsInlineOnlyTokenType(type: type) && Declaration.ImplicitToken.LinkedEntity(token: type) != null)
+        {
+            ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
+                message:
+                $"You keep `{type.ShortTypeName}` in member variable '{memberVariableName}' without `?`. A token is proof " +
+                $"that the `{TokenTarget(type: type)}` is there right now, so it can't be kept. Write " +
+                $"`{type.ShortTypeName}?`: a link, made from the `{TokenTarget(type: type)}` you assign, which never keeps " +
+                $"it alive and reads as none once it ended. Take it with `when`.",
+                location: location);
+            return;
+        }
+
         if (IsInlineOnlyTokenType(type: type))
         {
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
@@ -99,6 +111,59 @@ public sealed partial class SemanticVerifier
         }
 
         ValidateNoTokenTypeArgument(type: type, what: $"member variable '{memberVariableName}'", location: location);
+    }
+
+    /// <summary>
+    /// Marks each entity type a link in <paramref name="type"/> is on as retroactive (<c>Node</c> for a kept
+    /// <c>Modifying[Node]?</c>), remembering the first place one is kept: its entities then live in slots whose generation
+    /// goes up when one ends, so the link reads as none from then on. <paramref name="topLevel"/> counts
+    /// <paramref name="type"/> itself (a member variable, a global, a local), else only links inside it (a collection's
+    /// element).
+    /// </summary>
+    private void NoteLinks(TypeSymbol type, SourceLocation location, bool topLevel, HashSet<TypeSymbol>? seen = null)
+    {
+        seen ??= [];
+        if (type is RoutineTypeSymbol || !seen.Add(item: type) || string.IsNullOrEmpty(value: location.FileName) ||
+            IsStdlibFile(filePath: location.FileName))
+        {
+            return;
+        }
+
+        if (topLevel && Declaration.ImplicitToken.IsLink(type: type) &&
+            Declaration.ImplicitToken.LinkedEntity(token: type.TypeArguments![index: 0]) is { RetroactiveSite: null } linked)
+        {
+            linked.RetroactiveSite = location;
+        }
+
+        IEnumerable<TypeSymbol> parts = type is TupleTypeSymbol tuple ? tuple.ElementTypes : type.TypeArguments ?? [];
+        foreach (TypeSymbol argument in parts)
+        {
+            NoteLinks(type: argument, location: location, topLevel: true, seen: seen);
+        }
+    }
+
+    /// <summary>
+    /// Rejects an optional token on an entity (a link) as a parameter or a result in the program's own routines: a link
+    /// is taken where it is kept, and the routine is handed the token, or hands one back.
+    /// </summary>
+    private void ValidateLinkNotAtBoundary(TypeSymbol type, string what, bool isResult, SourceLocation location)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || _isInCompilerGeneratedBody ||
+            string.IsNullOrEmpty(value: location.FileName) || IsStdlibFile(filePath: location.FileName) ||
+            !Declaration.ImplicitToken.IsLink(type: type))
+        {
+            return;
+        }
+
+        TypeSymbol token = type.TypeArguments![index: 0];
+        ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
+            message: isResult
+                ? $"You give `{type.ShortTypeName}` back from {what}, but a link is taken where it is kept. Take it with " +
+                  $"`when` there and return the `{token.ShortTypeName}`, which says where it came from."
+                : $"You take `{type.ShortTypeName}` as {what}, but a link is taken where it is kept and the routine is " +
+                  $"handed what it needs. Take it with `when` (`else as t =>`) where it is kept and pass the " +
+                  $"`{token.ShortTypeName}`.",
+            location: location);
     }
 
     /// <summary>
@@ -139,6 +204,12 @@ public sealed partial class SemanticVerifier
             if (IsInlineOnlyTokenType(type: argument))
             {
                 return argument;
+            }
+
+            // A link (an optional token on an entity) may be kept anywhere: it reads as none once its entity ended.
+            if (Declaration.ImplicitToken.IsLink(type: argument))
+            {
+                continue;
             }
 
             if (TokenInTypeArguments(type: argument, seen: seen) is { } deeper)
@@ -202,14 +273,25 @@ public sealed partial class SemanticVerifier
     /// iterator's <c>emit</c> under <c>try</c>), which the caller unpacks with <c>when</c> where it gets it.
     /// </summary>
     private void ValidateNoTokenTypeArgument(TypeSymbol type, string what, SourceLocation location,
-        bool carrierAllowed = false)
+        bool carrierAllowed = false, bool keepsLinks = true)
     {
+        if (_registry.Rules.ChecksAccessTokens)
+        {
+            NoteLinks(type: type, location: location, topLevel: !carrierAllowed && keepsLinks);
+        }
+
         if (!_registry.Rules.ChecksAccessTokens || _isInCompilerGeneratedBody)
         {
             return;
         }
 
         TypeSymbol? token;
+        if (Declaration.ImplicitToken.IsLink(type: type))
+        {
+            // A link may be kept in a name, a member variable, a global or a collection's element.
+            return;
+        }
+
         if (IsTokenCarrier(type: type))
         {
             TypeSymbol carried = type.TypeArguments![index: 0];
@@ -241,6 +323,18 @@ public sealed partial class SemanticVerifier
         }
 
         string target = token.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "the entity";
+        if (Declaration.ImplicitToken.LinkedEntity(token: token) != null)
+        {
+            ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
+                message:
+                $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a token without `?`. A " +
+                $"token is proof that the `{target}` is there right now, so it can't be kept. Keep a link instead: " +
+                $"`{token.ShortTypeName}?` (the `{target}` is handed over as one, and it reads as none once the " +
+                $"`{target}` ended), or keep the `{target}` itself.",
+                location: location);
+            return;
+        }
+
         ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
             message:
             $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a token, and a token can't be a type " +

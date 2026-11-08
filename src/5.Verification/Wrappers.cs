@@ -248,6 +248,13 @@ internal static class Wrappers
             return true;
         }
 
+        // A link (an optional token on an entity, `Modifying[Node]?`) is copied freely: it never keeps its entity
+        // alive, and it reads as none once the entity ended.
+        if (Declaration.ImplicitToken.IsLink(type: type))
+        {
+            return true;
+        }
+
         // Tuples — anonymous; auto-derive cascades only when every element does.
         if (type is TupleTypeSymbol tuple)
         {
@@ -290,7 +297,8 @@ internal static class Wrappers
         return FindOffendingWrapperCore(type: type,
             prefix: "",
             visited: new HashSet<string>(comparer: StringComparer.Ordinal),
-            isOffender: static n => NonTriviallyAssignableWrappers.ContainsKey(key: n));
+            isOffender: static n => NonTriviallyAssignableWrappers.ContainsKey(key: n),
+            skipLinks: true);
     }
 
     /// <summary>
@@ -313,8 +321,14 @@ internal static class Wrappers
     }
 
     internal static (string, string)? FindOffendingWrapperCore(TypeSymbol type,
-        string prefix, HashSet<string> visited, Func<string, bool> isOffender)
+        string prefix, HashSet<string> visited, Func<string, bool> isOffender, bool skipLinks = false)
     {
+        // A link is copied freely (see IsTriviallyAssignable), so it is no offender of the copy rule.
+        if (skipLinks && Declaration.ImplicitToken.IsLink(type: type))
+        {
+            return null;
+        }
+
         string baseName = type.BareName;
         if (isOffender(arg: baseName))
         {

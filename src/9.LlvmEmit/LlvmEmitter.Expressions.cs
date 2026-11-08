@@ -664,9 +664,9 @@ public partial class LlvmEmitter
 
         TypeSymbol carrierType = payload.Carrier.ResolvedType!;
         // `Optional[T]` is the entity's address itself.
-        if (carrierType is RecordTypeSymbol { IsEntityOptional: true })
+        if (carrierType is RecordTypeSymbol { IsEntityOptional: true } addressLike)
         {
-            return carrierVal;
+            return addressLike.IsLinkOptional ? EmitTokenFromLink(sb: sb, link: carrierVal) : carrierVal;
         }
 
         // Both a Check/Optional carrier and a general user variant store their payload at field 1

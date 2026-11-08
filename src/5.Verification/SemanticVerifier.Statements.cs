@@ -307,6 +307,15 @@ public sealed partial class SemanticVerifier
             {
                 destructBody.Statements.Insert(index: 0, item: HollowGuard(location: destructBody.Location));
             }
+
+            // An entity of a retroactive type (a link to its type is kept somewhere) ends in two steps: its slot's
+            // generation goes up first, and the rest waits while a token taken from a link is in use. For any other
+            // type `begin_entity_end()` is true and the guard folds away.
+            if (routineInfo.Name == "destruct" &&
+                !(destructBody.Statements.Count > 1 && IsEntityEndGuard(statement: destructBody.Statements[index: 1])))
+            {
+                destructBody.Statements.Insert(index: 1, item: EntityEndGuard(location: destructBody.Location));
+            }
         }
 
         _deadrefVariables.Clear();
@@ -437,6 +446,8 @@ public sealed partial class SemanticVerifier
                 isParameter: true);
             ReportProtocolValueType(type: param.Type, location: paramLoc ?? routine.Location,
                 what: $"parameter '{param.Name}'");
+            ValidateLinkNotAtBoundary(type: param.Type, what: $"parameter '{param.Name}'", isResult: false,
+                location: paramLoc ?? routine.Location);
             ValidateNoTokenTypeArgument(type: param.Type, what: $"parameter '{param.Name}'",
                 location: paramLoc ?? routine.Location);
         }
@@ -446,6 +457,13 @@ public sealed partial class SemanticVerifier
         // A routine may give back `Optional` of a token (an iterator's `emit` under `try`), unpacked where it is called.
         if (routineInfo.ReturnType is { } returned)
         {
+            // An emitter's `emit` gives the next element as an optional token, taken by the loop that walks it.
+            if (routineInfo.Name != "emit")
+            {
+                ValidateLinkNotAtBoundary(type: returned, what: $"'{routineInfo.Name}'", isResult: true,
+                    location: routine.ReturnType?.Location ?? routine.Location);
+            }
+
             ValidateNoTokenTypeArgument(type: returned, what: $"the result of '{routineInfo.Name}'",
                 location: routine.ReturnType?.Location ?? routine.Location, carrierAllowed: true);
         }
@@ -1153,6 +1171,7 @@ public sealed partial class SemanticVerifier
             }
 
             AnalyzeStatement(statement: stmt);
+
             afterLoop = stmt is LoopStatement loop && ControlFlowExits.NeverEndsByItself(loop: loop);
             diverged = afterLoop || stmt is ReturnStatement or ThrowStatement
                 or BreakStatement or ContinueStatement;
@@ -1249,7 +1268,10 @@ public sealed partial class SemanticVerifier
         }
 
         ReportProtocolValueType(type: varType, location: varDecl.Location, what: $"'{varDecl.Name}'");
-        ValidateNoTokenTypeArgument(type: varType, what: $"'{varDecl.Name}'", location: varDecl.Location);
+        // A name the builder wrote (`__` first: the value a `when try` matches, a loop's walk) keeps no link of the
+        // program's own.
+        ValidateNoTokenTypeArgument(type: varType, what: $"'{varDecl.Name}'", location: varDecl.Location,
+            keepsLinks: !varDecl.Name.StartsWith(value: "__", comparisonType: StringComparison.Ordinal));
 
         // #16: Plain `var x: T` without an initializer is disallowed.
         // Use `lateinit var x: T` (eager allocation, late initialization).
@@ -1688,7 +1710,8 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        if (Wrappers.IsTriviallyAssignable(type: varType))
+        if (Wrappers.IsTriviallyAssignable(type: varType) ||
+            varDecl.Type?.ResolvedType is { } declared && Declaration.ImplicitToken.IsLink(type: declared))
         {
             return;
         }
@@ -2247,7 +2270,7 @@ public sealed partial class SemanticVerifier
     #endregion
 
     /// <summary>
-    /// Puts <c>C::rf_invalidate(ptr: me.get_address())</c> (give back the entity's own box) right before every <c>return</c> of a
+    /// Puts <c>me.give_back_entity_box()</c> (give back the entity's own box) right before every <c>return</c> of a
     /// written entity <c>destruct</c>/<c>roam_free</c>. A return already preceded by it is left alone, so running this
     /// twice, or over a body that still frees its box by hand, frees the box once.
     /// </summary>
@@ -2325,6 +2348,45 @@ public sealed partial class SemanticVerifier
             Location: location);
     }
 
+    /// <summary>The statement <c>if not me.begin_entity_end() then return</c> (Link.rvr): a retroactive entity's destruct
+    /// waits while a token taken from a link to it is in use.</summary>
+    private static IfStatement EntityEndGuard(SourceLocation location)
+    {
+        var begins = new CallExpression(
+            Callee: new MemberExpression(Object: new IdentifierExpression(Name: "me", Location: location),
+                MemberName: BeginEntityEndName,
+                Location: location),
+            Arguments: [],
+            Location: location) { IsSynthesizedLowering = true };
+        return new IfStatement(
+            Condition: new UnaryExpression(Operator: UnaryOperator.Not, Operand: begins, Location: location),
+            ThenStatement: new BlockStatement(Statements: [new ReturnStatement(Value: null, Location: location)],
+                Location: location),
+            ElseStatement: null,
+            Location: location);
+    }
+
+    /// <summary>Whether <paramref name="statement"/> is the guard <see cref="EntityEndGuard"/> makes.</summary>
+    private static bool IsEntityEndGuard(Statement statement)
+    {
+        return statement is IfStatement
+        {
+            ElseStatement: null,
+            Condition: UnaryExpression
+            {
+                Operand: CallExpression
+                {
+                    Callee: MemberExpression { MemberName: BeginEntityEndName, Object: IdentifierExpression { Name: "me" } }
+                }
+            }
+        };
+    }
+
+    private const string BeginEntityEndName = "begin_entity_end";
+
+    /// <summary>The routine that gives back an entity's box (Link.rvr): the heap block, or a retroactive entity's slot.</summary>
+    private const string GiveBackEntityBoxName = "give_back_entity_box";
+
     /// <summary>The expression <c>me.get_address()</c>.</summary>
     private static CallExpression MeAddress(SourceLocation location)
     {
@@ -2368,11 +2430,13 @@ public sealed partial class SemanticVerifier
     /// address, so no <c>Hijacked[T]</c> is built for the type.</summary>
     private static ExpressionStatement BoxGiveBack(SourceLocation location)
     {
-        var invalidate = new CallExpression(
-            Callee: new IdentifierExpression(Name: InvalidateRuntimeRoutine, Location: location, Realm: "C"),
-            Arguments: [new NamedArgumentExpression(Name: "ptr", Value: MeAddress(location: location), Location: location)],
+        var giveBack = new CallExpression(
+            Callee: new MemberExpression(Object: new IdentifierExpression(Name: "me", Location: location),
+                MemberName: GiveBackEntityBoxName,
+                Location: location),
+            Arguments: [],
             Location: location) { IsSynthesizedLowering = true };
-        return new ExpressionStatement(Expression: invalidate, Location: location);
+        return new ExpressionStatement(Expression: giveBack, Location: location);
     }
 
     /// <summary>Whether <paramref name="statement"/> is the statement <see cref="BoxGiveBack"/> makes.</summary>
@@ -2385,7 +2449,14 @@ public sealed partial class SemanticVerifier
                 Callee: IdentifierExpression { Name: InvalidateRuntimeRoutine, Realm: "C" },
                 Arguments: [NamedArgumentExpression { Name: "ptr", Value: { } address }]
             }
-        } && IsMeAddress(expression: address);
+        } && IsMeAddress(expression: address) || statement is ExpressionStatement
+        {
+            Expression: CallExpression
+            {
+                Arguments.Count: 0,
+                Callee: MemberExpression { MemberName: GiveBackEntityBoxName, Object: IdentifierExpression { Name: "me" } }
+            }
+        };
     }
 
     private void ValidateDestroyDeclaration(RoutineDeclaration routine)

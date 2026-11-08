@@ -403,6 +403,14 @@ public static class RuntimeContract
     /// <summary>The type <c>f.to[Work](...)</c> gives: concurrent work a verb starts and a collecting verb waits for.</summary>
     public const string WorkTypeName = "Work";
 
+    /// <summary>Link.rvr: <c>Modifying[T].begin_link_use()</c> (and the <c>Viewing</c> one), kept as a local for as long as a
+    /// token taken from a link (a <c>Modifying[T]?</c> / <c>Viewing[T]?</c> kept in a place) is in use.</summary>
+    /// <remarks>Sites: SemanticVerifier (the arms of a <c>when</c> over a link).</remarks>
+    public const string LinkUseBegin = "begin_link_use";
+
+    /// <summary>BuilderQuery: whether an entity type is retroactive (a link to it is kept in the program).</summary>
+    public const string IsRetroactive = "is_retroactive";
+
     /// <summary><c>Stamped[T].same_entity</c> (Stamped.rvr): what <c>a === b</c> on two stamps runs, the same slot and
     /// generation. A stamp is a value of eight bytes, so the builder compares both fields instead of one address.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
@@ -846,6 +854,7 @@ public static class RuntimeContract
             "annotations",
             DataSize,
             ReachesEntity,
+            IsRetroactive,
             SharesEntityAcrossTasks,
             BlockSize,
             "full_type_name",

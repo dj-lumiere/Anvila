@@ -21,7 +21,15 @@ public partial class LlvmEmitter
         // Allocate memory
         // A future refactor (C41) should route through a typed allocator abstraction rather than calling rf_allocate_dynamic directly.
         string rawPtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {rawPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
+        if (entity.IsRetroactive)
+        {
+            // A retroactive entity (a link to its type is kept somewhere) lives in a slot of its type's store.
+            EmitLine(sb: sb, line: $"  {rawPtr} = call ptr @rf_slot_take(ptr {SlotStoreGlobal(entity: entity)}, i64 {size})");
+        }
+        else
+        {
+            EmitLine(sb: sb, line: $"  {rawPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
+        }
 
         // Initialize member variables
         for (int i = 0; i < entity.MemberVariables.Count; i++)
@@ -61,6 +69,112 @@ public partial class LlvmEmitter
         }
 
         return rawPtr;
+    }
+
+    /// <summary>Whether the zero word a link's header read falls back on for none is declared yet.</summary>
+    private bool _linkZeroDeclared;
+
+    /// <summary>The address of a zero word: what the header read of a null link reads instead of its slot's header.</summary>
+    private string LinkZeroWord()
+    {
+        if (!_linkZeroDeclared)
+        {
+            EmitLine(sb: _globalDeclarations, line: "@rv.link.zero = internal constant [2 x i64] zeroinitializer");
+            _linkZeroDeclared = true;
+        }
+
+        return "@rv.link.zero";
+    }
+
+    /// <summary>
+    /// The address of the generation of the slot <paramref name="address"/> is in (Ingrid/lapila/slots.lpa: the 16-byte
+    /// header right before the entity's bytes starts with it), or of a zero word when the address is null.
+    /// </summary>
+    private string EmitSlotGenerationAddress(StringBuilder sb, string address)
+    {
+        string isNull = NextTemp();
+        EmitLine(sb: sb, line: $"  {isNull} = icmp eq ptr {address}, null");
+        string header = NextTemp();
+        EmitLine(sb: sb, line: $"  {header} = getelementptr i8, ptr {address}, i64 -16");
+        string chosen = NextTemp();
+        EmitLine(sb: sb, line: $"  {chosen} = select i1 {isNull}, ptr {LinkZeroWord()}, ptr {header}");
+        return chosen;
+    }
+
+    /// <summary>A link (128 bits) from a token: the entity's address in the low half, its slot's generation in the high.</summary>
+    private string EmitLinkFromToken(StringBuilder sb, string token)
+    {
+        string generationAt = EmitSlotGenerationAddress(sb: sb, address: token);
+        string generation = NextTemp();
+        EmitLine(sb: sb, line: $"  {generation} = load i64, ptr {generationAt}, align 8");
+        string address = NextTemp();
+        EmitLine(sb: sb, line: $"  {address} = ptrtoint ptr {token} to i64");
+        string low = NextTemp();
+        EmitLine(sb: sb, line: $"  {low} = zext i64 {address} to i128");
+        string wide = NextTemp();
+        EmitLine(sb: sb, line: $"  {wide} = zext i64 {generation} to i128");
+        string high = NextTemp();
+        EmitLine(sb: sb, line: $"  {high} = shl i128 {wide}, 64");
+        string link = NextTemp();
+        EmitLine(sb: sb, line: $"  {link} = or i128 {low}, {high}");
+        return link;
+    }
+
+    /// <summary>The token a link holds: its low half as an address.</summary>
+    private string EmitTokenFromLink(StringBuilder sb, string link)
+    {
+        string address = NextTemp();
+        EmitLine(sb: sb, line: $"  {address} = trunc i128 {link} to i64");
+        string token = NextTemp();
+        EmitLine(sb: sb, line: $"  {token} = inttoptr i64 {address} to ptr");
+        return token;
+    }
+
+    /// <summary>Whether a link names its entity still: its address is not null and its slot's generation is the link's.</summary>
+    private string EmitLinkLive(StringBuilder sb, string link)
+    {
+        string token = EmitTokenFromLink(sb: sb, link: link);
+        string notNull = NextTemp();
+        EmitLine(sb: sb, line: $"  {notNull} = icmp ne ptr {token}, null");
+        string generationAt = EmitSlotGenerationAddress(sb: sb, address: token);
+        string current = NextTemp();
+        EmitLine(sb: sb, line: $"  {current} = load i64, ptr {generationAt}, align 8");
+        string shifted = NextTemp();
+        EmitLine(sb: sb, line: $"  {shifted} = lshr i128 {link}, 64");
+        string kept = NextTemp();
+        EmitLine(sb: sb, line: $"  {kept} = trunc i128 {shifted} to i64");
+        string same = NextTemp();
+        EmitLine(sb: sb, line: $"  {same} = icmp eq i64 {current}, {kept}");
+        string live = NextTemp();
+        EmitLine(sb: sb, line: $"  {live} = and i1 {notNull}, {same}");
+        return live;
+    }
+
+    /// <summary>The slot-store globals made so far, by entity type.</summary>
+    private readonly Dictionary<string, string> _slotStoreGlobals = new();
+
+    /// <summary>
+    /// The global that is a retroactive entity type's slot store (Ingrid/lapila/slots.lpa): its free list and its number,
+    /// both zero until its first slot. Made, with the declaration of <c>rf_slot_take</c>, on first use.
+    /// </summary>
+    private string SlotStoreGlobal(EntityTypeSymbol entity)
+    {
+        string typeName = GetEntityTypeName(entity: entity);
+        if (_slotStoreGlobals.TryGetValue(key: typeName, value: out string? name))
+        {
+            return name;
+        }
+
+        if (_slotStoreGlobals.Count == 0)
+        {
+            EmitLine(sb: _functionDeclarations, line: "declare ptr @rf_slot_take(ptr, i64)");
+        }
+
+        string bare = typeName.TrimStart('%').Trim('"');
+        name = $"@\"rv.slots.{bare}\"";
+        EmitLine(sb: _globalDeclarations, line: $"{name} = internal global {{ ptr, i64 }} zeroinitializer");
+        _slotStoreGlobals[key: typeName] = name;
+        return name;
     }
 
     /// <summary>
@@ -628,6 +742,12 @@ public partial class LlvmEmitter
             return record.OptionalNone;
         }
 
+        // A link keeps the token's entity and the generation its slot has now.
+        if (record.IsLinkOptional)
+        {
+            value = EmitLinkFromToken(sb: sb, token: value);
+        }
+
         if (present is "true" or "1")
         {
             return value;
@@ -648,7 +768,7 @@ public partial class LlvmEmitter
     {
         if (memberVariableName == Declaration.RuntimeContract.Carrier.ValueField)
         {
-            return optional;
+            return record.IsLinkOptional ? EmitTokenFromLink(sb: sb, link: optional) : optional;
         }
 
         if (memberVariableName != Declaration.RuntimeContract.Carrier.PresentField)
@@ -656,6 +776,11 @@ public partial class LlvmEmitter
             throw new InvalidOperationException(
                 message: $"A read of '{memberVariableName}' on an Optional reached the LLVM emitter in " +
                          $"[{_currentRoutineDiagName}].");
+        }
+
+        if (record.IsLinkOptional)
+        {
+            return EmitLinkLive(sb: sb, link: optional);
         }
 
         string present = NextTemp();

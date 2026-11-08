@@ -1,3 +1,4 @@
+using SyntaxTree;
 using Builder.Declaration;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -15,6 +16,16 @@ public class EntityTypeSymbol : TypeSymbol
 
     /// <inheritdoc/>
     public override bool ImplicitConstructorReturnsInFlight => true;
+
+    /// <summary>
+    /// Where the program first keeps a link (<c>@T</c> / <c>%T</c>) to this entity type, or null. A type with a link
+    /// anywhere in the program is retroactive: its entities live in slots whose generation goes up when one ends, so
+    /// every link to it reads as none from then on. Set by RetroactivityPass after the program's bodies are analyzed.
+    /// </summary>
+    public SourceLocation? RetroactiveSite { get; set; }
+
+    /// <summary>Whether this entity type is retroactive (see <see cref="RetroactiveSite"/>).</summary>
+    public bool IsRetroactive => RetroactiveSite != null;
 
     /// <summary>MemberVariables declared in this entity.</summary>
     public List<MemberVariableInfo> MemberVariables

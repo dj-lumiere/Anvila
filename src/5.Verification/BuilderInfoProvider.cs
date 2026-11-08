@@ -219,6 +219,11 @@ public static class BuilderInfoProvider
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);
             MaybeRegister(owner: type,
+                name: RuntimeContract.IsRetroactive,
+                returnType: types.BoolType,
+                existingMemberRoutines: existingMemberRoutines,
+                registry: registry);
+            MaybeRegister(owner: type,
                 name: RuntimeContract.SharesEntityAcrossTasks,
                 returnType: types.BoolType,
                 existingMemberRoutines: existingMemberRoutines,

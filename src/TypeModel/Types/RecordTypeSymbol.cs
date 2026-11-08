@@ -152,6 +152,11 @@ public class RecordTypeSymbol : TypeSymbol
         }
 
         // Optional[T]: the entity's address alone, or the zero-is-none record alone.
+        if (IsLinkOptional)
+        {
+            return 16;
+        }
+
         if (IsEntityOptional)
         {
             return TypeArguments is [RecordTypeSymbol { NoneIsZero: true } held]
@@ -211,6 +216,11 @@ public class RecordTypeSymbol : TypeSymbol
     /// </remarks>
     public override int Alignment(int pointerSize)
     {
+        if (IsLinkOptional)
+        {
+            return 16;
+        }
+
         if (LiveBackendType is { } be && !IsGenericDefinition)
         {
             return AlignOfLlvmType(llvmType: be, pointerSize: pointerSize);
@@ -255,7 +265,19 @@ public class RecordTypeSymbol : TypeSymbol
     /// the null address for <c>none</c>, where <c>Optional[T]</c> over a value is a presence flag and the value
     /// (<c>{ i1, T }</c>). Both are the one generic definition, <c>Optional</c>, with its routines.
     /// </summary>
-    public bool IsEntityOptional => IsEntityOptionalOver(carrierKind: CarrierKind, typeArguments: TypeArguments);
+    public bool IsEntityOptional => IsEntityOptionalOver(carrierKind: CarrierKind, typeArguments: TypeArguments) ||
+                                    IsLinkOptional;
+
+    /// <summary>
+    /// Whether this is a link of a retroactive entity type: <c>Modifying[E]?</c> / <c>Viewing[E]?</c> where links to
+    /// <c>E</c> are kept in the program. It is laid out as 128 bits, the entity's address in the low half and its slot's
+    /// generation in the high half, all zero for none. Its presence is the check that the slot's generation is still the
+    /// link's, so a link whose entity ended reads as none. Every other optional token keeps the value layout.
+    /// </summary>
+    public bool IsLinkOptional =>
+        CarrierKind == CarrierKind.Optional &&
+        TypeArguments is [RecordTypeSymbol { TypeArguments: [EntityTypeSymbol { IsRetroactive: true }] } token] &&
+        (token.GenericDefinition?.Name ?? token.Name) is RuntimeContract.Viewing or RuntimeContract.Modifying;
 
     /// <summary>Whether a <see cref="CarrierKind.Optional"/> carrier over <paramref name="typeArguments"/> is laid out as
     /// an address: its one argument is an entity reached through its address.</summary>
@@ -273,11 +295,15 @@ public class RecordTypeSymbol : TypeSymbol
 
     /// <summary>The LLVM type of an address-like <c>Optional</c>: <c>ptr</c> over an entity, the record's own type over a
     /// zero-is-none record.</summary>
-    public string OptionalLlvm => TypeArguments is [RecordTypeSymbol { NoneIsZero: true } held] ? held.LlvmType : "ptr";
+    public string OptionalLlvm => IsLinkOptional
+        ? "i128"
+        : TypeArguments is [RecordTypeSymbol { NoneIsZero: true } held]
+            ? held.LlvmType
+            : "ptr";
 
     /// <summary>The LLVM constant of none in an address-like <c>Optional</c>: <c>null</c>, or <c>0</c> over a zero-is-none
     /// record.</summary>
-    public string OptionalNone => TypeArguments is [RecordTypeSymbol { NoneIsZero: true }] ? "0" : "null";
+    public string OptionalNone => IsLinkOptional || TypeArguments is [RecordTypeSymbol { NoneIsZero: true }] ? "0" : "null";
 
     /// <summary>
     /// Declared <c>entity</c> with an <c>@llvm</c> layout (<c>Slots[T, COUNT]</c>): an entity whose storage is laid

@@ -520,6 +520,7 @@ public sealed partial class SemanticVerifier
     private void AnalyzeWhenStatement(WhenStatement whenStmt)
     {
         TypeSymbol matchedType = AnalyzeExpression(expression: whenStmt.Expression);
+        KeepLinkUses(whenStmt: whenStmt, matchedType: matchedType);
         // A token (`for m in marks` binds one) is matched by the value it reaches.
         if (Declaration.RuntimeContract.AccessTokenTypes.Contains(item: matchedType.BareName) &&
             Wrappers.GetWrapperInnerType(wrapperType: matchedType) is { } reached)
@@ -772,6 +773,70 @@ public sealed partial class SemanticVerifier
         bool ViewingElement = false,
         bool ForStep = false,
         bool ViewedSubject = false);
+
+    /// <summary>
+    /// A <c>when</c> over a link kept in a place (<c>when node.parent</c> with <c>parent: Modifying[Node]?</c>) gives the
+    /// entity's token while the entity is there (the link's presence is the check of its slot's generation). Each arm
+    /// that binds the token first keeps a <c>begin_link_use()</c> local, so the entity's destruct waits while the token
+    /// is in use and runs at the arm's end if the entity ended meanwhile. A <c>when</c> over a value a call gives (a
+    /// <c>try</c>, a <c>for</c> step) takes no link, so it is left alone.
+    /// </summary>
+    private void KeepLinkUses(WhenStatement whenStmt, TypeSymbol matchedType)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || whenStmt.ArmExpansion != null || whenStmt.IsForStep ||
+            !Declaration.ImplicitToken.IsLink(type: matchedType) ||
+            whenStmt.Expression is not (IdentifierExpression or MemberExpression or IndexExpression))
+        {
+            return;
+        }
+
+        for (int i = 0; i < whenStmt.Clauses.Count; i++)
+        {
+            WhenClause clause = whenStmt.Clauses[index: i];
+            string? bound = clause.Pattern switch
+            {
+                ElsePattern { VariableName: { } name } => name,
+                TypePattern { VariableName: { } name } => name,
+                _ => null
+            };
+            if (bound == null)
+            {
+                continue;
+            }
+
+            SourceLocation bodyAt = clause.Body.Location;
+            string useName = $"__link_use_{bodyAt.Line}_{bodyAt.Column}";
+            if (clause.Body is BlockStatement { Statements: [DeclarationStatement { Declaration: VariableDeclaration first }, ..] } &&
+                first.Name == useName)
+            {
+                continue;
+            }
+
+            var use = new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: useName,
+                    Type: null,
+                    Initializer: new CallExpression(
+                        Callee: new MemberExpression(Object: new IdentifierExpression(Name: bound, Location: bodyAt),
+                            MemberName: Declaration.RuntimeContract.LinkUseBegin,
+                            Location: bodyAt),
+                        Arguments: [],
+                        Location: bodyAt),
+                    Visibility: VisibilityModifier.Open,
+                    Location: bodyAt),
+                Location: bodyAt);
+            if (clause.Body is BlockStatement block)
+            {
+                block.Statements.Insert(index: 0, item: use);
+            }
+            else
+            {
+                whenStmt.Clauses[index: i] = clause with
+                {
+                    Body = new BlockStatement(Statements: [use, clause.Body], Location: bodyAt)
+                };
+            }
+        }
+    }
 
     private bool AnalyzeWhenClause(WhenClause clause, TypeSymbol matchedType,
         IEnumerable<WhenClause> priorClauses, WhenClauseContext ctx, ref bool handledNone, ref bool handledNoneValue,

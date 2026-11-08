@@ -696,7 +696,8 @@ public partial class LlvmEmitter
         string none = optional.OptionalNone;
         if (memberVariableName == Declaration.RuntimeContract.Carrier.ValueField)
         {
-            EmitLine(sb: sb, line: $"  store {held} {value}, ptr {optionalAddress}");
+            string stored = optional.IsLinkOptional ? EmitLinkFromToken(sb: sb, token: value) : value;
+            EmitLine(sb: sb, line: $"  store {held} {stored}, ptr {optionalAddress}");
             return;
         }
 

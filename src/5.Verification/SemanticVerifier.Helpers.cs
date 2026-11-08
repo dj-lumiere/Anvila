@@ -1285,6 +1285,13 @@ public sealed partial class SemanticVerifier
             return source.Realm == target.Realm || source.Category == TypeCategory.Error;
         }
 
+        // A place that keeps a link takes the entity, a token on it, or a wider link (LinkConversionPass writes the
+        // call that makes the link).
+        if (Declaration.ImplicitToken.LinkMade(source: source, target: target) != null)
+        {
+            return true;
+        }
+
         // Shared entities: bare entity E and Roamed[E] are mutually assignable (the lowering pass
         // inserts roam).
         if (_registry.EntitiesAreShared &&

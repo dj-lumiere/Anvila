@@ -2215,7 +2215,9 @@ public sealed partial class SemanticVerifier
         // `b = a` where `a` is a bare identifier of entity-KIND type (a bare entity, or a record/tuple that
         // transitively owns one) is a build error — copying it would make two owners of the single-owner
         // entity inside. Move it (`steal`) or hold a shareable handle.
-        if (ChecksHolderOf(type: valueType) &&
+        // A place that keeps a link takes the entity as a link to it, never as a second original.
+        bool makesLink = Declaration.ImplicitToken.LinkMade(source: valueType, target: targetType) != null;
+        if (!makesLink && ChecksHolderOf(type: valueType) &&
             ReadsKeptEntity(value: value, includeVariables: true) &&
             MayHoldEntity(type: valueType))
         {
@@ -2231,7 +2233,8 @@ public sealed partial class SemanticVerifier
         bool readsTokenValue = ValueTokenTarget(type: valueType) is { } tokenValue &&
                                IsAssignableTo(source: tokenValue, target: targetType) &&
                                !Wrappers.IsWrapperType(type: targetType);
-        if (ChecksOwnershipHere && !readsTokenValue &&
+        // A token kept in a link is the link's own copy: a link never keeps its entity alive.
+        if (ChecksOwnershipHere && !readsTokenValue && !Declaration.ImplicitToken.IsLink(type: targetType) &&
             value is IdentifierExpression or MemberExpression &&
             !Wrappers.IsTriviallyAssignable(type: valueType))
         {

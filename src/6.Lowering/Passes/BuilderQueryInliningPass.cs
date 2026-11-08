@@ -82,6 +82,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             "is_in_flight",
             "type_kind",
             RuntimeContract.ReachesEntity,
+            RuntimeContract.IsRetroactive,
             RuntimeContract.SharesEntityAcrossTasks,
             RuntimeContract.BlockSize
         };
@@ -624,6 +625,16 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                 bool reaches = HandleReach.Reaches(type: type);
                 return new LiteralExpression(Value: reaches,
                     LiteralType: reaches
+                        ? TokenType.True
+                        : TokenType.False,
+                    Location: loc) { ResolvedType = _boolType };
+            }
+
+            case RuntimeContract.IsRetroactive when _boolType != null:
+            {
+                bool retroactive = type is EntityTypeSymbol { IsRetroactive: true };
+                return new LiteralExpression(Value: retroactive,
+                    LiteralType: retroactive
                         ? TokenType.True
                         : TokenType.False,
                     Location: loc) { ResolvedType = _boolType };
