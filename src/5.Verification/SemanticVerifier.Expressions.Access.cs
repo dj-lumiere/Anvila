@@ -142,6 +142,20 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeMemberExpression(MemberExpression member)
     {
         TypeSymbol declared = AnalyzeMemberExpressionCore(member: member);
+        // A link read through a `Viewing` (`n.parent` with `n: Viewing[Node]`) is a read-only link: nothing reachable
+        // from a view is changed, and the two links are the same 128 bits.
+        if (Declaration.ImplicitToken.IsLink(type: declared) &&
+            declared.TypeArguments![index: 0] is { BareName: Declaration.RuntimeContract.Modifying, TypeArguments: [var linked] } &&
+            IsViewedHere(expression: member.Object) &&
+            _registry.LookupType(name: Declaration.RuntimeContract.OptionalCarrier) is { } optionalDefinition)
+        {
+            TypeSymbol readToken = _registry.GetOrCreateWrapperType(wrapperName: Declaration.RuntimeContract.Viewing,
+                innerType: linked,
+                isReadOnly: true);
+            declared = _registry.GetOrCreateResolution(genericDef: optionalDefinition, typeArguments: [readToken]);
+            member.ResolvedType = declared;
+        }
+
         // A field path a check narrowed (`if info.returns is None` leaving, then `info.returns.name`) reads as its
         // payload until the path or a part of it is assigned.
         member.NarrowedFrom = null;
