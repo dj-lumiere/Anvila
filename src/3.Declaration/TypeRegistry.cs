@@ -798,6 +798,15 @@ public sealed partial class TypeRegistry
     /// </summary>
     public void MarkRetroactive(EntityTypeSymbol entity, SourceLocation site)
     {
+        // A type the program does not declare itself (a library type, or one restored from the library kept between
+        // builds) is laid out without slots in what was built ahead of time.
+        string? declaredIn = (entity.Location ?? entity.GenericDefinition?.Location)?.FileName;
+        if (declaredIn == null || IsStandardLibraryFile(filePath: declaredIn))
+        {
+            LinksLibraryEntity = true;
+            LastBuildLinkedLibraryEntity = true;
+        }
+
         if (entity.RetroactiveSite != null)
         {
             return;
@@ -806,6 +815,17 @@ public sealed partial class TypeRegistry
         entity.RetroactiveSite = site;
         RetroactiveTypes.Add(item: entity);
     }
+
+    /// <summary>Whether the program keeps a link to an entity type the standard library declares (a <c>List[S64]</c>),
+    /// so that type's entities live in slots in this build, unlike in a library object built ahead of time.</summary>
+    public bool LinksLibraryEntity { get; private set; }
+
+    /// <summary>
+    /// Whether the last build of this process kept a link to a library entity type (<see cref="LinksLibraryEntity"/>).
+    /// The compile daemon reads it after a build against its resident library object: that object lays such a type out
+    /// without slots, so the program is built again as a whole. Cleared by the daemon before each build.
+    /// </summary>
+    public static bool LastBuildLinkedLibraryEntity { get; set; }
 
     /// <summary>
     /// Makes retroactive each entity type a link in an instance of a generic type names: a member variable the

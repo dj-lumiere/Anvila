@@ -8,18 +8,23 @@ using TypeModel.Enums;
 
 namespace Builder.Execution;
 
-/// <summary><c>check --json</c>: the check's diagnostics as one JSON array on standard output.</summary>
+/// <summary><c>check --json</c>: the check's diagnostics and the builder's retroactivity decisions as one JSON object on
+/// standard output.</summary>
 internal partial class Program
 {
     /// <summary>
     /// Checks <paramref name="entryFile"/> like <c>check</c> and writes every diagnostic of the user's files as a JSON
     /// array: file, line, column, severity (<c>error</c>, <c>warning</c> or <c>note</c>), code, message, the last line
     /// when it covers several, the names a lambda is bound to (<c>boundTo</c>) when the error keeps or returns one, and the fix it proposes (a title and edits with 1-based lines and columns), so a tool
-    /// applies a fix without reading the message. Returns 1 when there is an error.
+    /// applies a fix without reading the message. Next to them, <c>retroactive</c> lists each entity type the builder made
+    /// retroactive (a link to it is kept, so its entities live in slots) with the place of the first link. The object is
+    /// <c>{ "diagnostics": [...], "retroactive": [{ "type", "site": { "file", "line", "column" } }] }</c>. Returns 1 when
+    /// there is an error.
     /// </summary>
     private static int CheckJson(string entryFile, string? projectRoot, IReadOnlyList<string>? libraryRoots)
     {
         var diagnostics = new List<Dictionary<string, object?>>();
+        var retroactive = new List<Dictionary<string, object?>>();
         Language language = SourceLanguage(path: entryFile);
         string stdlibRoot = StdlibLoader.GetDefaultStdlibPath();
         var driver = new BuildDriver(projectRoot: projectRoot ?? Path.GetDirectoryName(path: Path.GetFullPath(path: entryFile)) ?? ".",
@@ -43,9 +48,23 @@ internal partial class Program
             diagnostics.AddRange(collection: result.Errors.Select(selector: e => Entry(diagnostic: e)));
             diagnostics.AddRange(collection: result.Warnings.Select(selector: w => Entry(diagnostic: w)));
             diagnostics.AddRange(collection: result.Notices.Select(selector: n => Entry(diagnostic: n)));
+            foreach (TypeModel.Types.EntityTypeSymbol entity in analyzer.Registry.RetroactiveTypes)
+            {
+                SyntaxTree.SourceLocation site = entity.RetroactiveSite!;
+                retroactive.Add(item: new Dictionary<string, object?>
+                {
+                    [key: "type"] = entity.Name,
+                    [key: "site"] = new Dictionary<string, object?>
+                    {
+                        [key: "file"] = ShownFile(path: site.FileName), [key: "line"] = site.Line,
+                        [key: "column"] = site.Column
+                    }
+                });
+            }
         }
 
-        Console.WriteLine(value: Encoding.UTF8.GetString(bytes: JsonTreeWriter.ToUtf8(tree: diagnostics, indented: true)));
+        var report = new Dictionary<string, object?> { [key: "diagnostics"] = diagnostics, [key: "retroactive"] = retroactive };
+        Console.WriteLine(value: Encoding.UTF8.GetString(bytes: JsonTreeWriter.ToUtf8(tree: report, indented: true)));
         return diagnostics.Any(predicate: d => (string?)d[key: "severity"] == "error") ? 1 : 0;
     }
 
