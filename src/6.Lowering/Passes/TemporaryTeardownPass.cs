@@ -871,6 +871,21 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                     objectPos: objectPos,
                     spills: spills);
 
+            // A token made for an argument (`c > U64_MAX.to[Int]()` hands the routine `you: Viewing[Int]`) only lets
+            // the routine reach the value for the call, so a fresh value under it is torn down after the call like
+            // any other fresh argument. Only a call's result is fresh there: a construction under the token
+            // (`sizes[Named(name: built)]`) holds its member values as they are, without copies of its own.
+            case AddressOfExpression addr:
+                return addr with
+                {
+                    Target = VisitIn(e: addr.Target,
+                        objectPos: objectPos && addr.Target is CallExpression made &&
+                                   !RuntimeContract.IsMemberwiseConstruction(constructedType: made.ConstructedType,
+                                       resolved: made.ResolvedRoutine),
+                        spills: spills,
+                        kept: true)
+                };
+
             case StealExpression st:
                 // `steal` is an explicit move — never tear down its operand.
                 return st with
