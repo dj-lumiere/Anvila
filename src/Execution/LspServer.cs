@@ -671,8 +671,10 @@ public static class LspServer
             });
     }
 
-    /// <summary>The best typed expression on the cursor line: the one anchored exactly at the hit token,
-    /// or the closest-starting expression at or before the cursor column if no exact match.</summary>
+    /// <summary>The best typed expression on the cursor line: the innermost one anchored exactly at the hit token, else
+    /// the innermost one around it (starting before it with a part after it), else the closest-starting one before it.
+    /// Several expressions start at one column (`-1 to 1` starts the range, the `-1` and any call chained on it).
+    /// </summary>
     private static Expression? BestTypedExpression(SyntaxTree.Program program, int line1, int col1,
         Token hit)
     {
@@ -688,22 +690,50 @@ public static class LspServer
             return named;
         }
 
+        List<Expression> exact = typed.Where(predicate: e => e.Location.Column == hit.Column).ToList();
+        if (Innermost(candidates: exact) is { } anchored)
+        {
+            return anchored;
+        }
+
+        List<Expression> around = typed.Where(predicate: e => e.Location.Column < hit.Column &&
+                                                                Parts(node: e).Any(predicate: part =>
+                                                                    part.Location.Line > hit.Line ||
+                                                                    part.Location.Line == hit.Line &&
+                                                                    part.Location.Column > hit.Column))
+                                       .ToList();
+        if (Innermost(candidates: around) is { } enclosing)
+        {
+            return enclosing;
+        }
+
         Expression? best = null;
         foreach (Expression e in typed)
         {
-            if (e.Location.Column == hit.Column)
-            {
-                return e; // exact anchor — the identifier/call at the cursor
-            }
-
             if (e.Location.Column <= col1 &&
                 (best == null || e.Location.Column > best.Location.Column))
             {
-                best = e; // closest-starting enclosing expression as a fallback
+                best = e; // closest-starting expression as a fallback
             }
         }
 
         return best;
+    }
+
+    /// <summary>The candidate no other candidate sits inside, or null for none.</summary>
+    private static Expression? Innermost(List<Expression> candidates)
+    {
+        return candidates.FirstOrDefault(predicate: c =>
+            !candidates.Any(predicate: other => !ReferenceEquals(objA: other, objB: c) &&
+                                                Parts(node: c).Any(predicate: part => ReferenceEquals(objA: part, objB: other))));
+    }
+
+    /// <summary>Every expression inside <paramref name="node"/>, itself not included.</summary>
+    private static IEnumerable<Expression> Parts(Expression node)
+    {
+        var acc = new List<ISyntaxTreeNode>();
+        CollectAllNodes(node: node, acc: acc, seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
+        return acc.OfType<Expression>().Where(predicate: e => !ReferenceEquals(objA: e, objB: node));
     }
 
     /// <summary>When no symbol-specific label was produced, falls back to the expression's resolved type.
@@ -714,6 +744,14 @@ public static class LspServer
         // A realm tag (`C`/`LLVM`/`RV`/`ME` before `::`) is a qualifier, not a value — don't report it
         // as the return type. If the qualified call resolved, the routine branch already handled it.
         if (IsRealmQualifier(doc: doc, hit: hit))
+        {
+            return null;
+        }
+
+        // Punctuation and `given` name no value of their own: the closest expression before them is some other one.
+        if (hit.Type is TokenType.LeftParen or TokenType.RightParen or TokenType.LeftBracket or TokenType.RightBracket
+            or TokenType.Comma or TokenType.Colon or TokenType.DoubleColon or TokenType.Dot or TokenType.FatArrow
+            or TokenType.Given)
         {
             return null;
         }
@@ -786,6 +824,18 @@ public static class LspServer
             }
         }
 
+        // A lambda's parameter where the lambda names it: its type is the matching parameter of the routine type the
+        // lambda became.
+        if (LambdaParameterTypeAtToken(doc: doc, hit: hit) is { } lambdaParameter)
+        {
+            return ($"{hit.Text}: {TypeText(type: lambdaParameter)}", null, null);
+        }
+
+        if (GivenNameTypeAtToken(doc: doc, hit: hit) is { } given)
+        {
+            return ($"{hit.Text}: {TypeText(type: given)}", null, null);
+        }
+
         VariableInfo? bound = VariableBoundAtToken(doc: doc, hit: hit);
         if (bound == null)
         {
@@ -799,7 +849,7 @@ public static class LspServer
             : "";
         string label = $"{kindNote}{bound.Name}: {TypeText(type: bound.Type)}";
 
-        // Ownership state: is this exact occurrence dead (moved out by an earlier steal)?
+        // Is this exact occurrence dead (handed over by an earlier steal)?
         bool deadHere = AllNodes(program: doc.Program)
                        .OfType<IdentifierExpression>()
                        .Any(predicate: e => e.IsDeadUse && e.Name == hit.Text &&
@@ -813,13 +863,12 @@ public static class LspServer
 
         if (deadHere)
         {
-            notes.Add(item: Ko(english: "⚠️ **moved out** — this value's ownership was transferred by an " +
-                                        "earlier `steal`; it is dead here (use-after-steal) until re-assigned.",
-                korean: "⚠️ **넘겨짐** — 앞선 `steal`로 이 값의 소유권이 넘어갔습니다. 다시 대입하기 전까지 여기서는 " +
-                        "쓸 수 없습니다(use-after-steal)."));
+            notes.Add(item: Ko(english: "⚠️ **handed over**: an earlier `steal` handed this value on, so it can't be " +
+                                        "used here until it is assigned again.",
+                korean: "⚠️ **넘겨짐**: 앞선 `steal`로 이 값을 넘겼습니다. 다시 대입하기 전까지 여기서는 쓸 수 없습니다."));
         }
 
-        if (OwnershipNote(type: bound.Type) is { } own)
+        if (SharingNote(type: bound.Type) is { } own)
         {
             notes.Add(item: own);
         }
@@ -831,6 +880,80 @@ public static class LspServer
             notes.Count > 0
                 ? string.Join(separator: "\n\n", values: notes)
                 : null);
+    }
+
+    /// <summary>The type of the lambda parameter the hit token names where the lambda declares it, or null.</summary>
+    private static TypeSymbol? LambdaParameterTypeAtToken(DocState doc, Token hit)
+    {
+        if (hit.Type != TokenType.Identifier)
+        {
+            return null;
+        }
+
+        foreach (LambdaExpression lambda in AllNodes(program: doc.Program).OfType<LambdaExpression>())
+        {
+            for (int i = 0; i < lambda.Parameters.Count; i++)
+            {
+                Parameter parameter = lambda.Parameters[index: i];
+                // A parameter's location is where its type starts: the name is the last one spelled before it.
+                if (parameter.Name != hit.Text || parameter.Location.Line != hit.Line ||
+                    doc.Tokens.Where(predicate: t => t.Line == parameter.Location.Line &&
+                                                     t.Type == TokenType.Identifier && t.Text == parameter.Name &&
+                                                     t.Column <= parameter.Location.Column)
+                       .MaxBy(keySelector: t => t.Column) != hit)
+                {
+                    continue;
+                }
+
+                return parameter.Type?.ResolvedType ??
+                       (lambda.ResolvedType is RoutineTypeSymbol routineType && i < routineType.ParameterTypes.Count
+                           ? routineType.ParameterTypes[index: i]
+                           : null);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The type of a name a lambda keeps from around it (<c>given dy</c>), read where its body uses the name,
+    /// or null when the hit token is no such name.</summary>
+    private static TypeSymbol? GivenNameTypeAtToken(DocState doc, Token hit)
+    {
+        if (hit.Type != TokenType.Identifier)
+        {
+            return null;
+        }
+
+        int at = doc.Tokens.IndexOf(item: hit);
+        int j = at - 1;
+        while (j >= 0 && doc.Tokens[index: j].Line == hit.Line &&
+               doc.Tokens[index: j].Type is not (TokenType.Given or TokenType.FatArrow))
+        {
+            j--;
+        }
+
+        if (j < 0 || doc.Tokens[index: j].Type != TokenType.Given)
+        {
+            return null;
+        }
+
+        // The lambda is the one starting closest before `given` that keeps this name.
+        LambdaExpression? lambda = AllNodes(program: doc.Program)
+                                  .OfType<LambdaExpression>()
+                                  .Where(predicate: l => l.Captures?.Contains(item: hit.Text) == true &&
+                                                         (l.Location.Line, l.Location.Column).CompareTo(
+                                                             other: (hit.Line, hit.Column)) < 0)
+                                  .MaxBy(keySelector: l => (l.Location.Line, l.Location.Column));
+        if (lambda == null)
+        {
+            return null;
+        }
+
+        var acc = new List<ISyntaxTreeNode>();
+        CollectAllNodes(node: lambda.Body, acc: acc, seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
+        return acc.OfType<IdentifierExpression>()
+                  .FirstOrDefault(predicate: e => e.Name == hit.Text && e.ResolvedType != null)
+                 ?.ResolvedType;
     }
 
     /// <summary>A type's hover: its declaration's header as written (or its kind and name), the doc above it, and
@@ -1000,9 +1123,12 @@ public static class LspServer
                           .Where(predicate: g => !g.StartsWith(value: "__", comparisonType: StringComparison.Ordinal) &&
                                                  !ownerParameters.Contains(item: g))
                           .ToList();
+        // A specialization names concrete types in its bracket (`Emittable[T].to[List[T]]`), one routine of a family.
         string generics = own.Count > 0
             ? $"[{string.Join(separator: ", ", values: own)}]"
-            : "";
+            : shown.TypeArguments is { Count: > 0 } specialized
+                ? $"[{string.Join(separator: ", ", values: specialized.Select(selector: t => TypeText(type: t)))}]"
+                : "";
         return $"{RoutineModifiers(routine: shown)}routine {owner}{routine.Name}{generics}{RoutineDetail(r: shown)}" +
                NeedsClauses(constraints: shown.GenericConstraints);
     }
@@ -1535,7 +1661,26 @@ public static class LspServer
     /// </summary>
     private static RoutineInfo? RoutineReferencedByToken(DocState doc, Token hit)
     {
-        return CallReferencedByToken(doc: doc, hit: hit)?.ResolvedRoutine;
+        return CallReferencedByToken(doc: doc, hit: hit)?.ResolvedRoutine ??
+               GenericCallReferencedByToken(doc: doc, hit: hit)?.ResolvedRoutine;
+    }
+
+    /// <summary>The resolved call with a bracket (<c>xs.to[List]()</c>) whose routine name is the hit token: the one
+    /// starting closest before it, since the name comes after the receiver the call starts at.</summary>
+    private static GenericMemberRoutineCallExpression? GenericCallReferencedByToken(DocState doc, Token hit)
+    {
+        int at = doc.Tokens.IndexOf(item: hit);
+        if (at <= 0 || doc.Tokens[index: at - 1].Type != TokenType.Dot)
+        {
+            return null;
+        }
+
+        return AllNodes(program: doc.Program)
+              .OfType<GenericMemberRoutineCallExpression>()
+              .Where(predicate: call => call.ResolvedRoutine != null && call.MemberRoutineName == hit.Text &&
+                                        (call.Location.Line, call.Location.Column).CompareTo(
+                                            other: (hit.Line, hit.Column)) < 0)
+              .MaxBy(keySelector: call => (call.Location.Line, call.Location.Column));
     }
 
     /// <summary>The resolved call whose callee is the hit token (see <see cref="RoutineReferencedByToken"/>).</summary>
@@ -1753,12 +1898,11 @@ public static class LspServer
     }
 
     /// <summary>
-    /// A one-line note on the ownership nature of a variable's type, for hover — so the ownership model is
-    /// visible where it bites: an <c>entity</c> is single-owner (needs <c>steal</c> to hand off), a
-    /// <c>Retained[T]</c> is a storable hand-off, the <c>Viewing</c>/<c>Modifying</c> tokens are temporary
+    /// A one-line note on how a variable's type is shared, for hover: an <c>entity</c> has one original (handed over with <c>steal</c>), a
+    /// <c>Retained[T]</c> is a manager whose handle can be stored, the <c>Viewing</c>/<c>Modifying</c> tokens are temporary
     /// access links. Null for ordinary value types.
     /// </summary>
-    private static string? OwnershipNote(TypeSymbol type)
+    private static string? SharingNote(TypeSymbol type)
     {
         if (!Rules.ChecksOwnership)
         {
@@ -1767,21 +1911,22 @@ public static class LspServer
 
         if (type is EntityTypeSymbol)
         {
-            return Ko(english: "🔒 **entity** — single owner. Hand it off with `steal` (a plain `=` is RV-S413); after " +
-                               "that the source binding is dead.",
-                korean: "🔒 **entity** — 소유자는 하나입니다. `steal`로 넘깁니다(그냥 `=`는 RV-S413). 넘긴 뒤에는 원래 " +
-                        "바인딩을 쓸 수 없습니다.");
+            return Ko(english: "🔒 **entity**: it has one original. Others reach it with a `view()`/`modify()` token or " +
+                               "through a manager. Hand it over with `steal` (a plain `=` is RV-S413), and the old name " +
+                               "can't be used after that.",
+                korean: "🔒 **entity**: 원본이 하나입니다. 다른 곳에서는 `view()`/`modify()` 토큰이나 매니저로 다가갑니다. " +
+                        "`steal`로 넘기며(그냥 `=`는 RV-S413), 넘긴 뒤에는 원래 이름을 쓸 수 없습니다.");
         }
 
         return type.BareName switch
         {
-            "Retained" => Ko(english: "📦 **Retained** — a persistent, storable ownership hand-off.",
-                korean: "📦 **Retained** — 저장해 둘 수 있는, 오래가는 소유권 이전입니다."),
+            "Retained" => Ko(english: "📦 **Retained**: a manager that keeps an entity, so the handle can be stored and shared.",
+                korean: "📦 **Retained**: 엔티티를 맡아 두는 매니저입니다. 핸들을 저장하고 함께 쓸 수 있습니다."),
             "Viewing" or "Modifying" =>
-                Ko(english: "👁 **temporary access link** — not storable or returnable, valid only for this scope.",
-                    korean: "👁 **임시 접근 링크** — 저장하거나 반환할 수 없고, 이 scope 안에서만 유효합니다."),
-            "Controlling" or "Accessing" => Ko(english: "🔗 a reference protocol, not a pass-currency.",
-                korean: "🔗 참조 프로토콜입니다. 값을 넘기는 수단이 아닙니다."),
+                Ko(english: "👁 **access token**: it can't be stored or returned, and works only inside this scope.",
+                    korean: "👁 **접근 토큰**: 저장하거나 돌려줄 수 없고, 이 범위 안에서만 쓸 수 있습니다."),
+            "Controlling" or "Accessing" => Ko(english: "🔗 a reference protocol. Values are not passed with it.",
+                korean: "🔗 참조 프로토콜입니다. 값을 넘기는 데 쓰지 않습니다."),
             _ => null
         };
     }
@@ -3381,6 +3526,14 @@ public static class LspServer
         }
 
         TypeSymbol shown = Rules.SurfaceType(type: resolved);
+
+        // A bracket the builder completed (`to[List]` read as `to[List[S64]]`): only the name was written, and the
+        // arguments it added carry the name's position.
+        if (written.KnownType != null)
+        {
+            AddType(roles: roles, key: (written.Location.Line, written.Location.Column), type: shown, replace: true);
+            return;
+        }
 
         // Desugaring wraps a written type at its own position (a variadic `items...: T` becomes the array of its
         // arguments, `Array[T, N]`, and `T?` a `Optional[T]`): only the wrapped type was written there.
