@@ -1146,13 +1146,13 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         }
 
         TypeSymbol armType = tp.Type.ResolvedType ?? ErrorTypeSymbol.Instance;
-        TypeSymbol? u32 = ctx.Registry.LookupType(name: "U32");
+        TypeSymbol? u64 = ctx.Registry.LookupType(name: "U64");
         var cond = new BinaryExpression(
-            Left: MakeMemberAccess(subject: value, field: RuntimeContract.Dispatch.TypeHash, fieldType: u32, loc: loc),
+            Left: MakeMemberAccess(subject: value, field: RuntimeContract.Dispatch.TypeHash, fieldType: u64, loc: loc),
             Operator: BinaryOperator.Equal,
             Right: new LiteralExpression(Value: TypeRegistry.DispatchTypeHash(type: armType).ToString(),
-                LiteralType: TokenType.U32Literal,
-                Location: loc) { ResolvedType = u32 },
+                LiteralType: TokenType.U64Literal,
+                Location: loc) { ResolvedType = u64 },
             Location: loc) { ResolvedType = boolType };
         if (tp.VariableName == null)
         {

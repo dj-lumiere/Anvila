@@ -148,7 +148,7 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
                     Location: loc),
                 Operator: BinaryOperator.Equal,
                 Right: new LiteralExpression(Value: TypeRegistry.DispatchTypeHash(type: arms[index: i]).ToString(),
-                    LiteralType: TokenType.U32Literal,
+                    LiteralType: TokenType.U64Literal,
                     Location: loc),
                 Location: loc);
             chain = new IfStatement(Condition: test,

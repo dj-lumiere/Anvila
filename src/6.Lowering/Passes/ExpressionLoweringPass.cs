@@ -1950,7 +1950,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             ? RuntimeContract.Dispatch.KeepInline
             : RuntimeContract.Dispatch.KeepRecord;
         if (ctx.Registry.LookupDispatchHelper(name: helper) is not { } helperDef ||
-            ctx.Registry.LookupType(name: "U32") is not { } u32)
+            ctx.Registry.LookupType(name: "U64") is not { } u64)
         {
             return null;
         }
@@ -1958,8 +1958,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         RoutineInfo keep = ctx.Registry.GetOrCreateRoutineResolution(genericDef: helperDef,
             typeArguments: [protocol, concrete]);
         var hash = new LiteralExpression(Value: TypeRegistry.DispatchTypeHash(type: concrete).ToString(),
-            LiteralType: TokenType.U32Literal,
-            Location: init.Location) { ResolvedType = u32 };
+            LiteralType: TokenType.U64Literal,
+            Location: init.Location) { ResolvedType = u64 };
         Expression wrapped = new CallExpression(
             Callee: new IdentifierExpression(Name: helper, Location: init.Location) { ResolvedType = keep.ReturnType },
             Arguments:
@@ -1970,7 +1970,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 },
                 new NamedArgumentExpression(Name: "type_hash", Value: hash, Location: init.Location)
                 {
-                    ResolvedType = u32
+                    ResolvedType = u64
                 }
             ],
             Location: init.Location)
@@ -2731,17 +2731,17 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // `x is Boss` on a stored value of a protocol: its type hash is Boss's.
         if (ipe.Pattern is TypePattern { Type.ResolvedType: { } storedArm } &&
             TypeRegistry.DispatchedProtocol(type: operandType) != null &&
-            ctx.Registry.LookupType(name: "U32") is { } u32)
+            ctx.Registry.LookupType(name: "U64") is { } u64)
         {
             return (hoisted, new BinaryExpression(
                 Left: new MemberExpression(Object: loweredExpr, MemberName: RuntimeContract.Dispatch.TypeHash,
-                    Location: ipe.Location) { ResolvedType = u32 },
+                    Location: ipe.Location) { ResolvedType = u64 },
                 Operator: ipe.IsNegated
                     ? BinaryOperator.NotEqual
                     : BinaryOperator.Equal,
                 Right: new LiteralExpression(Value: TypeRegistry.DispatchTypeHash(type: storedArm).ToString(),
-                    LiteralType: TokenType.U32Literal,
-                    Location: ipe.Location) { ResolvedType = u32 },
+                    LiteralType: TokenType.U64Literal,
+                    Location: ipe.Location) { ResolvedType = u64 },
                 Location: ipe.Location) { ResolvedType = boolType });
         }
 

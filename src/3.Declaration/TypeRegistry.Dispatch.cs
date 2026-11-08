@@ -1,4 +1,3 @@
-using System.Text;
 using Builder.Verification.Enums;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -205,22 +204,14 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// The type hash of <paramref name="type"/> as a stored protocol value: FNV-1a (32 bits) over the UTF-8 bytes of
-    /// its name with its module and its type arguments (<see cref="TypeSymbol.FullName"/>), 1 in place of 0. A
-    /// Mielia entity's handle (<c>Roamed[E]</c>) has the hash of the entity.
+    /// The type hash of <paramref name="type"/> as a stored protocol value: the type id
+    /// (<see cref="TypeIdHelper.ComputeTypeId"/>, FNV-1a in 64 bits) of its name with its module and its type arguments
+    /// (<see cref="TypeSymbol.FullName"/>). A Mielia entity's handle (<c>Roamed[E]</c>) has the hash of the entity.
     /// </summary>
-    public static uint DispatchTypeHash(TypeSymbol type)
+    public static ulong DispatchTypeHash(TypeSymbol type)
     {
         TypeSymbol named = DispatchArmEntity(type: type) ?? type;
-        uint hash = 2166136261;
-        foreach (byte b in Encoding.UTF8.GetBytes(s: named.FullName))
-        {
-            hash = (hash ^ b) * 16777619;
-        }
-
-        return hash == 0
-            ? 1
-            : hash;
+        return TypeIdHelper.ComputeTypeId(fullName: named.FullName);
     }
 
     /// <summary>The entity a Mielia handle <c>Roamed[E]</c> stands for, or null.</summary>

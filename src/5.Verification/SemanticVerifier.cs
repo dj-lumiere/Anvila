@@ -1636,13 +1636,13 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckDispatchTypeHashes()
     {
-        var seen = new Dictionary<uint, TypeSymbol>();
+        var seen = new Dictionary<ulong, TypeSymbol>();
         foreach (RecordTypeSymbol dispatched in _registry.DispatchedTypes)
         {
             foreach (TypeSymbol arm in _registry.DispatchArms(dispatched: dispatched))
             {
                 TypeSymbol named = TypeRegistry.DispatchArmEntity(type: arm) ?? arm;
-                uint hash = TypeRegistry.DispatchTypeHash(type: arm);
+                ulong hash = TypeRegistry.DispatchTypeHash(type: arm);
                 if (seen.TryGetValue(key: hash, value: out TypeSymbol? other) && other.FullName != named.FullName)
                 {
                     ReportError(code: SemanticDiagnosticCode.DispatchTypeHashCollision,
