@@ -20,7 +20,9 @@ namespace Builder.Lowering.Passes;
 /// when a local was given one, or when it is a token parameter (or <c>me</c>) of a routine some call hands an
 /// unproven token to, found across the program's routines until nothing changes. Only tokens on retroactive entity
 /// types are checked: no other entity ends while a link to it is used. A token taken from a link keeps the slot from
-/// being reused while it is in use, so the check reads a header that is still the entity's.</item>
+/// being reused while it is in use, so the check reads a header that is still the entity's. In a generic routine a token
+/// over a type parameter is checked by <c>require_modifying_live[T]</c> / <c>require_viewing_live[T]</c>, which do
+/// nothing in an instance whose type is not a retroactive entity.</item>
 /// <item>A container a running loop may walk. When the shape check left a loop to check its container at run time
 /// (RuntimeShapeUseLoweringPass opens the use), every call of an <c>@reshaping</c> routine and every subscript write
 /// that may add a key first checks its receiver (<c>xs.require_shape_free()</c>, ShapeUse.rvr), which fails with
@@ -59,10 +61,11 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             AstWalker.Walk(root: program,
                 visit: node =>
                 {
-                    if (node is RoutineDeclaration { Body: BlockStatement, ResolvedInfo: { } info } routine &&
-                        info is not ({ IsGenericDefinition: true } or { OwnerType.IsGenericDefinition: true }))
+                    // A generic routine is checked in its definition: each instance is made from that body, and the
+                    // check of a token over a type parameter does nothing in an instance whose type is not retroactive.
+                    if (node is RoutineDeclaration { Body: BlockStatement, ResolvedInfo: { } info } routine)
                     {
-                        _routines.TryAdd(key: info.RegistryKey, value: routine);
+                        _routines.TryAdd(key: Key(routine: info), value: routine);
                     }
                 });
         }
@@ -99,12 +102,12 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
     /// </summary>
     public void InsertInto(RoutineInfo routine, Statement body)
     {
-        if (!_routines.ContainsKey(key: routine.RegistryKey))
+        if (!_routines.ContainsKey(key: Key(routine: routine)))
         {
             return;
         }
 
-        HashSet<string> names = _unproven.TryGetValue(key: routine.RegistryKey, value: out HashSet<string>? known)
+        HashSet<string> names = _unproven.TryGetValue(key: Key(routine: routine), value: out HashSet<string>? known)
             ? [.. known]
             : new HashSet<string>(comparer: StringComparer.Ordinal);
         if (_shapes || names.Count > 0)
@@ -278,7 +281,16 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                         return;
                     }
 
-                    if (e is not CallExpression { ResolvedRoutine: { } called } call)
+                    // A call written with type arguments (`read[Node](n)`) is still its own node here.
+                    (RoutineInfo? called, Expression? receiver, List<Expression> arguments) = e switch
+                    {
+                        CallExpression { ResolvedRoutine: { } direct } call =>
+                            (direct, (call.Callee as MemberExpression)?.Object, call.Arguments),
+                        GenericMemberRoutineCallExpression { ElementCall: null, ResolvedRoutine: { } generic } written =>
+                            (generic, written.IsFree ? null : written.Object, written.Arguments),
+                        _ => (null, null, [])
+                    };
+                    if (called == null)
                     {
                         return;
                     }
@@ -290,23 +302,21 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                         routine = inner;
                     }
 
-                    if (!_routines.ContainsKey(key: routine.RegistryKey))
+                    if (!_routines.ContainsKey(key: Key(routine: routine)))
                     {
                         return;
                     }
 
-                    if (call.Callee is MemberExpression { Object: var receiver } && routine.OwnerType is EntityTypeSymbol
-                        {
-                            IsRetroactive: true
-                        } && IsUnproven(expr: receiver, names: names))
+                    if (receiver != null && RetroactiveEntity(type: routine.OwnerType) != null &&
+                        IsUnproven(expr: receiver, names: names))
                     {
                         Mark(routine: routine, parameter: "me");
                     }
 
                     List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
-                    for (int i = 0; i < call.Arguments.Count; i++)
+                    for (int i = 0; i < arguments.Count; i++)
                     {
-                        Expression argument = call.Arguments[index: i];
+                        Expression argument = arguments[index: i];
                         ParamInfo? parameter = argument is NamedArgumentExpression named
                             ? parameters.FirstOrDefault(predicate: p => p.Name == named.Name)
                             : i < parameters.Count
@@ -325,7 +335,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
 
     private void Mark(RoutineInfo routine, string parameter)
     {
-        if (Unproven(key: routine.RegistryKey).Add(item: parameter))
+        if (Unproven(key: Key(routine: routine)).Add(item: parameter))
         {
             _changed = true;
         }
@@ -351,15 +361,35 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
         };
     }
 
-    /// <summary>The retroactive entity a token (or an entity itself, as <c>me</c>) reaches, or null.</summary>
-    private static EntityTypeSymbol? RetroactiveEntity(TypeSymbol? type)
+    /// <summary>The key a routine's checks are kept under: a generic routine's definition for each of its instances.</summary>
+    private static string Key(RoutineInfo routine)
+    {
+        // A recovery variant checks what the routine it recovers checks.
+        while (routine.RecoveryOf is { } recovered)
+        {
+            routine = recovered;
+        }
+
+        return routine.GenericDefinition is { } definition && !ReferenceEquals(objA: definition, objB: routine)
+            ? definition.RegistryKey
+            : routine.RegistryKey;
+    }
+
+    /// <summary>The type a token (or an entity itself, as <c>me</c>) reaches when its entities may end while a link
+    /// to them is used: a retroactive entity, or a type parameter an instance may bind to one. Null for any other.</summary>
+    private static TypeSymbol? RetroactiveEntity(TypeSymbol? type)
     {
         if (type?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying && type.TypeArguments is [{ } inner])
         {
             type = inner;
         }
 
-        return type as EntityTypeSymbol is { IsRetroactive: true } entity ? entity : null;
+        return type switch
+        {
+            EntityTypeSymbol { IsRetroactive: true } entity => entity,
+            GenericParameterTypeSymbol parameter => parameter,
+            _ => null
+        };
     }
 
     /// <summary>The checks to put before a statement: one per unproven name it reaches a member through, then one per
@@ -375,8 +405,24 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                 {
                     if (e is not MemberExpression { TakesLink: false } member ||
                         Root(expr: member.Object) is not { } name || !names.Contains(item: name.Name) ||
-                        RetroactiveEntity(type: name.ResolvedType) is not { } entity || !seen.Add(item: name.Name) ||
-                        registry.LookupMemberRoutineOverload(type: entity, memberRoutineName: RuntimeContract.RequireLive,
+                        RetroactiveEntity(type: name.ResolvedType) is not { } entity || !seen.Add(item: name.Name))
+                    {
+                        return;
+                    }
+
+                    // A token over a type parameter (in a generic routine) is checked by a routine every instance has:
+                    // it does nothing where the instance's type is not a retroactive entity.
+                    if (entity is GenericParameterTypeSymbol)
+                    {
+                        if (GenericCheck(token: name, location: stmt.Location) is { } generic)
+                        {
+                            checks.Add(item: new ExpressionStatement(Expression: generic, Location: stmt.Location));
+                        }
+
+                        return;
+                    }
+
+                    if (registry.LookupMemberRoutineOverload(type: entity, memberRoutineName: RuntimeContract.RequireLive,
                             argTypes: []) is not { } require)
                     {
                         return;
@@ -488,6 +534,44 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             ResolvedType = routine.ReturnType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine),
             IsSynthesizedLowering = true
+        };
+    }
+
+    /// <summary><c>require_modifying_live[T](token: n)</c> (or the <c>Viewing</c> one) for a token over the type
+    /// parameter <c>T</c>, or null when the token is neither.</summary>
+    private CallExpression? GenericCheck(IdentifierExpression token, SourceLocation location)
+    {
+        if (token.ResolvedType is not { BareName: var wrapper, TypeArguments: [GenericParameterTypeSymbol over] } tokenType ||
+            wrapper is not (RuntimeContract.Modifying or RuntimeContract.Viewing))
+        {
+            return null;
+        }
+
+        string name = wrapper == RuntimeContract.Modifying
+            ? RuntimeContract.RequireModifyingLive
+            : RuntimeContract.RequireViewingLive;
+        if (registry.LookupGenericOverload(name: name, module: "System") is not { } definition)
+        {
+            return null;
+        }
+
+        RoutineInfo instance = registry.GetOrCreateRoutineResolution(genericDef: definition, typeArguments: [over]);
+        return new CallExpression(
+            Callee: new IdentifierExpression(Name: name, Location: location) { ResolvedRoutine = instance },
+            Arguments:
+            [
+                new NamedArgumentExpression(Name: "token", Value: token with { }, Location: location)
+                {
+                    ResolvedType = tokenType
+                }
+            ],
+            Location: location)
+        {
+            ResolvedRoutine = instance,
+            ResolvedType = instance.ReturnType,
+            LoweringKind = CallLoweringKind.DirectRoutine,
+            IsSynthesizedLowering = true,
+            TypeArguments = [new TypeExpression(Name: over.Name, GenericArguments: null, Location: location)]
         };
     }
 

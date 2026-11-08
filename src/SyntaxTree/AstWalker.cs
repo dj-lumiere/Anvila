@@ -41,6 +41,20 @@ public static class AstWalker
             return;
         }
 
+        // A call written with type arguments (`grow[S64](o, value: y)`) is still its own node until a later lowering:
+        // it is seen as the call it is bound to, and an element call (`fs[0]()`) as the call of the element.
+        if (root is GenericMemberRoutineCallExpression { ElementCall: { } element })
+        {
+            WalkWritten(root: element, visit: visit);
+            return;
+        }
+
+        if (root is GenericMemberRoutineCallExpression { ResolvedRoutine: { } routine } generic)
+        {
+            WalkWritten(root: AsCall(generic: generic, routine: routine), visit: visit);
+            return;
+        }
+
         visit(obj: root);
         IEnumerable<object> children = root is RecoveryExpression { Inner: var written }
             ? [written]
@@ -49,6 +63,24 @@ public static class AstWalker
         {
             WalkWritten(root: child, visit: visit);
         }
+    }
+
+    /// <summary>A call written with type arguments as the plain call it is bound to (its receiver and arguments are the
+    /// written nodes themselves).</summary>
+    public static CallExpression AsCall(GenericMemberRoutineCallExpression generic, TypeModel.Symbols.RoutineInfo routine)
+    {
+        Expression callee = generic.IsFree
+            ? new IdentifierExpression(Name: generic.MemberRoutineName, Location: generic.Location)
+            {
+                ResolvedRoutine = routine
+            }
+            : new MemberExpression(Object: generic.Object, MemberName: generic.MemberRoutineName,
+                Location: generic.Location);
+        return new CallExpression(Callee: callee, Arguments: generic.Arguments, Location: generic.Location)
+        {
+            ResolvedRoutine = routine,
+            ResolvedType = generic.ResolvedType
+        };
     }
 
     /// <summary><see cref="WalkExpressions"/> over the code as written (see <see cref="WalkWritten"/>).</summary>

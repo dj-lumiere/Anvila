@@ -409,6 +409,14 @@ public static class RuntimeContract
     /// <remarks>Sites: RuntimeCheckPass.</remarks>
     public const string RequireLive = "require_live";
 
+    /// <summary>Link.rvr: <c>require_modifying_live[T](token:)</c> and <c>require_viewing_live[T](token:)</c>, the
+    /// checks of <see cref="RequireLive"/> written in a generic routine over a token on a type parameter.</summary>
+    /// <remarks>Sites: RuntimeCheckPass.</remarks>
+    public const string RequireModifyingLive = "require_modifying_live";
+
+    /// <inheritdoc cref="RequireModifyingLive"/>
+    public const string RequireViewingLive = "require_viewing_live";
+
     /// <summary>Link.rvr: <c>take_modifying_link(link:)</c>, the token a link holds for a use that does not take the link
     /// by <c>when</c> (<c>node.parent.id</c>), failing with <c>StaleLinkError</c> once the entity ended.</summary>
     /// <remarks>Sites: LinkTaking (the recovery hoister, LinkConversionPass).</remarks>
