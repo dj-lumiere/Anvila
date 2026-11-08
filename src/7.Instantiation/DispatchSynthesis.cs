@@ -55,6 +55,11 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
         bool returnsValue = routine.ReturnType is { Name: not "None" };
         return Switch(arms: arms, loc: loc, arm: arm =>
         {
+            if (!routine.IsReadOnly && IsKeptRecord(arm: arm))
+            {
+                return ChangeRecordBody(routine: routine, arm: arm, returnsValue: returnsValue, loc: loc);
+            }
+
             var call = new CallExpression(
                 Callee: new MemberExpression(Object: Token(arm: arm, loc: loc), MemberName: routine.Name, Location: loc),
                 Arguments: routine.Parameters
@@ -67,6 +72,66 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
                 ? [new ReturnStatement(Value: call, Location: loc)]
                 : [new ExpressionStatement(Expression: call, Location: loc), new ReturnStatement(Value: null, Location: loc)];
         }, noArm: () => NoTypeStored(routine: routine, loc: loc));
+    }
+
+    /// <summary>
+    /// A routine that changes a record kept in its own memory: it runs on a copy, and the copy goes back
+    /// (<c>var changed = dispatched_copy_out[T](at: me.address)</c>, the call on <c>changed</c>, then
+    /// <c>dispatched_put_back[T](at: me.address, value: changed)</c>). The record read where it is would be a temporary,
+    /// and the change would be lost.
+    /// </summary>
+    private static List<Statement> ChangeRecordBody(RoutineInfo routine, TypeSymbol arm, bool returnsValue,
+        SourceLocation loc)
+    {
+        const string changed = "__dispatched_changed";
+        const string result = "__dispatched_result";
+        var statements = new List<Statement>
+        {
+            new DeclarationStatement(Declaration: new VariableDeclaration(Name: changed,
+                    Type: null,
+                    Initializer: Helper(name: RuntimeContract.Dispatch.CopyOut, typeArgument: arm, loc: loc),
+                    Visibility: VisibilityModifier.Open,
+                    Location: loc),
+                Location: loc)
+        };
+        var call = new CallExpression(
+            Callee: new MemberExpression(Object: new IdentifierExpression(Name: changed, Location: loc),
+                MemberName: routine.Name,
+                Location: loc),
+            Arguments: routine.Parameters
+                              .Select(selector: p => (Expression)new NamedArgumentExpression(Name: p.Name,
+                                   Value: new IdentifierExpression(Name: p.Name, Location: loc),
+                                   Location: loc))
+                              .ToList(),
+            Location: loc);
+        statements.Add(item: returnsValue
+            ? new DeclarationStatement(Declaration: new VariableDeclaration(Name: result,
+                    Type: null,
+                    Initializer: call,
+                    Visibility: VisibilityModifier.Open,
+                    Location: loc),
+                Location: loc)
+            : new ExpressionStatement(Expression: call, Location: loc));
+        var putBack = (GenericMemberRoutineCallExpression)Helper(name: RuntimeContract.Dispatch.PutBack,
+            typeArgument: arm, loc: loc);
+        statements.Add(item: new ExpressionStatement(
+            Expression: putBack with
+            {
+                Arguments =
+                [
+                    ..putBack.Arguments,
+                    new NamedArgumentExpression(Name: "value",
+                        Value: new IdentifierExpression(Name: changed, Location: loc),
+                        Location: loc)
+                ]
+            },
+            Location: loc));
+        statements.Add(item: new ReturnStatement(
+            Value: returnsValue
+                ? new IdentifierExpression(Name: result, Location: loc)
+                : null,
+            Location: loc));
+        return statements;
     }
 
     /// <summary>
@@ -176,6 +241,13 @@ internal sealed class DispatchSynthesis(TypeRegistry registry)
             Callee: new MemberExpression(Object: token, MemberName: RuntimeContract.ReadInPlace, Location: loc),
             Arguments: [],
             Location: loc);
+    }
+
+    /// <summary>Whether an arm's value is a record kept in memory of its own: not a Revare entity, and not a Mielia
+    /// entity's handle (a routine through the handle changes the shared entity).</summary>
+    private static bool IsKeptRecord(TypeSymbol arm)
+    {
+        return arm is not EntityTypeSymbol && TypeRegistry.DispatchArmEntity(type: arm) == null;
     }
 
     /// <summary>Whether an arm's value is kept in memory of its own (a record, a Mielia entity's handle), not by its

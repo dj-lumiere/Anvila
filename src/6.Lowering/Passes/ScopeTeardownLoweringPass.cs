@@ -1217,7 +1217,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         if (fieldType is null ||
             !(IsHandleOrOptionalHandle(type: fieldType) ||
               OwnsReplacedEntity(fieldType: fieldType, location: original.Location) ||
-              HoldsSharedHandles(fieldType: fieldType, location: original.Location)) ||
+              HoldsSharedHandles(fieldType: fieldType, location: original.Location) ||
+              HoldsManagedValue(fieldType: fieldType, location: original.Location)) ||
             !TryResolveDestroy(type: fieldType, destroy: out RoutineInfo? destroy) ||
             destroy is null)
         {
@@ -1309,6 +1310,30 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                ctx.Registry.EntitiesAreSharedIn(filePath: file) &&
                fieldType is RecordTypeSymbol &&
                RecordHoldsHandle(type: fieldType, depth: 0);
+    }
+
+    /// <summary>
+    /// Whether a member variable of <paramref name="fieldType"/> is a value that keeps memory of its own through a
+    /// reference count (<c>Text</c>, <c>Decimal</c>, a <c>Retained</c>, a record holding one), written in a program.
+    /// Writing a new value over it (<c>p.name = f"..."</c>) releases the old one, which nothing else would. The standard
+    /// library places and moves its member variables by hand.
+    /// </summary>
+    private bool HoldsManagedValue(TypeSymbol fieldType, SourceLocation location)
+    {
+        if (ctx.Registry.IsStandardLibraryFile(filePath: location.FileName ?? "") ||
+            fieldType is not RecordTypeSymbol record)
+        {
+            return false;
+        }
+
+        TypeRegistry.Lifecycle lc = ctx.Registry.GetLifecycle(type: record);
+        if (lc.IsBorrow || lc.Destroy == null)
+        {
+            return false;
+        }
+
+        return lc.Store != null || TypeRegistry.GetRcWrapperBaseName(type: record) is not null ||
+               record.MemberVariables.Any(predicate: f => TypeRegistry.GetRcWrapperBaseName(type: f.Type) is not null);
     }
 
     private static bool RecordHoldsHandle(TypeSymbol type, int depth)

@@ -624,6 +624,9 @@ public static class RuntimeContract
         /// <summary>A copy of a kept record, or one more holder of a kept handle (an <c>is</c> arm's binding).</summary>
         public const string CopyOut = "dispatched_copy_out";
 
+        /// <summary>Puts a changed copy of a kept record back in its memory.</summary>
+        public const string PutBack = "dispatched_put_back";
+
 
         /// <summary>Copies a kept record into new memory.</summary>
         public const string CopyRecord = "dispatched_copy_record";

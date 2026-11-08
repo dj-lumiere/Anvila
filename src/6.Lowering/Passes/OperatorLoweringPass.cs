@@ -229,7 +229,100 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return writeBack;
         }
 
+        if (s.Expression is CallExpression call && LowerCallWriteBack(call: call, location: s.Location) is
+                { } callWriteBack)
+        {
+            return callWriteBack;
+        }
+
         return base.VisitExpressionStatement(s: s);
+    }
+
+    /// <summary>
+    /// A routine that changes its record, called on a value element (<c>pts[k].move(by: 1)</c>,
+    /// <c>m[i].p.reset()</c>): the element read is a copy, so the call runs on a copy that is stored back, the same
+    /// way <see cref="LowerValueWriteBack"/> stores a written copy back: <c>{ var t = pts[k]; t.move(by: 1);
+    /// pts[k] = t }</c>. Returns null when the routine only reads or the receiver is not inside a value element.
+    /// </summary>
+    private Statement? LowerCallWriteBack(CallExpression call, SourceLocation location)
+    {
+        if (call.Callee is not MemberExpression { Object: var receiver } callee ||
+            call.ResolvedRoutine is not { IsReadOnly: false } ||
+            receiver.ResolvedType is null || !IsCopiedOutValue(type: receiver.ResolvedType))
+        {
+            return null;
+        }
+
+        var steps = new List<Expression>();
+        Expression root = receiver;
+        while (root is MemberExpression or IndexExpression)
+        {
+            steps.Insert(index: 0, item: root);
+            root = root is MemberExpression m
+                ? m.Object
+                : ((IndexExpression)root).Object;
+        }
+
+        if (root is not IdentifierExpression)
+        {
+            return null;
+        }
+
+        // The value element closest to the receiver, the receiver itself included.
+        int cut = -1;
+        for (int k = steps.Count - 1; k >= 0; k--)
+        {
+            if (steps[index: k] is IndexExpression { ResolvedType: { } elemType } && IsCopiedOutValue(type: elemType))
+            {
+                cut = k;
+                break;
+            }
+        }
+
+        if (cut < 0)
+        {
+            return null;
+        }
+
+        var block = new List<Statement>();
+        var hoistedIndices = new Dictionary<int, Expression>();
+        for (int k = 0; k <= cut; k++)
+        {
+            if (steps[index: k] is IndexExpression { Index: var ix } && !IsPureOperand(expr: ix))
+            {
+                string ixName = NextTempName(prefix: "wbi");
+                block.Add(item: MakeTempDeclaration(name: ixName,
+                    type: ix.ResolvedType,
+                    initializer: ix,
+                    location: location));
+                hoistedIndices[key: k] = new IdentifierExpression(Name: ixName, Location: ix.Location)
+                {
+                    ResolvedType = ix.ResolvedType
+                };
+            }
+        }
+
+        TypeSymbol elementType = steps[index: cut].ResolvedType!;
+        string copyName = $"__wb_{_tempCount++}";
+        block.Add(item: MakeTempDeclaration(name: copyName,
+            type: elementType,
+            initializer: RebuildPath(root: root, steps: steps, from: 0, to: cut, hoistedIndices: hoistedIndices),
+            location: location));
+        Expression innerReceiver = RebuildPath(
+            root: new IdentifierExpression(Name: copyName, Location: location) { ResolvedType = elementType },
+            steps: steps,
+            from: cut + 1,
+            to: steps.Count - 1,
+            hoistedIndices: hoistedIndices);
+        block.Add(item: new ExpressionStatement(
+            Expression: call with { Callee = callee with { Object = innerReceiver } },
+            Location: location));
+        AddStoreBack(block: block,
+            target: RebuildPath(root: root, steps: steps, from: 0, to: cut, hoistedIndices: hoistedIndices),
+            copyName: copyName,
+            elementType: elementType,
+            location: location);
+        return VisitStatement(stmt: new BlockStatement(Statements: block, Location: location));
     }
 
     /// <summary>
@@ -314,19 +407,48 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             to: steps.Count - 1,
             hoistedIndices: hoistedIndices);
         block.Add(item: new AssignmentStatement(Target: innerTarget, Value: value, Location: location));
-        // The copy is MOVED back into the container, not copied again: this pass runs after scope teardown
-        // was inserted, so the copy variable is never destroyed, and a second copy of a managed element
-        // (Text, Retained, ...) would leak one reference per write. Its `__wb_` name marks it as a move
-        // temp, which RecordCopyLoweringPass stores without a retaining copy.
-        block.Add(item: new AssignmentStatement(
-            Target: RebuildPath(root: root, steps: steps, from: 0, to: cut,
-                hoistedIndices: hoistedIndices),
-            Value: new IdentifierExpression(Name: copyName, Location: location)
+        // This pass runs after scope teardown was inserted, so the copy gets no teardown of its own. Its `__wb_`
+        // name keeps RecordCopyLoweringPass from copying it at the store, and AddStoreBack ends it after a setitem.
+        AddStoreBack(block: block,
+            target: RebuildPath(root: root, steps: steps, from: 0, to: cut, hoistedIndices: hoistedIndices),
+            copyName: copyName,
+            elementType: elementType,
+            location: location);
+        return VisitStatement(stmt: new BlockStatement(Statements: block, Location: location));
+    }
+
+    /// <summary>
+    /// Stores the changed copy back (<c>m[i] = t</c>) and, when that store is a <c>setitem</c>, ends the copy after
+    /// it: <c>setitem</c> keeps a copy of its own of the value it is handed, so the one made here would never end.
+    /// </summary>
+    private void AddStoreBack(List<Statement> block, Expression target, string copyName, TypeSymbol elementType,
+        SourceLocation location)
+    {
+        block.Add(item: new AssignmentStatement(Target: target,
+            Value: new IdentifierExpression(Name: copyName, Location: location) { ResolvedType = elementType },
+            Location: location));
+        if (target is not IndexExpression { Object.ResolvedType: { } containerType } idx ||
+            ResolveSetItemRoutine(targetType: containerType, indexType: idx.Index.ResolvedType,
+                valueType: elementType) == null ||
+            ctx.Registry.GetLifecycle(type: elementType).Destroy is not { } destroy)
+        {
+            return;
+        }
+
+        block.Add(item: new ExpressionStatement(
+            Expression: new CallExpression(
+                Callee: new MemberExpression(
+                    Object: new IdentifierExpression(Name: copyName, Location: location) { ResolvedType = elementType },
+                    MemberName: destroy.Name,
+                    Location: location),
+                Arguments: [],
+                Location: location)
             {
-                ResolvedType = elementType
+                ResolvedRoutine = destroy,
+                ResolvedType = destroy.ReturnType,
+                LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: destroy)
             },
             Location: location));
-        return VisitStatement(stmt: new BlockStatement(Statements: block, Location: location));
     }
 
     /// <summary>
@@ -370,6 +492,15 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
         string baseName = (record.GenericDefinition ?? record).BareName;
         return !Builder.Declaration.RuntimeContract.WrapperTypes.Contains(item: baseName);
+    }
+
+    /// <summary>
+    /// <see cref="IsWriteBackValue"/> for a value a routine call changes: also not of a kind that has one original (a
+    /// protocol place holding entities is reached where it is, through a token, like an entity element).
+    /// </summary>
+    private bool IsCopiedOutValue(TypeSymbol type)
+    {
+        return IsWriteBackValue(type: type) && !ctx.Registry.IsEntityKind(type: type);
     }
 
     /// <summary>A name or literal: evaluating it twice is the same as evaluating it once.</summary>
