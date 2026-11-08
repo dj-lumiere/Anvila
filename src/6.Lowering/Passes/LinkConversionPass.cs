@@ -36,7 +36,7 @@ internal sealed class LinkConversionPass : AstRewriter
         Expression token = MakeToken(value: value, target: target);
         // A link kept through a call or a subscript (`a.outs[k] = b`, `xs.add_last(value: b)`) is given the token as
         // its `Optional`, so its generation is taken here: the routine's own parameter is a type parameter.
-        if (!wrap || target == null || !ImplicitToken.IsLink(type: target) ||
+        if (!wrap || target == null || !ImplicitToken.IsLinkShape(type: target) ||
             token.ResolvedType?.BareName is not (RuntimeContract.Viewing or RuntimeContract.Modifying))
         {
             return token;
@@ -69,7 +69,7 @@ internal sealed class LinkConversionPass : AstRewriter
 
         TypeSymbol made = target.TypeArguments![index: 0];
         // An entity element (`w.watch = w.nodes[0]`) is read as a token on it where it is, as `var b = boxes[0]` is.
-        if (value is IndexExpression element && source is EntityTypeSymbol)
+        if (value is IndexExpression element && source is EntityTypeSymbol or GenericParameterTypeSymbol)
         {
             element.ReadsElementToken = true;
             element.ResolvedType = made;
@@ -200,7 +200,7 @@ internal sealed class LinkConversionPass : AstRewriter
             if (LinkTaking.BeginUse(tokenName: tokenName, token: take.ResolvedType!, location: member.Location,
                     registry: registry) is { } begin)
             {
-                Hoisted.Add(item: LinkTaking.Local(name: $"{LinkTaking.UsePrefix}{n}", value: begin));
+                Hoisted.Add(item: LinkTaking.Local(name: $"{LinkTaking.UsePrefix}{n}", value: begin, owesTeardown: true));
             }
 
             return member with

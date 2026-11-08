@@ -877,6 +877,9 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void RunPhase6GlobalDesugaring()
     {
+        // Every instance the program's own bodies made is known now: a link one of them names makes its entity type
+        // retroactive before anything is lowered.
+        _registry.NoteLinksInInstances();
         DecideTasksCross();
         Stopwatch? swSub = SaTiming
             ? Stopwatch.StartNew()

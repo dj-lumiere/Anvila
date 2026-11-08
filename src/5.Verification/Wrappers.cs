@@ -250,7 +250,7 @@ internal static class Wrappers
 
         // A link (an optional token on an entity, `Modifying[Node]?`) is copied freely: it never keeps its entity
         // alive, and it reads as none once the entity ended.
-        if (Declaration.ImplicitToken.IsLink(type: type))
+        if (Declaration.ImplicitToken.IsLinkShape(type: type))
         {
             return true;
         }
@@ -324,7 +324,7 @@ internal static class Wrappers
         string prefix, HashSet<string> visited, Func<string, bool> isOffender, bool skipLinks = false)
     {
         // A link is copied freely (see IsTriviallyAssignable), so it is no offender of the copy rule.
-        if (skipLinks && Declaration.ImplicitToken.IsLink(type: type))
+        if (skipLinks && Declaration.ImplicitToken.IsLinkShape(type: type))
         {
             return null;
         }

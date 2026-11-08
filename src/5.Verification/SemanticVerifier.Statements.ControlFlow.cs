@@ -787,15 +787,31 @@ public sealed partial class SemanticVerifier
     /// is in use and runs at the arm's end if the entity ended meanwhile. A <c>when</c> over a value a call gives (a
     /// <c>try</c>, a <c>for</c> step) takes no link, so it is left alone.
     /// </summary>
+    /// <summary>Whether <paramref name="type"/> is an optional token on a type parameter (<c>Modifying[T]?</c> in a
+    /// generic body): a link once an instance makes <c>T</c> a retroactive entity, so its arms keep a use too, which
+    /// does nothing for any other <c>T</c>.</summary>
+    private static bool IsGenericLink(TypeSymbol type)
+    {
+        return type is { BareName: Declaration.RuntimeContract.OptionalCarrier, TypeArguments: [{ } token] } &&
+               token.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+               token.TypeArguments is [GenericParameterTypeSymbol];
+    }
+
     private void KeepLinkUses(WhenStatement whenStmt, TypeSymbol matchedType)
     {
         if (!_registry.Rules.ChecksAccessTokens || whenStmt.ArmExpansion != null || whenStmt.IsForStep ||
-            !Declaration.ImplicitToken.IsLink(type: matchedType) ||
+            !Declaration.ImplicitToken.IsLink(type: matchedType) && !IsGenericLink(type: matchedType) ||
             whenStmt.Expression is not (IdentifierExpression or MemberExpression or IndexExpression))
         {
             return;
         }
 
+        bool generic = IsGenericLink(type: matchedType);
+        // The library's own generic bodies (Link.rvr taking a link's token) hand the token on at once.
+        if (generic && IsStdlibFile(filePath: whenStmt.Location.FileName))
+        {
+            return;
+        }
         for (int i = 0; i < whenStmt.Clauses.Count; i++)
         {
             WhenClause clause = whenStmt.Clauses[index: i];
@@ -828,7 +844,13 @@ public sealed partial class SemanticVerifier
                         Arguments: [],
                         Location: bodyAt),
                     Visibility: VisibilityModifier.Open,
-                    Location: bodyAt),
+                    Location: bodyAt)
+                {
+                    // In a generic body the use's type is known only in each instance: the late teardown of the
+                    // instance ends it.
+                    OwesTeardown = generic,
+                    OwnsItsValue = generic
+                },
                 Location: bodyAt);
             if (clause.Body is BlockStatement block)
             {

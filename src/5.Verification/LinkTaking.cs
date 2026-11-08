@@ -82,15 +82,16 @@ internal static class LinkTaking
         };
     }
 
-    /// <summary>A builder local <c>var name = value</c>.</summary>
-    public static DeclarationStatement Local(string name, Expression value)
+    /// <summary>A builder local <c>var name = value</c>. <paramref name="owesTeardown"/> marks one written after scope
+    /// teardown ran, so its late run tears it down at every exit of its block.</summary>
+    public static DeclarationStatement Local(string name, Expression value, bool owesTeardown = false)
     {
         return new DeclarationStatement(
             Declaration: new VariableDeclaration(Name: name,
                 Type: null,
                 Initializer: value,
                 Visibility: VisibilityModifier.Secret,
-                Location: value.Location),
+                Location: value.Location) { OwesTeardown = owesTeardown },
             Location: value.Location);
     }
 }

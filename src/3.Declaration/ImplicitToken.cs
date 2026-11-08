@@ -71,6 +71,19 @@ internal static class ImplicitToken
                LinkedEntity(token: token) != null;
     }
 
+    /// <summary>
+    /// Whether <paramref name="type"/> is a link or will be one in each instance: an optional token on an entity, or on
+    /// a type parameter (<c>link: Modifying[T]?</c> in a generic type, a link wherever an instance makes <c>T</c> an
+    /// entity). Where a link may be kept, so may this.
+    /// </summary>
+    public static bool IsLinkShape(TypeSymbol? type)
+    {
+        return IsLink(type: type) ||
+               type is { BareName: RuntimeContract.OptionalCarrier, TypeArguments: [{ } token] } &&
+               token.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying &&
+               token.TypeArguments is [GenericParameterTypeSymbol];
+    }
+
     /// <summary>Whether <paramref name="type"/> is a token on a retroactive entity type, so its optional is a link laid
     /// out as the entity's address and its slot generation.</summary>
     public static bool IsLinkToken(TypeSymbol? type)
@@ -99,6 +112,25 @@ internal static class ImplicitToken
     {
         if (!IsLink(type: target))
         {
+            // A link over a type parameter (`w.link = items[0]` with `link: Modifying[T]?`) takes a value of that
+            // parameter, or a write token on it into a read-only one, in each instance as it does there.
+            if (IsLinkShape(type: target) &&
+                target.TypeArguments![index: 0] is { TypeArguments: [GenericParameterTypeSymbol parameter] } genericToken)
+            {
+                bool readsGeneric = genericToken.BareName == RuntimeContract.Viewing;
+                if (source is GenericParameterTypeSymbol { Name: var name } && name == parameter.Name)
+                {
+                    return readsGeneric ? "view" : "modify";
+                }
+
+                return readsGeneric && source is
+                {
+                    BareName: RuntimeContract.Modifying, TypeArguments: [GenericParameterTypeSymbol { Name: var held }]
+                } && held == parameter.Name
+                    ? "view"
+                    : null;
+            }
+
             return null;
         }
 

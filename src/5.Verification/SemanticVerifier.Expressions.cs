@@ -2253,7 +2253,7 @@ public sealed partial class SemanticVerifier
                                IsAssignableTo(source: tokenValue, target: targetType) &&
                                !Wrappers.IsWrapperType(type: targetType);
         // A token kept in a link is the link's own copy: a link never keeps its entity alive.
-        if (ChecksOwnershipHere && !readsTokenValue && !Declaration.ImplicitToken.IsLink(type: targetType) &&
+        if (ChecksOwnershipHere && !readsTokenValue && !Declaration.ImplicitToken.IsLinkShape(type: targetType) &&
             value is IdentifierExpression or MemberExpression &&
             !Wrappers.IsTriviallyAssignable(type: valueType))
         {

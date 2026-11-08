@@ -1711,7 +1711,7 @@ public sealed partial class SemanticVerifier
         }
 
         if (Wrappers.IsTriviallyAssignable(type: varType) ||
-            varDecl.Type?.ResolvedType is { } declared && Declaration.ImplicitToken.IsLink(type: declared))
+            varDecl.Type?.ResolvedType is { } declared && Declaration.ImplicitToken.IsLinkShape(type: declared))
         {
             return;
         }

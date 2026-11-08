@@ -150,7 +150,7 @@ public sealed partial class SemanticVerifier
     {
         if (!_registry.Rules.ChecksAccessTokens || _isInCompilerGeneratedBody ||
             string.IsNullOrEmpty(value: location.FileName) || IsStdlibFile(filePath: location.FileName) ||
-            !Declaration.ImplicitToken.IsLink(type: type))
+            !Declaration.ImplicitToken.IsLinkShape(type: type))
         {
             return;
         }
@@ -207,7 +207,7 @@ public sealed partial class SemanticVerifier
             }
 
             // A link (an optional token on an entity) may be kept anywhere: it reads as none once its entity ended.
-            if (Declaration.ImplicitToken.IsLink(type: argument))
+            if (Declaration.ImplicitToken.IsLinkShape(type: argument))
             {
                 continue;
             }
@@ -286,7 +286,7 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol? token;
-        if (Declaration.ImplicitToken.IsLink(type: type))
+        if (Declaration.ImplicitToken.IsLinkShape(type: type))
         {
             // A link may be kept in a name, a member variable, a global or a collection's element.
             return;

@@ -39,7 +39,7 @@ internal static class ViewedValues
     private static string? WayToChange(TypeSymbol? type, HashSet<TypeSymbol> seen)
     {
         // A link never keeps its entity alive and is read through a view as a read-only link, so it may be copied out.
-        if (type == null || type is EntityTypeSymbol || ImplicitToken.IsLink(type: type))
+        if (type == null || type is EntityTypeSymbol || ImplicitToken.IsLinkShape(type: type))
         {
             return null;
         }

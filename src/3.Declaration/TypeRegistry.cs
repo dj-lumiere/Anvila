@@ -797,6 +797,68 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// Makes retroactive each entity type a link in an instance of a generic type names: a member variable the
+    /// definition writes over its type parameter (<c>link: Modifying[T]?</c> in <c>Wrap[Node]</c>), or a type argument
+    /// (<c>List[Modifying[Node]?]</c>). Called for each instance as it is made, and for every instance once the
+    /// program's own bodies are analyzed, when the definitions' member types are known.
+    /// </summary>
+    public void NoteInstanceLinks(TypeSymbol instance)
+    {
+        if (!Rules.ChecksAccessTokens || instance.BareName == RuntimeContract.OptionalCarrier ||
+            instance.TypeArguments is not { Count: > 0 } arguments)
+        {
+            return;
+        }
+
+        SourceLocation? site = instance.Location;
+        var seen = new HashSet<TypeSymbol>(comparer: ReferenceEqualityComparer.Instance);
+        foreach (TypeSymbol argument in arguments)
+        {
+            NoteLinkIn(type: argument, site: site, seen: seen);
+        }
+
+        List<MemberVariableInfo>? members = instance switch
+        {
+            EntityTypeSymbol entity => entity.MemberVariables,
+            RecordTypeSymbol record => record.MemberVariables,
+            _ => null
+        };
+        foreach (MemberVariableInfo member in members ?? [])
+        {
+            NoteLinkIn(type: member.Type, site: member.Location ?? site, seen: seen);
+        }
+    }
+
+    /// <summary><see cref="NoteInstanceLinks"/> for every instance made so far.</summary>
+    public void NoteLinksInInstances()
+    {
+        foreach (TypeSymbol instance in AllConcreteGenericInstancesUnfiltered.ToList())
+        {
+            NoteInstanceLinks(instance: instance);
+        }
+    }
+
+    private void NoteLinkIn(TypeSymbol type, SourceLocation? site, HashSet<TypeSymbol> seen)
+    {
+        if (type is RoutineTypeSymbol || !seen.Add(item: type))
+        {
+            return;
+        }
+
+        if (ImplicitToken.IsLink(type: type) && site != null &&
+            ImplicitToken.LinkedEntity(token: type.TypeArguments![index: 0]) is { RetroactiveSite: null } linked)
+        {
+            MarkRetroactive(entity: linked, site: site);
+        }
+
+        IEnumerable<TypeSymbol> parts = type is TupleTypeSymbol tuple ? tuple.ElementTypes : type.TypeArguments ?? [];
+        foreach (TypeSymbol part in parts)
+        {
+            NoteLinkIn(type: part, site: site, seen: seen);
+        }
+    }
+
+    /// <summary>
     /// Whether the build checks the sharing invariant: a debug build takes an entity's access lock with
     /// <c>lock_enter_checked</c>, which also stops the program when the entity has escaped to another task and holds a
     /// handle that has not. A release build never does, and its code is the same as before.
@@ -2358,6 +2420,7 @@ public sealed partial class TypeRegistry
         }
 
         TypeSymbol resolved = bestDef.CreateInstance(typeArguments: typeArguments);
+        NoteInstanceLinks(instance: resolved);
         // Decl-position expand: materialize struct-of-arrays column members from the generic def's
         // templates (one per member of the concrete source type). Appends real member variables so the
         // SoA layout falls out of ordinary record layout.
