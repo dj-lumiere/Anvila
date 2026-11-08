@@ -426,13 +426,15 @@ public partial class LlvmEmitter
     /// <see cref="AbiKind.Indirect"/> argument form). Requires the type to be trivially Assignable (see
     /// <see cref="IsTriviallyAssignableRecord"/>) — byval is a bitwise copy and is unsound for managed
     /// records (which keep the existing by-value path that the copy-lowering pass balances with an
-    /// explicit <c>store</c>). Callers consult this only AFTER
+    /// explicit <c>store</c>). A C routine (<c>CallingConvention == "C"</c>) is exempt: the C side sees only the
+    /// layout, so a struct the ABI passes by pointer is a pointer to a copy whether or not the type has a copy
+    /// step (a record with a routine value field has one). Callers consult this only AFTER
     /// excluding by-ref receivers (<c>me</c>) and thread-shareable args.
     /// </summary>
     private bool ParameterPassedByval(RoutineInfo routine, TypeSymbol paramType)
     {
         return AbiClassify(type: paramType)
-           .Kind == AbiKind.Indirect && IsTriviallyAssignableRecord(type: paramType);
+           .Kind == AbiKind.Indirect && (routine.CallingConvention == "C" || IsTriviallyAssignableRecord(type: paramType));
     }
 
     /// <summary>
