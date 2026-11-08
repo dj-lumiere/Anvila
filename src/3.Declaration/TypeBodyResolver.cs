@@ -253,7 +253,7 @@ internal sealed class TypeBodyResolver
     {
         // Resolve member variable type
         TypeSymbol memberVariableType = memberVariable.Type != null
-            ? _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type)
+            ? _typeResolver.ResolveKeptType(typeExpr: memberVariable.Type)
             : ErrorTypeSymbol.Instance;
 
         // Records can contain: value types, entity/crashable REFERENCE fields (entities are
@@ -270,6 +270,7 @@ internal sealed class TypeBodyResolver
         if (memberVariableType != null && memberVariableType is not ErrorTypeSymbol &&
             memberVariableType is not GenericParameterTypeSymbol &&
             !TypeRegistry.IsValueType(type: memberVariableType) && !isReferenceTyped &&
+            !ImplicitToken.IsLinkShape(type: memberVariableType) &&
             !isRoutineTyped && !(WrapperShape.TryGet(type: memberVariableType, name: out string wrapper, inner: out _) &&
                                  AssignableWrapperTypes.Contains(item: wrapper)))
         {
@@ -290,7 +291,8 @@ internal sealed class TypeBodyResolver
                 HasDefaultValue = memberVariable.Initializer != null,
                 DefaultValue = memberVariable.Initializer,
                 Location = memberVariable.Location,
-                Owner = _sa._currentType
+                Owner = _sa._currentType,
+                IsRequiredLink = TypeResolver.IsRequiredLink(typeExpr: memberVariable.Type)
             };
     }
 
@@ -413,7 +415,7 @@ internal sealed class TypeBodyResolver
         int memberVariableIndex)
     {
         TypeSymbol memberVariableType = memberVariable.Type != null
-            ? _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type)
+            ? _typeResolver.ResolveKeptType(typeExpr: memberVariable.Type)
             : ErrorTypeSymbol.Instance;
 
         // Mielia: an entity-typed field is a `Roamed[E]` biased-RC handle and an `x: E?` field is
@@ -426,7 +428,8 @@ internal sealed class TypeBodyResolver
             HasDefaultValue = memberVariable.Initializer != null,
             DefaultValue = memberVariable.Initializer,
             Location = memberVariable.Location,
-            Owner = _sa._currentType
+            Owner = _sa._currentType,
+            IsRequiredLink = TypeResolver.IsRequiredLink(typeExpr: memberVariable.Type)
         };
     }
 
@@ -446,7 +449,7 @@ internal sealed class TypeBodyResolver
             if (member is VariableDeclaration memberVariable)
             {
                 TypeSymbol memberVariableType = memberVariable.Type != null
-                    ? _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type)
+                    ? _typeResolver.ResolveKeptType(typeExpr: memberVariable.Type)
                     : ErrorTypeSymbol.Instance;
 
                 var memberVariableInfo =

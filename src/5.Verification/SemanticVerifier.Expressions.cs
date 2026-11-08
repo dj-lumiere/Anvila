@@ -775,7 +775,7 @@ public sealed partial class SemanticVerifier
         ReportError(code: SemanticDiagnosticCode.IdentityOperandNotReference,
             message: token
                 ? $"'{op.ToStringRepresentation()}' asks whether two names refer to the same entity, and '{type.Name}' is " +
-                  "a token, permission to reach an entity rather than a handle to it. Compare the entities the tokens " +
+                  "a reference, permission to reach an entity rather than a handle to it. Compare the entities the references " +
                   "came from."
                 : $"'{op.ToStringRepresentation()}' asks whether two names refer to the same entity, and '{type.Name}' is " +
                   "a value, which has no identity of its own. Compare values with '=='.",
@@ -977,6 +977,14 @@ public sealed partial class SemanticVerifier
 
         if (binary.Operator == BinaryOperator.Assign)
         {
+            // A name that holds a reference takes the entity's own (`m = other` for `m: @Node`).
+            if (binary.Left is IdentifierExpression &&
+                ImplicitReference(value: binary.Right, target: leftType, entitiesOnly: true) is { } reference)
+            {
+                binary.Right = reference;
+                rightType = reference.ResolvedType ?? leftType;
+            }
+
             return AnalyzeAssignmentExpression(target: binary.Left,
                 value: binary.Right,
                 targetType: leftType,
@@ -2106,6 +2114,7 @@ public sealed partial class SemanticVerifier
         SourceLocation location)
     {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
+        ReportNoneIntoRequiredLink(value: value, member: MemberVariableOf(type: objectType, name: member.MemberName));
 
         ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: location);
         ReportWriteThroughReadOnlyPlace(member: member, objectType: objectType, location: location);
@@ -2244,8 +2253,14 @@ public sealed partial class SemanticVerifier
         bool readsTokenValue = ValueTokenTarget(type: valueType) is { } tokenValue &&
                                IsAssignableTo(source: tokenValue, target: targetType) &&
                                !Wrappers.IsWrapperType(type: targetType);
+        // A reference a name holds may point somewhere else (`w = b`), as a reference a new name takes does: the
+        // token lifetime check follows where it came from. One a block opened on a Guarded stays in that block.
+        bool repointsReference = _registry.Rules.ChecksAccessTokens && target is IdentifierExpression &&
+                                 IsInlineOnlyTokenType(type: targetType) && value is IdentifierExpression &&
+                                 !IsLockBackedToken(value: value, writes: out _);
         // A token kept in a link is the link's own copy: a link never keeps its entity alive.
-        if (ChecksOwnershipHere && !readsTokenValue && !Declaration.ImplicitToken.IsLinkShape(type: targetType) &&
+        if (ChecksOwnershipHere && !readsTokenValue && !repointsReference &&
+            !Declaration.ImplicitToken.IsLinkShape(type: targetType) &&
             value is IdentifierExpression or MemberExpression &&
             !Wrappers.IsTriviallyAssignable(type: valueType))
         {
@@ -2333,8 +2348,8 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.CompoundAssignmentOnReadOnlyToken,
                 message:
-                $"Cannot use compound assignment on read-only token '{targetType.BareName}'. " +
-                "A read-only token (Viewing) does not allow modifications.",
+                $"You change a value through a read reference (`{targetType.ShortTypeName}`) here, and a read " +
+                "reference only reads. Take a write reference where it has to change.",
                 location: compound.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -2538,9 +2553,9 @@ public sealed partial class SemanticVerifier
         }
 
         ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
-            message: $"You are writing member '{member.MemberName}' of a value reached through a read-only token, " +
-                     "so it only reads that value. Where it has to change, take a 'Modifying' token instead (a " +
-                     "parameter typed Modifying[...], or '.modify()').",
+            message: $"You are writing member '{member.MemberName}' of a value reached through a read reference, " +
+                     "so it only reads that value. Where it has to change, take a write reference instead (a " +
+                     "parameter typed `@T`).",
             location: location);
     }
 
@@ -2554,11 +2569,10 @@ public sealed partial class SemanticVerifier
         ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
             message: Wrappers.GuardedPolicy(type: objectType) == "ReadOnly"
                 ? $"You are writing member '{memberName}' of '{objectType.Name}', whose ReadOnly policy only lets its " +
-                  "value be read. Share it under the Exclusive or MultiRead policy and change it inside " +
-                  "'using ... modify()'."
+                  "value be read. Share it under the Exclusive or MultiRead policy and change it inside a " +
+                  "'modifying' block."
                 : $"You are writing member '{memberName}' through '{objectType.Name}', which only reads the value. " +
-                  "Where it has to change, take a 'Modifying' token instead (a parameter typed Modifying[...], or " +
-                  "'.modify()').",
+                  "Where it has to change, take a write reference instead (a parameter typed `@T`).",
             location: location);
     }
 

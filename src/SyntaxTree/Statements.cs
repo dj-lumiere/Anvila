@@ -98,6 +98,10 @@ public record DeclarationStatement(Declaration Declaration, SourceLocation Locat
 public record AssignmentStatement(Expression Target, Expression Value, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>The value assigned. Analysis may put a reference in its place where the target takes one and the
+    /// value is the entity.</summary>
+    public Expression Value { get; set; } = Value;
+
     /// <summary>True for the builder-synthesized assignment that initializes a Mielia module-level
     /// <c>global</c> at the top of <c>start()</c>. Signals the Roamed promotion pass to escape the
     /// global's handle to ESCAPED (armed-lock) mode right after init — a global is reachable from every
@@ -165,6 +169,10 @@ public record DestructuringStatement(
 public record ReturnStatement(Expression? Value, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>The value returned. Analysis may put a reference in its place where the routine gives one back and
+    /// the value is the entity.</summary>
+    public Expression? Value { get; set; } = Value;
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

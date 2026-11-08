@@ -555,6 +555,19 @@ public sealed partial class SemanticVerifier
             tokenTarget = argType;
         }
 
+        // A link given where a reference is expected (`hit(e: h.target)`) gives the token it holds, taken as a use of
+        // the link without `when` is: it fails with StaleLinkError once the entity ended.
+        if (_registry.Rules.ChecksAccessTokens && Declaration.ImplicitToken.IsLink(type: argType) &&
+            argType.TypeArguments![index: 0] is { TypeArguments: [{ } linked] } linkToken &&
+            Declaration.ImplicitToken.Matches(value: linked, target: tokenTarget) &&
+            (tokenKind == Declaration.RuntimeContract.Viewing || linkToken.BareName == Declaration.RuntimeContract.Modifying) &&
+            LinkTaking.Take(link: argExpr is NamedArgumentExpression named ? named.Value : argExpr, registry: _registry) is
+                { } taken)
+        {
+            NoteLinkTaken();
+            return taken;
+        }
+
         string verb = tokenKind == Declaration.RuntimeContract.Viewing
             ? "view"
             : ModifyMemberRoutineName;
@@ -682,6 +695,12 @@ public sealed partial class SemanticVerifier
                     argument: argExpr,
                     receiver: callObjectType) ?? paramType);
             TakeDangerousCallableArgument(routine: routine, paramType: paramType, argument: argExpr);
+            if (routine.IsCreator)
+            {
+                ReportNoneIntoRequiredLink(value: UnwrapNamedArgument(argument: argExpr),
+                    member: MemberVariableOf(type: routine.OwnerType, name: param.Name));
+            }
+
             if (paramType is RoutineTypeSymbol)
             {
                 NoteCallableArgument(callee: routine, parameter: param.Name, argument: argExpr);
@@ -714,14 +733,26 @@ public sealed partial class SemanticVerifier
                 {
                     ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
                         message:
-                        $"You are handing a read token ('{argType.Name}') to '{param.Name}' of '{routine.Name}', " +
-                        "which can change it. A read token only lets you read: pass a write token instead.",
+                        $"You are handing a read reference ('{argType.Name}') to '{param.Name}' of '{routine.Name}', " +
+                        "which can change it. A read reference only lets you read: pass a write reference instead.",
                         location: argExpr.Location);
                 }
                 else if (argType is GenericParameterTypeSymbol &&
                          Declaration.TypeRegistry.DispatchedProtocol(type: paramType) is { } storedProtocol)
                 {
                     ReportTypeParameterIntoProtocolPlace(protocol: storedProtocol, argType: argType,
+                        location: argExpr.Location);
+                }
+                else if (_registry.Rules.ChecksAccessTokens && paramType is EntityTypeSymbol &&
+                         PointedAt(type: argType) is { } referenced &&
+                         Declaration.ImplicitToken.Matches(value: referenced, target: paramType))
+                {
+                    ReportError(code: SemanticDiagnosticCode.ReferenceForHandOver,
+                        message:
+                        $"Argument '{param.Name}' of '{routine.Name}' takes the '{paramType.ShortTypeName}' itself (it is " +
+                        $"handed over), and this is a reference (`{ShownTypeName(type: argType, other: paramType)}`), " +
+                        "which holds no original to give. Hand over the entity where its original is held, with " +
+                        $"`steal`, or make '{param.Name}' a reference (`@{paramType.ShortTypeName}`).",
                         location: argExpr.Location);
                 }
                 else if (OtherRealmOfSameType(source: argType, target: paramType) is { } crossing)
@@ -770,6 +801,20 @@ public sealed partial class SemanticVerifier
                 argValue: argValue,
                 argType: argType);
         }
+    }
+
+    /// <summary>The type a reference (<c>@Node</c>, <c>%Node</c>) or a link (<c>@Node?</c>) points at, or null for any
+    /// other type.</summary>
+    private static TypeSymbol? PointedAt(TypeSymbol type)
+    {
+        if (Declaration.ImplicitToken.IsLink(type: type))
+        {
+            type = type.TypeArguments![index: 0];
+        }
+
+        return type is { BareName: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying, TypeArguments: [{ } target] }
+            ? target
+            : null;
     }
 
     private static Expression UnwrapNamedArgument(Expression argument)

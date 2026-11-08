@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Diagnostics;
 using Builder.Tokenizer;
 using SyntaxTree;
@@ -312,6 +313,13 @@ public partial class Parser
                 BuildtimeValue: spliced);
         }
 
+        // A reference: `%T` reads the entity (or record) it points at, `@T` may also change it. Inside the builder
+        // they are the `Viewing[T]` / `Modifying[T]` records. `%T?` / `@T?` take the `?` of the optional around them.
+        if (TryParseReferenceType(location: location) is { } reference)
+        {
+            return reference;
+        }
+
         // ═══════════════════════════════════════════════════════════════════════════
         // CASE 2: Tuple type - (T, U) or (T,)
         // ═══════════════════════════════════════════════════════════════════════════
@@ -324,6 +332,29 @@ public partial class Parser
         // CASE 4/5: Named type - simple or generic
         // ═══════════════════════════════════════════════════════════════════════════
         return ParseNamedType(location: location);
+    }
+
+    /// <summary>
+    /// A reference type written with its sign, <c>%T</c> (read) or <c>@T</c> (write), or null when neither sign is
+    /// next. The sign binds to the type right after it: <c>%Node?</c> is an optional read reference, and
+    /// <c>@List[S64]</c> a write reference to a list.
+    /// </summary>
+    private TypeExpression? TryParseReferenceType(SourceLocation location)
+    {
+        string? token = CurrentToken.Type switch
+        {
+            TokenType.Percent => RuntimeContract.Viewing,
+            TokenType.At => RuntimeContract.Modifying,
+            _ => null
+        };
+        if (token == null)
+        {
+            return null;
+        }
+
+        Advance();
+        TypeExpression target = ParseBaseType();
+        return new TypeExpression(Name: token, GenericArguments: [target], Location: location) { IsReferenceSign = true };
     }
 
     /// <summary>
@@ -431,7 +462,7 @@ public partial class Parser
         return new TypeExpression(Name: name,
             GenericArguments: typeArgs,
             Location: location,
-            Realm: realm);
+            Realm: realm) { IsWrittenName = true };
     }
 
     /// <summary>
@@ -573,6 +604,10 @@ public partial class Parser
     /// Everything else (<c>S64</c>, <c>i+1</c>, <c>4</c>, <c>List[S64]</c>, <c>S/Iter</c>) is a
     /// plain expression.
     /// </remarks>
+    /// <summary>How many bracket arguments the parser is inside, where a reference type (<c>%T</c>, <c>@T</c>) may
+    /// stand in a tuple of types (<c>List[Callable[(@Box), S64]]()</c>).</summary>
+    private int _bracketArgDepth;
+
     private Expression ParseBracketArg()
     {
         if (Check(type: TokenType.MyType))
@@ -618,7 +653,22 @@ public partial class Parser
             return new TupleLiteralExpression(Elements: [], Location: location);
         }
 
-        Expression arg = ParseExpression();
+        // A reference as a type argument (`List[@Node]()`, `to[%Text]()`), read as it is in an annotation.
+        if (Check(type: TokenType.Percent) || Check(type: TokenType.At))
+        {
+            return ParseOptionalType();
+        }
+
+        _bracketArgDepth++;
+        Expression arg;
+        try
+        {
+            arg = ParseExpression();
+        }
+        finally
+        {
+            _bracketArgDepth--;
+        }
 
         // `T?` as a type argument (`List[Box?]()`): the suffix reads as it does in an annotation, `Optional[T]`.
         // No value expression ends in a bare `?`, so a `?` here can only close a type.

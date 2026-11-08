@@ -117,15 +117,14 @@ public sealed partial class SemanticVerifier
         // wrapper (`Viewing[T].hollow()`).
         if (!memberRoutine.IsReadOnly && !memberRoutine.IsCommon)
         {
-            string wrapperName = wrapperType.BareName;
             if (receiver is IdentifierExpression id &&
                 _elementTokenSources.TryGetValue(key: id.Name, value: out string? source))
             {
                 ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
                     message:
-                    $"'{id.Name}' reads the element in place ('var {id.Name} = {source}' gives a read token), so it " +
-                    $"cannot call '{memberRoutine.Name}', which changes the element. To change it through " +
-                    $"'{id.Name}', bind a write token: 'var {id.Name} = {source}.modify()'.",
+                    $"'{id.Name}' reads the element in place ('var {id.Name} = {source}' gives a read reference, since " +
+                    $"the container is reached read-only), so it cannot call '{memberRoutine.Name}', which changes the " +
+                    "element. To change it, reach the container through a write reference (`@T`).",
                     location: location);
                 return;
             }
@@ -143,12 +142,11 @@ public sealed partial class SemanticVerifier
                 return;
             }
 
-            const string writeToken = "a write token ('.modify()')";
             ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
                 message:
-                $"{holder} is a read token ({wrapperName}), so it can call only routines marked @readonly, and " +
-                $"'{memberRoutine.Name}' is not. Change the value through {writeToken}, or mark " +
-                $"'{memberRoutine.Name}' @readonly if it does not change anything.",
+                $"{holder} is a read reference (`{wrapperType.ShortTypeName}`), so it can call only routines marked " +
+                $"@readonly, and '{memberRoutine.Name}' is not. Change the value through a write reference (`@T`), or " +
+                $"mark '{memberRoutine.Name}' @readonly if it does not change anything.",
                 location: location);
         }
     }

@@ -304,7 +304,7 @@ public sealed partial class SemanticVerifier
             return; // Type inference will be handled later
         }
 
-        TypeSymbol memberVariableType = _typeResolver.ResolveStoredType(typeExpr: memberVariable.Type);
+        TypeSymbol memberVariableType = _typeResolver.ResolveKeptType(typeExpr: memberVariable.Type);
         ReportProtocolValueType(type: memberVariableType, location: memberVariable.Location,
             what: $"member variable '{memberVariable.Name}'");
 
@@ -358,18 +358,18 @@ public sealed partial class SemanticVerifier
     private void CollectGlobalDeclaration(VariableDeclaration global)
     {
         // The parser requires a type annotation on every `global`, so global.Type is non-null here.
-        TypeSymbol globalType = InFileRealm(resolve: () => ResolveType(typeExpr: global.Type!));
+        TypeSymbol globalType = InFileRealm(resolve: () => _typeResolver.ResolveKeptType(typeExpr: global.Type!));
         if (_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: globalType))
         {
             string target = globalType.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "the entity";
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
-                $"You declare global '{global.Name}' as `{globalType.ShortTypeName}`, but a token lives in a routine's " +
+                $"You declare global '{global.Name}' as `{globalType.ShortTypeName}`, but a reference lives in a routine's " +
                 $"variables and is never kept in a global: the global would still point at the `{target}` after the " +
                 $"place it is in is gone. Keep a link in it (`global {global.Name}: {globalType.ShortTypeName}?`, made from " +
                 $"the `{target}` you assign, which reads as none once it has ended), the `{target}` itself " +
                 $"(`global {global.Name}: {target}`), or a manager's handle (`Guarded[{target}, MultiRead]`), and take " +
-                $"the token where you use it.",
+                $"the reference where you use it.",
                 location: global.Location);
         }
 

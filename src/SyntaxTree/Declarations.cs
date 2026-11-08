@@ -137,6 +137,10 @@ public record VariableDeclaration(
     bool IsLateInit = false,
     bool IsGlobal = false) : Declaration(Location: Location)
 {
+    /// <summary>The value the variable starts with. Analysis may put a reference in its place where the variable
+    /// takes one and the value is the entity (<c>var b = a</c> holds <c>a</c>'s write reference).</summary>
+    public Expression? Initializer { get; set; } = Initializer;
+
     /// <summary>
     /// A local written <c>preset NAME: T = value</c> inside a routine: it cannot be assigned again. (It is
     /// evaluated once, like a <c>var</c>; what a build-time preset means in a routine follows the preset CTFE

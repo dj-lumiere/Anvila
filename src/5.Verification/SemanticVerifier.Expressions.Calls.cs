@@ -893,6 +893,7 @@ public sealed partial class SemanticVerifier
         if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName, location: member.Location) is { } linkToken)
         {
             member.TakesLink = true;
+            NoteLinkTaken();
             objectType = linkToken;
         }
 
@@ -956,6 +957,8 @@ public sealed partial class SemanticVerifier
             dispatchType: dispatchType,
             memberRoutine: ref memberRoutine,
             ambiguousSeed: ambiguousSeed);
+
+        ReportReferenceVerb(call: call, member: member, objectType: objectType, routine: memberRoutine);
 
         // A specialization is one routine of a family picked by type, and a type parameter has no family.
         if (memberRoutine is { IsSpecialization: true } && objectType is GenericParameterTypeSymbol)
@@ -1782,6 +1785,18 @@ public sealed partial class SemanticVerifier
         }
 
         CheckCreatorArgumentNames(arguments: call.Arguments, creator: creator, type: callableType);
+        if (creator.IsSynthesized)
+        {
+            foreach (Expression argument in call.Arguments)
+            {
+                if (argument is NamedArgumentExpression named)
+                {
+                    ReportNoneIntoRequiredLink(value: named.Value,
+                        member: MemberVariableOf(type: callableType, name: named.Name));
+                }
+            }
+        }
+
         if (creator.IsSynthesized && callableType is not GenericParameterTypeSymbol)
         {
             ValidateMemberwiseConstructionAccess(type: callableType, arguments: call.Arguments, location: call.Location);
@@ -3060,11 +3075,12 @@ public sealed partial class SemanticVerifier
                     WrapperShape.InnerOf(type: objectType) is { } viewed &&
                     HeldValueHasChangingRoutine(held: viewed, name: callLookupName))
                 {
-                    string tokenName = member.Object is IdentifierExpression tokenId ? $"'{tokenId.Name}'" : "This token";
+                    string tokenName = member.Object is IdentifierExpression tokenId ? $"'{tokenId.Name}'" : "This reference";
                     ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
                         message:
-                        $"{tokenName} is a Viewing token, which is read-only, and '{member.MemberName}' changes the " +
-                        $"'{WrittenTypeName(type: viewed)}'. Open the block with `modifying` instead of `viewing` to change it.",
+                        $"{tokenName} is a read reference (`%{WrittenTypeName(type: viewed)}`), and '{member.MemberName}' " +
+                        $"changes the '{WrittenTypeName(type: viewed)}'. Take a write reference (`@{WrittenTypeName(type: viewed)}`) " +
+                        "where it has to change, or open a Guarded with `modifying` instead of `viewing`.",
                         location: call.Location);
                     return ErrorTypeSymbol.Instance;
                 }
@@ -3183,7 +3199,7 @@ public sealed partial class SemanticVerifier
                      $"An entity has one original, which this would hold there too. To get copies, make them in the walk with " +
                      $"'.select(e => e.duplicate())'. To hand the originals over, take the container: " +
                      $"'(steal {container}).where(...)'. To use them where they are, walk them with 'for' and pass " +
-                     "tokens ('Viewing', 'Modifying').",
+                     "each one where a reference goes.",
             location: location);
     }
 
@@ -3626,7 +3642,7 @@ public sealed partial class SemanticVerifier
         if (member.MemberName == ModifyMemberRoutineName && Wrappers.IsModifyingType(type: objectType))
         {
             ReportError(code: SemanticDiagnosticCode.ReHijackingProhibited,
-                message: $"Cannot re-modify an already-modified token '{objectType.Name}'. " +
+                message: $"Cannot re-modify an already-modified reference '{objectType.Name}'. " +
                          "The entity is already exclusively accessed.",
                 location: call.Location);
         }
@@ -3637,8 +3653,8 @@ public sealed partial class SemanticVerifier
             Wrappers.IsModifyingType(type: objectType))
         {
             ReportError(code: SemanticDiagnosticCode.TokenDowngradeProhibited,
-                message: $"Cannot downgrade '{objectType.Name}' with '.view()'. " +
-                         "A Modifying token already has write access — use it directly.",
+                message: $"You narrow '{objectType.Name}' with '.view()'. A write reference goes where a read " +
+                         "reference is expected as it is: use it directly.",
                 location: call.Location);
         }
     }
@@ -4188,6 +4204,43 @@ public sealed partial class SemanticVerifier
                 memberRoutine = onInner;
             }
         }
+    }
+
+    /// <summary>
+    /// Reports <c>.view()</c> / <c>.modify()</c> written in a Revare program (RV-S659): an entity becomes a reference by
+    /// itself where one is expected, a shared handle is used as it is, and a <c>Guarded</c> is opened with a block. The
+    /// call still resolves, so nothing else reports.
+    /// </summary>
+    private void ReportReferenceVerb(CallExpression call, MemberExpression member, TypeSymbol objectType,
+        RoutineInfo? routine)
+    {
+        if (member.MemberName is not ("view" or "modify") || call.IsSynthesizedLowering || call.Arguments.Count > 0 ||
+            !_registry.Rules.ChecksAccessTokens ||
+            routine?.ReturnType?.BareName is not (Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying) ||
+            !IsProgramRevareSource(filePath: call.Location.FileName))
+        {
+            return;
+        }
+
+        bool reads = member.MemberName == "view";
+        string written = member.Object is IdentifierExpression id ? id.Name : "the value";
+        string hint = objectType.BareName switch
+        {
+            Declaration.RuntimeContract.Guarded =>
+                $"A `Guarded` is opened with a block: `{(reads ? "viewing" : "modifying")} {written} as " +
+                $"{(reads ? "v" : "m")}`, then use the name inside it.",
+            Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed or
+                Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Viewing =>
+                $"Use {(member.Object is IdentifierExpression ? $"'{written}'" : "it")} as it is: it becomes the " +
+                "reference where one is expected.",
+            _ => $"Write {(member.Object is IdentifierExpression ? $"'{written}'" : "the value")} itself: an entity becomes " +
+                 $"{(reads ? "a read" : "a write")} reference by itself where one is expected (an argument, a typed " +
+                 "variable, a link), and a new name for it (`var b = a`) is a write reference."
+        };
+        ReportError(code: SemanticDiagnosticCode.ReferenceVerbWritten,
+            message: $"You write `.{member.MemberName}()`, which a program does not write. {hint} " +
+                     "(`migrate --step references` drops it where the place it goes says what it becomes.)",
+            location: call.Location);
     }
 
     private ErrorTypeSymbol? ValidateDirectWiredMemberCall(CallExpression call,

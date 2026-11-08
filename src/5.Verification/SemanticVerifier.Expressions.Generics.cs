@@ -333,6 +333,9 @@ public sealed partial class SemanticVerifier
             typeArgs.Add(item: ResolveType(typeExpr: typeArg));
         }
 
+        KeepLinksInTypeArguments(typeDefinition: generic.IsFree ? objectType : null, typeArgs: typeArgs,
+            written: generic.TypeArguments);
+
         // Check if this is a generic type constructor call (e.g., Hijacked[U8](addr))
         // The parser creates GenericMemberRoutineCallExpression for both Type[Args](args) and obj.MemberCallable[Args](args).
         // A FAILABLE construction `Type![Args](args)` parses with a BARE memberRoutineName equal to the
@@ -380,8 +383,8 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
                 message: $"'{generic.MemberRoutineName}[{string.Join(separator: ", ", values: typeArgs.Select(selector: t => t.Name))}]()' " +
-                         $"changes the '{viewed.Name}', and a '{objectType.Name}' only reads it. Take a " +
-                         $"'Modifying[{viewed.Name}]' to call it.",
+                         $"changes the '{viewed.Name}', and a '{objectType.Name}' only reads it. Take a write " +
+                         $"reference ('Modifying[{viewed.Name}]') to call it.",
                 location: generic.Location);
             foreach (Expression argument in generic.Arguments)
             {
@@ -1249,6 +1252,24 @@ public sealed partial class SemanticVerifier
         return resolvedType;
     }
 
+    /// <summary>
+    /// Makes each reference given as a type argument of a type that keeps its type arguments a link
+    /// (<c>List[@Node]()</c> keeps <c>@Node?</c> links), as a written type does.
+    /// </summary>
+    private void KeepLinksInTypeArguments(TypeSymbol? typeDefinition, List<TypeSymbol> typeArgs,
+        List<TypeExpression> written)
+    {
+        if (typeDefinition is not { IsGenericDefinition: true } || !Declaration.TypeResolver.KeepsTypeArguments(genericDef: typeDefinition))
+        {
+            return;
+        }
+
+        for (int i = 0; i < typeArgs.Count && i < written.Count; i++)
+        {
+            typeArgs[index: i] = _typeResolver.KeptLink(type: typeArgs[index: i], location: written[index: i].Location);
+        }
+    }
+
     private TypeSymbol AnalyzeGenericMemberExpression(GenericMemberExpression genericMember)
     {
         TypeSymbol objectType = AnalyzeExpression(expression: genericMember.Object);
@@ -1259,6 +1280,8 @@ public sealed partial class SemanticVerifier
         {
             resolvedTypeArgs.Add(item: ResolveType(typeExpr: typeArg));
         }
+
+        KeepLinksInTypeArguments(typeDefinition: objectType, typeArgs: resolvedTypeArgs, written: genericMember.TypeArguments);
 
         // Typewise receiver: `Ident[T]` parsed as GenericMemberExpression(Ident, Ident.Name, [T])
         // — the parser sets MemberName == Object.Name when the source was `Ident[Args]`, not

@@ -23,8 +23,8 @@ public sealed partial class SemanticVerifier
         string baseName = type.BareName;
         return baseName switch
         {
-            Declaration.RuntimeContract.Viewing => "read-only token (Viewing)",
-            Declaration.RuntimeContract.Modifying => "write token (Modifying)",
+            Declaration.RuntimeContract.Viewing => "read reference (`%T`)",
+            Declaration.RuntimeContract.Modifying => "write reference (`@T`)",
             _ => "token"
         };
     }
@@ -67,8 +67,8 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.TokenReturnNotAllowed,
             message:
-            $"Cannot return {GetTokenKindDescription(type: type)} from here. A token a 'viewing' or 'modifying' block " +
-            "opened lasts as long as the block, and a block result cannot be a token.",
+            $"Cannot return {GetTokenKindDescription(type: type)} from here. A reference a 'viewing' or 'modifying' block " +
+            "opened lasts as long as the block, and a block result cannot be a reference.",
             location: location);
     }
 
@@ -87,11 +87,17 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // A reference to a record kept here was reported where its type was resolved (RV-S661).
+        if (_tokenTypeArgumentReported.Contains(item: (location.FileName, location.Line)))
+        {
+            return;
+        }
+
         if (IsInlineOnlyTokenType(type: type) && Declaration.ImplicitToken.LinkedEntity(token: type) != null)
         {
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
-                $"You keep `{type.ShortTypeName}` in member variable '{memberVariableName}' without `?`. A token is proof " +
+                $"You keep `{type.ShortTypeName}` in member variable '{memberVariableName}' without `?`. A reference is proof " +
                 $"that the `{TokenTarget(type: type)}` is there right now, so it can't be kept. Write " +
                 $"`{type.ShortTypeName}?`: a link, made from the `{TokenTarget(type: type)}` you assign, which never keeps " +
                 $"it alive and reads as none once it ended. Take it with `when`.",
@@ -103,9 +109,10 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
-                $"Cannot store {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. A token lives in a routine's locals and is never stored in a field. " +
+                $"You keep a {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. A " +
+                "reference is kept in storage only as a link to an entity, and this one points at something else. " +
                 $"Keep the `{TokenTarget(type: type)}` itself there, or a manager's handle " +
-                $"(`Retained[{TokenTarget(type: type)}]`). Only a token on an entity can be kept as a link (`Modifying[T]?`).",
+                $"(`Retained[{TokenTarget(type: type)}]`).",
                 location: location);
             return;
         }
@@ -263,7 +270,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>The source locations a token-in-a-type-argument error was reported at, so a declaration and the
     /// expression that gives it its type report once.</summary>
-    private readonly HashSet<(string File, int Line)> _tokenTypeArgumentReported = [];
+    internal readonly HashSet<(string File, int Line)> _tokenTypeArgumentReported = [];
 
     /// <summary>
     /// Rejects a token as a type argument (RV-S601): a token holds the address of the place an entity or value is in,
@@ -305,9 +312,9 @@ public sealed partial class SemanticVerifier
 
                 ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                     message:
-                    $"You keep `{type.ShortTypeName}` in {what}, but it carries a token, and a token can't be kept inside " +
+                    $"You keep `{type.ShortTypeName}` in {what}, but it carries a reference, and a reference can't be kept inside " +
                     $"another value. Unpack it with `when` where you get it (`when try xs.view_at(index: i)` " +
-                    "with `is None =>` and `else as v =>`), and use the token inside that branch.",
+                    "with `is None =>` and `else as v =>`), and use the reference inside that branch.",
                     location: location);
                 return;
             }
@@ -327,8 +334,8 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
-                $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a token without `?`. A " +
-                $"token is proof that the `{target}` is there right now, so it can't be kept. Keep a link instead: " +
+                $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a reference without `?`. A " +
+                $"reference is proof that the `{target}` is there right now, so it can't be kept. Keep a link instead: " +
                 $"`{token.ShortTypeName}?` (the `{target}` is handed over as one, and it reads as none once the " +
                 $"`{target}` ended), or keep the `{target}` itself.",
                 location: location);
@@ -337,10 +344,10 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
             message:
-            $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a token, and a token can't be a type " +
-            $"argument: the token points at the place `{target}` is in, and what holds the token could still use it " +
-            $"after that place is gone. Keep each token in a variable of its own, or keep the `{target}` itself in the " +
-            $"container (`List[{target}]`), or under a manager (`Retained[{target}]`). Only a token on an entity can be " +
+            $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a reference, and a reference can't be a type " +
+            $"argument: the reference points at the place `{target}` is in, and what holds the reference could still use it " +
+            $"after that place is gone. Keep each reference in a variable of its own, or keep the `{target}` itself in the " +
+            $"container (`List[{target}]`), or under a manager (`Retained[{target}]`). Only a reference on an entity can be " +
             $"kept as a link (`Modifying[T]?`).",
             location: location);
     }
@@ -374,8 +381,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
                 $"This call makes '{parameter}' of '{routine.Name}' the type `{arg.ShortTypeName}`, and `{token.ShortTypeName}` " +
-                $"is a token. A token can't be a type argument: '{routine.Name}' may keep a '{parameter}' (in a list, in " +
-                $"its result), and the token would still point at the `{target}` after the place it is in is gone. Hand " +
+                $"is a reference. A reference can't be a type argument: '{routine.Name}' may keep a '{parameter}' (in a list, in " +
+                $"its result), and the reference would still point at the `{target}` after the place it is in is gone. Hand " +
                 $"over what you need from it (a member variable read like `v.n`), or give '{routine.Name}' a " +
                 $"`Viewing[{parameter}]` / `Modifying[{parameter}]` parameter and pass the `{target}` itself.",
                 location: location);
@@ -423,7 +430,7 @@ public sealed partial class SemanticVerifier
                 _lockTokenDuplicateCalls.Add(item: arguments);
                 ReportError(code: SemanticDiagnosticCode.ExclusiveTokenDuplicate,
                     message:
-                    $"You pass '{name}' twice in one call, and '{name}' is the write token a 'modifying' block opened on a Guarded, which " +
+                    $"You pass '{name}' twice in one call, and '{name}' is the write reference a 'modifying' block opened on a Guarded, which " +
                     "admits one writer at a time: the two parameters would change one entity through two names. Pass " +
                     $"'{name}' once, or open two different Guarded handles together with 'modifying a, b'.",
                     location: location);
@@ -501,7 +508,7 @@ public sealed partial class SemanticVerifier
         {
             string token = ((IdentifierExpression)value).Name;
             ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
-                message: $"You pass `{token}` to a Work, but it is the token of a Guarded that this block opened, and " +
+                message: $"You pass `{token}` to a Work, but it is the reference of a Guarded that this block opened, and " +
                          "the access ends with the block while the work can run on. Hand the Work the Guarded itself, " +
                          "and open it inside the work.",
                 location: value.Location);
@@ -785,7 +792,9 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.TokenVariantPayloadNotAllowed,
                 message:
-                $"Cannot use {GetTokenKindDescription(type: type)} as payload for variant case '{caseName}'. A token lives in a routine's locals and is never stored in a variant.",
+                $"You use a {GetTokenKindDescription(type: type)} as payload for variant case '{caseName}'. A " +
+                "reference lives in a routine's locals and is never part of a variant. Keep the entity itself in the " +
+                "variant, or a shared handle to it (`Retained[T]`).",
                 location: location);
             return;
         }
@@ -907,7 +916,11 @@ public sealed partial class SemanticVerifier
         // own teardown, not user code invoking a dangerous routine. Under the demand pipeline teardown is
         // injected before the stdlib body is SA'd on reach, so without this exemption the re-analysis
         // would false-fire RV-S609 on every scope-exit destroy (the eager pipeline SA'd stdlib first).
-        if (routine.IsDangerous && !InDangerBlock && !isCompilerSynthesized)
+        // A `destruct` is dangerous because only the builder calls it: its call (the teardown the builder writes,
+        // `drop x`, a container ending an element it lets go of) stands outside `danger`. A program never calls it by
+        // name (RV-S812).
+        if (routine.IsDangerous && !InDangerBlock && !isCompilerSynthesized &&
+            routine.Name != Declaration.RuntimeContract.Destroy)
         {
             ReportError(code: SemanticDiagnosticCode.DangerousCallOutsideDangerBlock,
                 message:
@@ -921,12 +934,11 @@ public sealed partial class SemanticVerifier
     /// before the copy does.</summary>
     private static string TokenCopyMessage(Expression copied, TypeSymbol type)
     {
-        string name = copied is IdentifierExpression id ? $"'{id.Name}'" : "this token";
+        string name = copied is IdentifierExpression id ? $"'{id.Name}'" : "this reference";
         string target = Wrappers.GetWrapperInnerType(wrapperType: type)?.ShortTypeName ?? "the entity";
-        string verb = type.BareName == Declaration.RuntimeContract.Viewing ? "view" : "modify";
-        return $"You copy {name}, a `{type.ShortTypeName}` token, into another place, but a token is not copied: the " +
-               $"copy could outlive the block or the entity {name} belongs to. Take a token from the `{target}` " +
-               $"itself where you need it (`x.{verb}()`), or keep using {name} where it is.";
+        return $"You copy {name}, a `{type.ShortTypeName}` reference, into another place, but this reference is not " +
+               $"copied there: the copy could outlive the block or the entity {name} belongs to. Give that place the " +
+               $"`{target}` itself, which becomes a reference where one is expected, or keep using {name} where it is.";
     }
 
     /// <summary>
@@ -1152,6 +1164,14 @@ public sealed partial class SemanticVerifier
                Frontends.Languages.HasSourceExtension(fileName: filePath) && !IsStdlibFile(filePath: filePath);
     }
 
+    /// <summary>True when <paramref name="filePath"/> names Revare source of the program being built (with or without
+    /// its extension), not one of the library's or a body the builder writes.</summary>
+    internal bool IsProgramRevareSource(string? filePath)
+    {
+        return !string.IsNullOrEmpty(value: filePath) && !filePath.StartsWith(value: '<') && !IsStdlibFile(filePath: filePath) &&
+               Frontends.Languages.OfFile(fileName: filePath) == Language.Revare;
+    }
+
     internal bool IsStdlibFile(string filePath)
     {
         return _registry.IsStandardLibraryFile(filePath: filePath);
@@ -1205,8 +1225,26 @@ public sealed partial class SemanticVerifier
             {
                 IdentifierExpression id => _linkArmTokens.Contains(item: id.Name),
                 MemberExpression member => member.TakesLink || FromLinkArm(expr: member.Object),
+                CallExpression { ResolvedRoutine: { } take } =>
+                    (take.GenericDefinition ?? take).Name is Declaration.RuntimeContract.TakeModifyingLink or
+                    Declaration.RuntimeContract.TakeViewingLink,
                 _ => false
             };
+        }
+    }
+
+    /// <summary>
+    /// A routine of the program that uses a link without taking it by <c>when</c> (<c>h.target.hp</c>, a link handed
+    /// where a reference is expected) takes its token first, which fails once the entity ended: the routine can fail,
+    /// so a <c>try</c> or <c>check</c> above it receives the failure.
+    /// </summary>
+    private void NoteLinkTaken()
+    {
+        if (_currentRoutine is { } routine && !_isInCompilerGeneratedBody && _currentFilePath is { } file &&
+            !IsStdlibFile(filePath: file))
+        {
+            routine.HasThrow = true;
+            routine.IsFailable = true;
         }
     }
 

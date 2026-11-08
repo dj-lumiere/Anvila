@@ -2551,7 +2551,8 @@ public static class LspServer
         foreach (RoutineInfo mr in ownMethods.Where(predicate: mr =>
                      !mr.Name.StartsWith(value: '$') &&
                      (includeSecret || mr.Visibility != VisibilityModifier.Secret) &&
-                     !IsMethodRejected(name: mr.Name, rejected: rejected)))
+                     !IsMethodRejected(name: mr.Name, rejected: rejected) &&
+                     !IsBuilderOnlyRoutine(routine: mr)))
         {
             AddItem(items: items,
                 seen: seen,
@@ -2560,6 +2561,15 @@ public static class LspServer
                 detail: RoutineDetail(r: mr),
                 documentation: mr.Documentation);
         }
+    }
+
+    /// <summary>Whether only the builder calls <paramref name="routine"/>: the <c>view()</c> / <c>modify()</c> that make a
+    /// reference (a program gets one by writing the entity where one is expected), and <c>destruct</c>.</summary>
+    private static bool IsBuilderOnlyRoutine(RoutineInfo routine)
+    {
+        return routine.Name == RuntimeContract.Destroy ||
+               routine.Name is "view" or "modify" && routine.Parameters.All(predicate: p => p.Name == "me") &&
+               routine.ReturnType?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying;
     }
 
     /// <summary>Returns true when the method name is in the rejected set.</summary>
@@ -4016,9 +4026,10 @@ public static class LspServer
                 modulePathLine = t.Line;
             }
 
-            // `@` only opens an annotation, and the word right after it (a keyword too, `@inline`) is its name.
-            bool annotation = t.Type == TokenType.At ||
-                              i > 0 && toks[index: i - 1].Type == TokenType.At &&
+            // `@` at the start of a line opens an annotation, and the word right after it (a keyword too, `@inline`) is
+            // its name. Anywhere else `@` is the sign of a write reference (`@Node`), which colors as the type does.
+            bool annotation = t.Type == TokenType.At && OpensAnnotation(toks: toks, at: i) ||
+                              i > 0 && toks[index: i - 1].Type == TokenType.At && OpensAnnotation(toks: toks, at: i - 1) &&
                               toks[index: i - 1].Line == t.Line && toks[index: i - 1].Column + 1 == t.Column;
             int type = annotation
                 ? SemTok(name: "decorator")
@@ -4322,6 +4333,22 @@ public static class LspServer
 
     /// <summary>Whether the token at <paramref name="at"/> is the <c>?</c> of an optional type (<c>Node?</c>), which is
     /// colored with the name before it: the kind of <c>T?</c> follows <c>T</c>'s.</summary>
+    /// <summary>Whether the <c>@</c> at <paramref name="at"/> opens an annotation: it is the first token of its line.</summary>
+    private static bool OpensAnnotation(List<Token> toks, int at)
+    {
+        for (int j = at - 1; j >= 0; j--)
+        {
+            if (toks[index: j].Type is TokenType.Newline or TokenType.Indent or TokenType.Dedent)
+            {
+                return true;
+            }
+
+            return toks[index: j].Line != toks[index: at].Line;
+        }
+
+        return true;
+    }
+
     private static bool IsOptionalMark(List<Token> toks, int at, SemanticRoles roles)
     {
         if (at == 0 || toks[index: at].Type != TokenType.Question)

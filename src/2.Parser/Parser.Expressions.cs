@@ -217,6 +217,12 @@ public partial class Parser
                              : "`var m: Optional[S64] = none`."));
         }
 
+        // A reference type inside a type argument's tuple (`List[Callable[(@Box), S64]]()`).
+        if (_bracketArgDepth > 0 && (Check(type: TokenType.At) || Check(type: TokenType.Percent)))
+        {
+            return ParseOptionalType();
+        }
+
         if (Check(type: TokenType.At))
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,

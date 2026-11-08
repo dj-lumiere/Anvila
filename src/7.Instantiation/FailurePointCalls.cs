@@ -326,6 +326,8 @@ internal static class FailurePointCalls
                 BinaryExpression bin => ForBinary(bin: bin, registry: registry) != null,
                 UnaryExpression unary => ForUnary(unary: unary, registry: registry) != null,
                 IndexExpression idx => registry.CanFailUnderRecovery(routine: idx.ResolvedGetItem),
+                // A link used without `when` takes its token first, which fails once the entity ended.
+                MemberExpression { TakesLink: true } => true,
                 _ => false
             };
             return Found
@@ -382,6 +384,17 @@ internal static class FailurePointCalls
             Expression rewritten = base.VisitIndex(e: e);
             return rewritten is IndexExpression idx && ForIndex(idx: idx, registry: registry) is { } call
                 ? call
+                : rewritten;
+        }
+
+        /// <summary>A link used without <c>when</c> (<c>h.target.hp</c>) is used through the token taken first: the
+        /// take fails with <c>StaleLinkError</c> once the entity ended, which the variant passes on.</summary>
+        protected override Expression VisitMember(MemberExpression e)
+        {
+            Expression rewritten = base.VisitMember(e: e);
+            return rewritten is MemberExpression { TakesLink: true } member &&
+                   Verification.LinkTaking.Take(link: member.Object, registry: registry) is { } take
+                ? member with { Object = take, TakesLink = false }
                 : rewritten;
         }
 

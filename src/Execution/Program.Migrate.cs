@@ -201,6 +201,13 @@ internal partial class Program
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
+        // `--step references`: `Viewing[T]` / `Modifying[T]` are written `%T` / `@T`, `.view()` / `.modify()` go, a
+        // block over entities becomes plain code, and a written `destruct` is `dangerous`.
+        if (step == "references")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteReferences);
+        }
+
         if (step == "suffix")
         {
             return RunSuffixStep(paths: paths, check: check);
@@ -562,7 +569,7 @@ internal partial class Program
     [
         "indent", "have", "suffix", "failable", "names", "modules", "access", "cpu-events", "addr", "files", "until",
         "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random", "for",
-        "emitter-tools", "extensions", "byte-literals"
+        "emitter-tools", "extensions", "byte-literals", "references"
     ];
 
     /// <summary>The named steps as a list for a message: <c>indent, have, ... or random</c>.</summary>
@@ -1043,15 +1050,6 @@ internal partial class Program
                 continue;
             }
 
-            // `dangerous routine T.destruct()` is `routine T.destruct()`: the builder calls it (the old name `destroy`
-            // is renamed below).
-            if (token.Type == TokenType.Dangerous && i + 4 < tokens.Count && tokens[index: i + 1].Type == TokenType.Routine &&
-                tokens[index: i + 3].Type == TokenType.Dot && tokens[index: i + 4].Text is "destruct" or "destroy")
-            {
-                edits.Add(item: new MigrationEdit(Start: token.Position, Length: tokens[index: i + 1].Position - token.Position,
-                    Replacement: "", Line: token.Line, What: "dangerous routine T.destruct → routine T.destruct"));
-                continue;
-            }
             // `is Weapon w` is `is Weapon as w`, and `else p =>` is `else as p =>`.
             if (token.Type is TokenType.Is or TokenType.Else && PatternBindingAfter(tokens: tokens, index: i) is { } bound)
             {

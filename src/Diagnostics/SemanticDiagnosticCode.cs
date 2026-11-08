@@ -952,6 +952,30 @@ public enum SemanticDiagnosticCode
     /// nothing reachable from it can be changed, so such a value is read in place there.</summary>
     ViewedValueHoldsWayToChange = 657,
 
+    /// <summary>A reference written by the builder's name for it (<c>Viewing[Node]</c>, <c>Modifying[Node]</c>) in a
+    /// program: a read reference is written <c>%Node</c> and a write reference <c>@Node</c>.</summary>
+    ReferenceWrittenByName = 658,
+
+    /// <summary><c>.view()</c> / <c>.modify()</c> written in a program. An entity becomes a reference by itself where one
+    /// is expected (an argument, a typed variable, a link), a shared handle is used as it is, and a <c>Guarded</c> is
+    /// opened with a <c>viewing</c> / <c>modifying</c> block.</summary>
+    ReferenceVerbWritten = 659,
+
+    /// <summary>A <c>viewing</c> / <c>modifying</c> block over a target that needs none (an entity, a reference, a
+    /// <c>Retained</c>): only a <c>Guarded</c> (or a type with an enter / exit pair) is opened with a block.</summary>
+    AccessBlockNotNeeded = 660,
+
+    /// <summary>A reference to a record (<c>@Point</c>, <c>%Point?</c>) kept in a member variable, a collection's element
+    /// or a global. A record is a value with no identity, so nothing can point at it from storage.</summary>
+    RecordReferenceKept = 661,
+
+    /// <summary><c>steal</c> on something that holds no original: a reference, a link or a weak handle.</summary>
+    StealWithoutHolding = 662,
+
+    /// <summary>A reference given where the original is handed over (a <c>T</c> parameter, an original member
+    /// variable): a reference holds no original to give.</summary>
+    ReferenceForHandOver = 663,
+
     /// <summary>A binding from outside an <c>if</c>, a <c>when</c> or a loop is taken with <c>steal</c> on some paths
     /// that go on past it and kept on others (or taken inside a loop, so it is gone on the next turn): what a scope
     /// holds is torn down at its end by one rule, with no hidden flag remembering which path ran.</summary>
@@ -1145,8 +1169,8 @@ public enum SemanticDiagnosticCode
     /// <summary>None cannot be used as a generic type argument (it has no value).</summary>
     NoneAsTypeArgument = 805,
 
-    /// <summary>`destruct` is written as a plain routine: the builder calls it at the scope's end or at `drop x`,
-    /// so `dangerous` on it is the old spelling.</summary>
+    /// <summary>A written `destruct` without `dangerous`: only the builder calls it (at the scope's end or at
+    /// `drop x`), and it handles what the entity holds by hand, so it is `dangerous routine T.destruct()`.</summary>
     DestroyNotDangerous = 807,
 
     /// <summary>RETIRED: a <c>destruct</c> written <c>failable</c>. The word is gone, and a <c>destruct</c> is a wall

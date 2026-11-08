@@ -751,7 +751,10 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
             rows.Add(item:
             [
                 ("name", MakeReflTextLit(value: f.Name, loc: loc)),
-                ("type_name", MakeReflTextLit(value: f.Type.ShortTypeName, loc: loc)),
+                ("type_name", MakeReflTextLit(value: Frontends.Languages.OfFile(fileName: loc.FileName) is var language &&
+                                                     Frontends.Languages.IsRegistered(language: language)
+                    ? Frontends.Languages.For(language: language).SurfaceText(text: f.Type.ShortTypeName)
+                    : f.Type.ShortTypeName, loc: loc)),
                 ("visibility", MakeReflVisibility(visibility: f.Visibility, loc: loc)),
                 ("offset", MakeReflU64Lit(value: offsets[i], loc: loc))
             ]);

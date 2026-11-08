@@ -173,11 +173,11 @@ internal sealed class ViewedCopyChecker(DiagnosticReporter report)
               "or drop '@readonly' from the routine."
             : bound
             ? $"'{what}' holds a way to change an entity ({way}), so it can't be copied: '{root}' reads a value inside " +
-              "a 'Viewing' (nothing reachable from a view can be changed). Read it where it is, or take the " +
-              "container the 'when' matches as 'Modifying'."
-            : $"'{what}' holds a way to change an entity ({way}), so it can't be copied out of '{root}', a 'Viewing' " +
-              $"(nothing reachable from a view can be changed). Read it where it is in '{Describe(value: value)}', or " +
-              $"take '{root}' as 'Modifying'.";
+              "a read reference (nothing reachable from a read reference can be changed). Read it where it is, or " +
+              "take the container the 'when' matches as a write reference ('@T')."
+            : $"'{what}' holds a way to change an entity ({way}), so it can't be copied out of '{root}', a read " +
+              $"reference (nothing reachable from it can be changed). Read it where it is in '{Describe(value: value)}', " +
+              $"or take '{root}' as a write reference ('@T').";
         report(code: SemanticDiagnosticCode.ViewedValueHoldsWayToChange,
             message: message,
             location: value.Location);

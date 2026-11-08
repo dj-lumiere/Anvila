@@ -1196,6 +1196,15 @@ public sealed partial class SemanticVerifier
             TypeSymbol returnType = AnalyzeExpression(expression: ret.Value,
                 expectedType: _currentRoutine.ReturnType);
 
+            // A routine that gives back a reference gives the entity's own when it returns the entity
+            // (`return me.inner` for `-> %Inner`).
+            if (_currentRoutine.ReturnType is { } referenceResult &&
+                ImplicitReference(value: ret.Value, target: referenceResult) is { } reference)
+            {
+                ret.Value = reference;
+                returnType = reference.ResolvedType ?? referenceResult;
+            }
+
             // A token may be returned only when it is taken from `me` (Revare only)
             ValidateNotTokenReturnType(type: returnType, location: ret.Location, returned: ret.Value);
 
@@ -1235,10 +1244,10 @@ public sealed partial class SemanticVerifier
                     tokenTarget.FullName == _currentRoutine.ReturnType.FullName;
                 ReportError(code: SemanticDiagnosticCode.ReturnTypeMismatch,
                     message: tokenForEntity
-                        ? $"You are returning {Article.For(name: returnType.Name)} '{returnType.Name}' token where this routine returns the " +
-                          $"'{_currentRoutine.ReturnType.Name}' itself. The token only points at an entity something " +
+                        ? $"You are returning {Article.For(name: returnType.Name)} '{returnType.Name}' reference where this routine returns the " +
+                          $"'{_currentRoutine.ReturnType.Name}' itself. The reference only points at an entity something " +
                           "else owns (an element read into a variable, `var b = boxes[0]`, holds one). Return a copy " +
-                          "with '.duplicate()', take the element out of its container (`remove_at`), or return the token " +
+                          "with '.duplicate()', take the element out of its container (`remove_at`), or return the reference " +
                           $"by declaring the routine '-> {returnType.Name}'."
                         : $"Cannot return a value of type '{WrittenTypeName(type: returnType)}' from a routine that returns " +
                           $"'{WrittenTypeName(type: _currentRoutine.ReturnType)}'.",
@@ -1497,9 +1506,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// <c>drop x</c>: tears a local binding the routine owns down here and ends the name, as <c>steal x</c> does
-    /// (a later use is RV-S615, and the scope's end does not tear it down again). A global, <c>me</c>
-    /// and an access token (<c>Viewing</c> / <c>Modifying</c>, which someone else owns) cannot be dropped.
+    /// <c>drop x</c>: lets go of what a local binding holds here and ends the name, as <c>steal x</c> does (a later use
+    /// is RV-S615, and the scope's end does not let go of it again): an original ends, a reference or a link only
+    /// stops pointing, a shared handle gives up its hold. A global and <c>me</c> cannot be dropped.
     /// </summary>
     private void AnalyzeDropBinding(DropStatement dropped, IdentifierExpression ended)
     {
@@ -1516,10 +1525,7 @@ public sealed partial class SemanticVerifier
                 ? "'me' belongs to whoever called this routine, so it cannot be dropped here."
                 : variable.IsGlobal
                     ? $"'{ended.Name}' is a global, which lives as long as the program. `drop` ends a local binding."
-                    : ImplicitToken.IsTokenParameter(parameter: type, tokenKind: out string kind, target: out _)
-                        ? $"'{ended.Name}' is a {kind} token, access to a value someone else owns: dropping it would " +
-                          "end that value. The access ends with its scope."
-                        : null;
+                    : null;
         if (refusal != null)
         {
             ReportError(code: SemanticDiagnosticCode.InvalidDropTarget,
@@ -1678,9 +1684,9 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Analyzes a <c>viewing</c> / <c>modifying</c> block. Each target is a type the block enters (a <c>Guarded</c>, a
-    /// <c>FileStorage</c>, any type with <c>view_enter</c> / <c>modify_enter</c> and the matching exit), an access token
-    /// (only checked to differ from the others), or an entity (whose token the block gives), and its name inside the
-    /// block is a <c>Viewing</c> or <c>Modifying</c> token, a <c>Optional</c> of it in a <c>try</c> block. A target named
+    /// <c>FileStorage</c>, any type with <c>view_enter</c> / <c>modify_enter</c> and the matching exit), and its name
+    /// inside the block is the read or write reference it gives, a <c>Optional</c> of it in a <c>try</c> block. An entity
+    /// or a reference as a target needs no block (RV-S660). A target named
     /// twice is RV-S650, one that can't be opened with its verb RV-S651, an enter that gives no token RV-S654, a
     /// <c>try</c> on one the block doesn't enter RV-S611, and a <c>Guarded</c> an enclosing block of the routine
     /// already opened RV-S630.
@@ -1732,7 +1738,7 @@ public sealed partial class SemanticVerifier
             if (target.Name.Length == 0)
             {
                 ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
-                    message: "This target has no name of its own for its token inside the block. Give it one with " +
+                    message: "This target has no name of its own for its reference inside the block. Give it one with " +
                              "'as': 'modifying accounts[0] as first'.",
                     location: target.Location);
                 continue;
@@ -1812,7 +1818,6 @@ public sealed partial class SemanticVerifier
     {
         lockBacked = false;
         string verb = target.IsWrite ? "modifying" : "viewing";
-        TypeSymbol? inner;
         string enterName = target.IsWrite
             ? Declaration.RuntimeContract.AccessBlock.ModifyEnter
             : Declaration.RuntimeContract.AccessBlock.ViewEnter;
@@ -1844,10 +1849,10 @@ public sealed partial class SemanticVerifier
 
         if (type.BareName is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed)
         {
-            ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+            ReportError(code: SemanticDiagnosticCode.AccessBlockNotNeeded,
                 message: $"You open '{shown}' with '{verb}', but it is {Article.For(name: type.BareName)} " +
-                         $"{type.BareName}, which has nothing to open: use it directly. Hand it where a Viewing or a " +
-                         "Modifying token goes, and read and write through it.",
+                         $"{type.BareName}, which needs no block: use it directly. It becomes a reference where one " +
+                         "is expected. A block opens a Guarded.",
                 location: target.Location);
             return null;
         }
@@ -1874,78 +1879,24 @@ public sealed partial class SemanticVerifier
             return EnteredTargetToken(target: target, type: type, isTry: isTry, shown: shown, enterName: enterName);
         }
 
-        if (type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
-        {
-            inner = Wrappers.GetWrapperInnerType(wrapperType: type);
-            if (target.IsWrite && type.BareName == Declaration.RuntimeContract.Viewing)
-            {
-                ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
-                    message: $"You open '{shown}' with 'modifying', but it is a Viewing token, permission to read only. " +
-                             "Open it with 'viewing', or take a Modifying token where it comes from.",
-                    location: target.Location);
-                return null;
-            }
-
-            if (isTry)
-            {
-                ReportTryOnUntryable(target: target, shown: shown,
-                    why: "it is an access token, which the block only names");
-                return null;
-            }
-        }
-        else if (type is EntityTypeSymbol)
-        {
-            inner = type;
-            // An entity of the routine's own is a variable. One inside another (a member variable, an element) is
-            // reached through the token of what holds it: opening it apart would hand out a second token on part of
-            // what that token already reaches.
-            if (target.Target is not IdentifierExpression)
-            {
-                ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
-                    message: $"You open '{shown}' with '{verb}', but it is an entity inside another one. Reach it " +
-                             "through the token of the entity that holds it, and open that one if you have no token " +
-                             "for it yet.",
-                    location: target.Location);
-                return null;
-            }
-
-            if (target.Target is IdentifierExpression { ResolvedVariable: null } opened &&
-                _registry.LookupVariable(name: opened.Name) is { } openedVariable)
-            {
-                opened.ResolvedVariable = openedVariable;
-            }
-
-            // A global is a place the program changes: `modifying` it is a change, which a routine a Work reaches on
-            // another thread may not make of a plain global (GlobalThreadChecker). A Guarded global has the pair and
-            // takes its access above.
-            if (isTry)
-            {
-                ReportTryOnUntryable(target: target, shown: shown,
-                    why: "it is an entity of this routine's own, which the block only names");
-                return null;
-            }
-        }
-        else
-        {
-            string what = BuildAccessPath(expr: target.Target) is { } named
-                ? $"You open '{named}' with '{verb}', but it is {Article.For(name: type.Name)} {type.Name}."
-                : $"You open {Article.For(name: type.Name)} {type.Name} with '{verb}'.";
-            ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
-                message: $"{what} A block opens a type with '{enterName}()' (a Guarded, a FileStorage), an access " +
-                         "token (Viewing, Modifying) or an entity.",
-                location: target.Location);
-            return null;
-        }
-
-        if (inner == null ||
-            _registry.LookupType(name: target.IsWrite
-                ? Declaration.RuntimeContract.Modifying
-                : Declaration.RuntimeContract.Viewing) is not { } tokenDef)
-        {
-            return null;
-        }
-
-        return _registry.GetOrCreateResolution(genericDef: tokenDef, typeArguments: [inner]);
+        // An entity or a reference needs no block: it is used directly, and becomes a reference where one is
+        // expected. Only a type the block enters (a Guarded, a FileStorage, a type with the enter / exit pair) is
+        // opened with one.
+        string written = BuildAccessPath(expr: target.Target) is { } named ? $"'{named}'" : "this target";
+        string why = type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying
+            ? $"{written} is a reference already: use it directly"
+            : type is EntityTypeSymbol
+                ? $"{written} is an entity: use it directly, it becomes a reference where one is expected (an " +
+                  "argument, a typed variable, a link)"
+                : $"{written} is {Article.For(name: type.Name)} {type.Name}, which has no '{enterName}()'";
+        ReportError(code: type is EntityTypeSymbol || type.BareName is Declaration.RuntimeContract.Viewing or
+                Declaration.RuntimeContract.Modifying
+                ? SemanticDiagnosticCode.AccessBlockNotNeeded
+                : SemanticDiagnosticCode.AccessTargetNotOpenable,
+            message: $"You open {written} with '{verb}', but {why}. A block opens a Guarded (or a type with " +
+                     $"'{enterName}()' and its exit, such as a FileStorage).",
+            location: target.Location);
+        return null;
     }
 
     /// <summary>
@@ -2002,8 +1953,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.AccessEnterWithoutToken,
                 message: $"You open '{shown}' with '{(target.IsWrite ? "modifying" : "viewing")}', and " +
                          $"'{type.Name}.{enterName}()' gives {Article.For(name: token.Name)} '{token.Name}'. The name a " +
-                         $"block hands out is its token: '{enterName}()' returns {Article.For(name: tokenName)} " +
-                         $"'{tokenName}[...]'.",
+                         $"block hands out is a reference: '{enterName}()' returns a " +
+                         $"{(target.IsWrite ? "write reference (`@T`)" : "read reference (`%T`)")}.",
                 location: target.Location);
             return null;
         }
@@ -2039,7 +1990,7 @@ public sealed partial class SemanticVerifier
     {
         ReportError(code: SemanticDiagnosticCode.TryAccessOnUntryable,
             message: $"You open '{shown}' with 'try', but {why}: opening it never fails. Remove 'try', and use the " +
-                     "name as the token it is.",
+                     "name as the reference it is.",
             location: target.Location);
     }
 
@@ -2066,7 +2017,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.GuardedOpenedAgain,
                 message: $"You open '{path}' with '{verb}' inside a '{heldVerb}' block (line {hold.Location.Line}) that " +
                          $"already has {held} open. Waiting here would never end, since the outer block can't end " +
-                         "while it waits, and going in would see that block's work half done. Use the token the outer " +
+                         "while it waits, and going in would see that block's work half done. Use the reference the outer " +
                          "block gives, and pass it to the routines you call.",
                 location: location);
             return;

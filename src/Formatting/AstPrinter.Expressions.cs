@@ -844,6 +844,11 @@ internal sealed partial class AstPrinter
             throw Refuse(at: type.Location, reason: "a type argument with the removed rvalue mark");
         }
 
+        if (ReferenceSignText(type: type, inner: TypeArgumentText) is { } reference)
+        {
+            return reference;
+        }
+
         string name = Literals.LooksNumeric(name: type.Name)
             ? Literals.CanonicalNumber(text: type.Name)
             : type.Name;
@@ -1222,6 +1227,24 @@ internal sealed partial class AstPrinter
         return Doc.Text(text: TypeText(type: type));
     }
 
+    /// <summary>A reference written with its sign (<c>%T</c>, <c>@T</c>), or null for any other type. An optional or a
+    /// variant after the sign keeps its parentheses (<c>%(T?)</c>).</summary>
+    private static string? ReferenceSignText(TypeExpression type, Func<TypeExpression, string> inner)
+    {
+        if (!type.IsReferenceSign || type.GenericArguments is not [var target])
+        {
+            return null;
+        }
+
+        string text = inner(arg: target);
+        if (text.EndsWith(value: '?') || text.Contains(value: " | "))
+        {
+            text = $"({text})";
+        }
+
+        return (type.Name == Declaration.RuntimeContract.Viewing ? "%" : "@") + text;
+    }
+
     private string TypeText(TypeExpression type)
     {
         // A variant written in place keeps its types in the order they were written.
@@ -1251,6 +1274,11 @@ internal sealed partial class AstPrinter
         }
 
         List<TypeExpression>? arguments = type.GenericArguments;
+
+        if (ReferenceSignText(type: type, inner: TypeText) is { } reference)
+        {
+            return reference;
+        }
 
         // `T?` is `Optional[T]` located at `T` itself.
         if (type is { Name: "Optional", Realm: null } && arguments is [var inner] && inner.Location == type.Location)

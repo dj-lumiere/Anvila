@@ -197,6 +197,7 @@ public sealed partial class SemanticVerifier
         if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName, location: member.Location) is { } linkToken)
         {
             member.TakesLink = true;
+            NoteLinkTaken();
             objectType = linkToken;
         }
 
@@ -940,6 +941,13 @@ public sealed partial class SemanticVerifier
         try
         {
             returnType = AnalyzeExpression(expression: lambda.Body);
+            // A lambda that gives a reference gives the entity's own when its body is the entity.
+            if (expectedType is RoutineTypeSymbol { ReturnType: { } expectedResult } &&
+                ImplicitReference(value: lambda.Body, target: expectedResult) is { } reference)
+            {
+                lambda.Body = reference;
+                returnType = reference.ResolvedType ?? expectedResult;
+            }
         }
         finally
         {
@@ -2106,6 +2114,7 @@ public sealed partial class SemanticVerifier
 
             TypeSymbol valueType = analyzed ??
                                    AnalyzeExpression(expression: value, expectedType: memberVariableType);
+            ReportNoneIntoRequiredLink(value: value, member: expectedMemberVariable);
 
             // Check type compatibility
             if (!IsAssignableTo(source: valueType, target: memberVariableType))

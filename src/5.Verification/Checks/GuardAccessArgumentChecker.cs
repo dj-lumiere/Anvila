@@ -211,7 +211,7 @@ internal sealed class GuardAccessArgumentChecker(DiagnosticReporter report)
                 report(code: SemanticDiagnosticCode.GuardedOpenedAgain,
                     message: $"You pass '{holder}.{verb}()' inside a block (line {line}) that already has '{holder}' open. " +
                              "Waiting here would never end, since the block can't end while it waits, and going in " +
-                             "would see that block's work half done. Pass the token the block gives instead.",
+                             "would see that block's work half done. Pass the reference the block gives instead.",
                     location: call.Location);
                 break;
             }

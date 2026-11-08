@@ -203,6 +203,7 @@ internal sealed class TypeResolver
             return known;
         }
 
+        ReportReferenceWrittenByName(typeExpr: typeExpr);
         TypeSymbol resolved = ResolveTypeCore(typeExpr: typeExpr);
         // Effective realm = the explicit `RV::`/`ME::` qualifier, else the realm of the file being analyzed:
         // a bare `List` in a `.mie` file is Mielia's own list when Mielia declares one. Name resolution above
@@ -243,6 +244,76 @@ internal sealed class TypeResolver
         }
 
         return stored;
+    }
+
+    /// <summary>
+    /// Resolves the type of a place that keeps a value past the routine that wrote it (a member variable, a global): as
+    /// <see cref="ResolveStoredType"/>, and a reference written there is a link. <c>target: @Enemy</c> keeps the same
+    /// link as <c>target: @Enemy?</c> (see <see cref="IsRequiredLink"/>), and a reference to a record is reported.
+    /// </summary>
+    public TypeSymbol ResolveKeptType(TypeExpression? typeExpr)
+    {
+        TypeSymbol kept = KeptLink(type: ResolveStoredType(typeExpr: typeExpr), location: typeExpr?.Location);
+        if (typeExpr != null)
+        {
+            typeExpr.ResolvedType = kept;
+        }
+
+        return kept;
+    }
+
+    /// <summary>Whether <paramref name="typeExpr"/> is a reference written without <c>?</c> in a place that keeps it
+    /// (<c>target: @Enemy</c>): the place keeps a link that never holds none.</summary>
+    public static bool IsRequiredLink(TypeExpression? typeExpr)
+    {
+        return typeExpr is { Name: RuntimeContract.Viewing or RuntimeContract.Modifying, GenericArguments.Count: 1 } &&
+               ImplicitToken.IsLinkShape(type: typeExpr.ResolvedType);
+    }
+
+    /// <summary>
+    /// The link a reference kept in a place is (<c>Modifying[Enemy]</c> kept is <c>Modifying[Enemy]?</c>), or
+    /// <paramref name="type"/> itself for anything else. A reference to a record kept there is reported: a record is a
+    /// value with no identity, so nothing points at it from storage. Only in the program's own Revare files.
+    /// </summary>
+    internal TypeSymbol KeptLink(TypeSymbol type, SourceLocation? location)
+    {
+        if (!_sa._registry.Rules.ChecksAccessTokens || location == null ||
+            type.BareName is not (RuntimeContract.Viewing or RuntimeContract.Modifying) ||
+            type.TypeArguments is not [{ } target] || !_sa.IsProgramRevareSource(filePath: location.FileName))
+        {
+            return type;
+        }
+
+        if (target is EntityTypeSymbol { IsGenericDefinition: false } or GenericParameterTypeSymbol)
+        {
+            return LookupTypeWithImports(name: MaybeTypeName) is { } optionalDef
+                ? _sa._registry.GetOrCreateResolution(genericDef: optionalDef, typeArguments: [type])
+                : type;
+        }
+
+        if (target is ErrorTypeSymbol || !_sa._tokenTypeArgumentReported.Add(item: (location.FileName, location.Line)))
+        {
+            return type;
+        }
+
+        string sign = type.BareName == RuntimeContract.Viewing ? "%" : "@";
+        _sa.ReportError(code: SemanticDiagnosticCode.RecordReferenceKept,
+            message: $"You keep `{sign}{target.ShortTypeName}` here, a reference to a record. A record is a value: it " +
+                     "has no identity and moves with the place it is in, so it can't be pointed at from storage. Keep " +
+                     $"the `{target.ShortTypeName}` itself (a copy), or make `{target.ShortTypeName}` an entity to see " +
+                     "one thing from several places.",
+            location: location);
+        return type;
+    }
+
+    /// <summary>Whether a type argument of <paramref name="genericDef"/> is a place that keeps its value: a container's
+    /// element, a handle's value. The references and the optional around them are not (a written <c>@Node?</c> is a
+    /// link already), and neither is a routine type's parameter or result.</summary>
+    internal static bool KeepsTypeArguments(TypeSymbol genericDef)
+    {
+        return genericDef.BareName is not (RuntimeContract.Viewing or RuntimeContract.Modifying or
+            RuntimeContract.OptionalCarrier or RuntimeContract.Hijacked or "Check" or "Work" or "Callable" or
+            RuntimeContract.Dispatch.Dispatched);
     }
 
     /// <summary>The stored value of <paramref name="type"/> when it is a protocol a program's own place may keep
@@ -343,6 +414,41 @@ internal sealed class TypeResolver
         }
 
         return _sa._registry.GetOrCreateUnion(members: types, location: typeExpr.Location);
+    }
+
+    /// <summary>
+    /// Reports a reference a Revare program writes by the builder's name for it (<c>Modifying[Node]</c>): the program
+    /// writes <c>@Node</c> (write) and <c>%Node</c> (read). The type still resolves, so nothing else reports.
+    /// </summary>
+    private void ReportReferenceWrittenByName(TypeExpression typeExpr)
+    {
+        if (!typeExpr.IsWrittenName || typeExpr.Name is not (RuntimeContract.Viewing or RuntimeContract.Modifying) ||
+            typeExpr.GenericArguments is not [{ } target] || !_sa.IsProgramRevareSource(filePath: typeExpr.Location.FileName))
+        {
+            return;
+        }
+
+        bool reads = typeExpr.Name == RuntimeContract.Viewing;
+        string written = (reads ? "%" : "@") + Spell(type: target);
+        _sa.ReportError(code: SemanticDiagnosticCode.ReferenceWrittenByName,
+            message: $"You write `{typeExpr.Name}[{Spell(type: target)}]`. A {(reads ? "read" : "write")} reference is " +
+                     $"written `{written}` (`migrate --step references` rewrites the old spelling).",
+            location: typeExpr.Location);
+    }
+
+    /// <summary>A written type as the program spells it, for a message.</summary>
+    private static string Spell(TypeExpression type)
+    {
+        string name = type.Name switch
+        {
+            RuntimeContract.Viewing when type.IsReferenceSign && type.GenericArguments is [{ } r] => "%" + Spell(type: r),
+            RuntimeContract.Modifying when type.IsReferenceSign && type.GenericArguments is [{ } w] => "@" + Spell(type: w),
+            "Optional" when type.GenericArguments is [{ } o] => Spell(type: o) + "?",
+            _ when type.GenericArguments is { Count: > 0 } args =>
+                $"{type.Name}[{string.Join(separator: ", ", values: args.Select(selector: Spell))}]",
+            _ => type.Name
+        };
+        return name;
     }
 
     private TypeSymbol ResolveTypeCore(TypeExpression typeExpr)
@@ -710,6 +816,12 @@ internal sealed class TypeResolver
             if (StoresProtocolArguments(genericDef: genericDef))
             {
                 argType = StoredValueType(type: argType);
+            }
+
+            // A reference as a container's element is a link (`List[@Node]` keeps `@Node?` links).
+            if (KeepsTypeArguments(genericDef: genericDef))
+            {
+                argType = KeptLink(type: argType, location: argExpr.Location);
             }
 
             // A parameter that needs an entity (`Watched[T]`) names the entity itself. In a file that holds

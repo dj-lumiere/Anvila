@@ -587,7 +587,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                     return null;
                 }
 
-                return MakeLiteralText(value: inFlightPrefix + GetShortTypeName(type: type),
+                return MakeLiteralText(value: inFlightPrefix + _registry.Rules.SurfaceText(text: GetShortTypeName(type: type)),
                     type: _textType,
                     loc: loc);
             }
@@ -602,7 +602,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                 }
 
                 return MakeLiteralText(
-                    value: InsertInFlightMark(fullName: GetFullTypeName(type: type),
+                    value: InsertInFlightMark(fullName: _registry.Rules.SurfaceText(text: GetFullTypeName(type: type)),
                         mark: inFlightPrefix),
                     type: _textType,
                     loc: loc);

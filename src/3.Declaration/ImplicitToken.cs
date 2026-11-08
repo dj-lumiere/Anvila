@@ -57,7 +57,18 @@ internal static class ImplicitToken
         }
 
         return Matches(value: source, target: target) ||
-               HandleOver(source: source, tokenKind: tokenKind, target: target) != null;
+               HandleOver(source: source, tokenKind: tokenKind, target: target) != null ||
+               LinkGivesToken(link: source, tokenKind: tokenKind, target: target);
+    }
+
+    /// <summary>Whether a link of <paramref name="link"/>'s type gives a reference of <paramref name="tokenKind"/> to a
+    /// <paramref name="target"/>: a write link gives either reference, a read-only link a read one. The token is taken
+    /// as a use of the link without <c>when</c> is, so it fails once the entity ended.</summary>
+    public static bool LinkGivesToken(TypeSymbol link, string tokenKind, TypeSymbol target)
+    {
+        return IsLink(type: link) && link.TypeArguments![index: 0] is { TypeArguments: [{ } linked] } token &&
+               Matches(value: linked, target: target) &&
+               (tokenKind == RuntimeContract.Viewing || token.BareName == RuntimeContract.Modifying);
     }
 
     /// <summary>

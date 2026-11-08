@@ -347,7 +347,7 @@ public sealed partial class SemanticVerifier
                 message:
                 $"You steal the global '{stolenName}', but a global lives as long as the program and is only read: " +
                 $"every later read of '{stolenName}', here or in another routine, would find it gone. Pass " +
-                $"'{stolenName}' where it is read (a `Viewing` parameter), or make a value of your own from it.",
+                $"'{stolenName}' where it is read (a read reference parameter, `%T`), or make a value of your own from it.",
                 location: steal.Location);
             steal.ResolvedType = operandType;
             return operandType;
@@ -460,12 +460,14 @@ public sealed partial class SemanticVerifier
     private bool TryRejectUnstealableWrapper(StealExpression steal, TypeSymbol operandType)
     {
         // Check if the type is a scope-bound wrapper (cannot be stolen)
-        if (IsMemoryToken(type: operandType))
+        // A reference or a link holds no original: it only points at an entity something else holds.
+        bool link = Declaration.ImplicitToken.IsLinkShape(type: operandType);
+        if (IsMemoryToken(type: operandType) || link)
         {
-            ReportError(code: SemanticDiagnosticCode.StealScopeBoundToken,
-                message: $"You steal a token (`{operandType.ShortTypeName}`) here, but a token keeps nothing to hand " +
-                         "over: it only points at the place the entity is in. Steal the entity itself, or pass the " +
-                         "token as it is.",
+            ReportError(code: SemanticDiagnosticCode.StealWithoutHolding,
+                message: $"You steal {(link ? "a link" : "a reference")} (`{operandType.ShortTypeName}`) here, but it " +
+                         "holds no original: it only points at an entity held somewhere else, so there is nothing to " +
+                         "hand over. Point `steal` at where the original is held, or pass this as it is.",
                 location: steal.Location);
             return true;
         }
@@ -489,9 +491,9 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.StealSharedOwnership,
                 message:
-                $"Cannot steal '{operandType.Name}': a weak handle doesn't keep the entity, so there is nothing to " +
-                "take out of it. 'steal' on the strong handle (Retained or Guarded) takes the entity out when that " +
-                "handle is the last one.",
+                $"You steal '{operandType.Name}', a weak handle, but it doesn't keep the entity, so there is nothing " +
+                "to take out of it. Point `steal` at where the original is held: on the strong handle (Retained or " +
+                "Guarded) it takes the entity out when that handle is the last one.",
                 location: steal.Location);
             return true;
         }

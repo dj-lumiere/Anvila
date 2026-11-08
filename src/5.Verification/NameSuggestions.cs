@@ -222,8 +222,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                         "'AbsentValueError' arm.",
             "Accessing" or "Controlling" when registry.Language == TypeModel.Enums.Language.Mielia =>
                 $" '{typeName}' is gone: use the value itself.",
-            "Accessing" or "Controlling" => $" '{typeName}' is gone: take the handle itself, or the token a " +
-                                            "'viewing' / 'modifying' block gives ('Viewing[T]' / 'Modifying[T]').",
+            "Accessing" or "Controlling" => $" '{typeName}' is gone: take the handle itself, or a reference " +
+                                            "('%T' to read, '@T' to write).",
             "FrozenController" => " 'FrozenController' is gone, with nothing in its place.",
             "PQEntry" => " 'PQEntry' is gone: a PriorityQueue gives '(priority, element)' tuples ('peek_entry()', " +
                          "'ordered()', 'drain()'), taken apart with 'var (p, e) = queue.peek_entry()'.",
@@ -293,7 +293,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             case "try_view" or "try_modify" or "open_view" or "open_modify" or "close_view" or "close_modify"
                 when type.BareName is RuntimeContract.Guarded:
                 return " A block opens a Guarded: 'viewing g as v' / 'modifying g as m' (which call view_enter() / " +
-                       "modify_enter() and the matching exit), and 'try modifying g as m' gives an Optional of the token " +
+                       "modify_enter() and the matching exit), and 'try modifying g as m' gives an Optional of the reference " +
                        "(migrate --step access rewrites the old forms).";
             case "next_u64" or "next_u32" or "next_b64" when MemberSuggestionCandidates(type: type).Contains(value: "next"):
                 string drawn = name[5..].ToUpperInvariant();

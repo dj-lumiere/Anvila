@@ -153,7 +153,7 @@ internal static class BracketReclassifyPass
             GenericMemberExpression gme => new TypeExpression(Name: QualifiedGenericName(receiver: gme.Object,
                     member: gme.MemberName),
                 GenericArguments: gme.TypeArguments,
-                Location: gme.Location),
+                Location: gme.Location) { IsWrittenName = true },
             GenericMemberRoutineCallExpression gmc => new TypeExpression(
                 Name: gmc.MemberRoutineName,
                 GenericArguments: gmc.TypeArguments,
@@ -276,7 +276,7 @@ internal static class BracketReclassifyPass
         };
         return new TypeExpression(Name: nestedName,
             GenericArguments: [ExpressionToTypeArg(expr: idx.Index)],
-            Location: idx.Location);
+            Location: idx.Location) { IsWrittenName = true };
     }
 
     /// <summary>Flattens a `/`-chained projection expression into a slash-joined name string.</summary>

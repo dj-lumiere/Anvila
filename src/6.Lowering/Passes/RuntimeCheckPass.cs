@@ -16,8 +16,8 @@ namespace Builder.Lowering.Passes;
 /// (a call through it ends the entity, the routine it was handed to goes on). Before each statement that reaches a
 /// member through a token the builder cannot prove comes from an original, the builder puts
 /// <c>token.require_live()</c> (Link.rvr), which fails with <c>EntityEndedError</c> once the entity's slot is marked
-/// ended. A token is unproven when it was taken from a link (the arm of a <c>when</c> over one, a link used directly),
-/// when a local was given one, or when it is a token parameter (or <c>me</c>) of a routine some call hands an
+/// ended. A token is unproven when it was taken from a link (the arm of a <c>when</c> over one, a link used directly)
+/// or given by a call of a routine value (a lambda may give one taken from what it captured), when a local was given one, or when it is a token parameter (or <c>me</c>) of a routine some call hands an
 /// unproven token to, found across the program's routines until nothing changes. Only tokens on retroactive entity
 /// types are checked: no other entity ends while a link to it is used. A token taken from a link keeps the slot from
 /// being reused while it is in use, so the check reads a header that is still the entity's. In a generic routine a token
@@ -357,6 +357,10 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             IdentifierExpression id => names.Contains(item: id.Name),
             MemberExpression member => member.TakesLink || IsUnproven(expr: member.Object, names: names),
             IndexExpression element => IsUnproven(expr: element.Object, names: names),
+            // A routine value may be a lambda that gives a reference taken from what it captured, whose entity may
+            // have ended before the call.
+            CallExpression call => call.Callee.ResolvedType is RoutineTypeSymbol &&
+                                   call.ResolvedType?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying,
             _ => false
         };
     }

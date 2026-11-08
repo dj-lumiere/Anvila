@@ -417,6 +417,10 @@ public record BinaryExpression(
     Expression Right,
     SourceLocation Location) : Expression(Location: Location)
 {
+    /// <summary>The right operand. For an assignment, analysis may put a reference in its place where the target takes
+    /// one and the value is the entity (<c>m = other</c> for <c>m: @Node</c>).</summary>
+    public Expression Right { get; set; } = Right;
+
     /// <summary>Where a comparison's operator was written (its offset in the file), or -1 when the parser didn't
     /// record it.</summary>
     public int OperatorPosition { get; init; } = -1;
@@ -995,6 +999,10 @@ public record LambdaExpression(
     List<string>? Captures,
     SourceLocation Location) : Expression(Location: Location)
 {
+    /// <summary>The lambda's body. Analysis may put a reference in its place where the lambda gives one and the body
+    /// is the entity (<c>() given a => a</c> for a <c>Callable[(), @Box]</c>).</summary>
+    public Expression Body { get; set; } = Body;
+
     /// <summary>
     /// The tokens and entities this lambda reaches (`me`, a `view()`/`modify()` token, a local collection, a `for`
     /// element), set by analysis, or null when it reaches none. A lambda that does is a token itself, bound to
@@ -1002,6 +1010,12 @@ public record LambdaExpression(
     /// routine, but not kept in a member variable or returned.
     /// </summary>
     public List<BoundCapture>? BoundTo { get; set; }
+
+    /// <summary>True for a lambda that gives back a reference taken from what it captured: the builder cannot prove
+    /// that entity is still there when the lambda is called, so the entity's type is retroactive and every reference a
+    /// call of a routine value gives is checked where it is used (<c>EntityEndedError</c>). Set by the token lifetime
+    /// check.</summary>
+    public bool GivesUnprovenToken { get; set; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
@@ -1131,6 +1145,14 @@ public record TypeExpression(
     /// type may live in a module the file does not import, or have no spelling in the file's language.
     /// </summary>
     public TypeSymbol? KnownType { get; init; }
+
+    /// <summary>True for a reference written with its sign, <c>%T</c> or <c>@T</c> (the parser names it
+    /// <c>Viewing[T]</c> / <c>Modifying[T]</c>).</summary>
+    public bool IsReferenceSign { get; init; }
+
+    /// <summary>True for a generic type the source spells by its name with type arguments (<c>List[S64]</c>), so the
+    /// builder's own names for the references (<c>Viewing[T]</c>) can be told apart from a written <c>%T</c>.</summary>
+    public bool IsWrittenName { get; init; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)

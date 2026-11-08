@@ -728,7 +728,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
         }
 
         ReportShapeChange(guard: guard, attempt: attempt,
-            why: $"'{shown}' and '{guard.Shown}' are both tokens or shared handles on a {AliasInner(type: guard.Type)?.Name}, " +
+            why: $"'{shown}' and '{guard.Shown}' are both references or shared handles on a {AliasInner(type: guard.Type)?.Name}, " +
                  "so they may be the same one",
             location: location);
     }
@@ -804,7 +804,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 else if (path != null && MayBeSameContainer(operand: operand, path: path, guard: g))
                 {
                     string change = callee.Length == 0 ? $"pass '{shown}' to a routine value" : $"change '{shown}' through '{callee}'";
-                    string same = $"'{shown}' and '{g.Shown}' are both tokens or shared handles on a {AliasInner(type: g.Type)!.Name}, " +
+                    string same = $"'{shown}' and '{g.Shown}' are both references or shared handles on a {AliasInner(type: g.Type)!.Name}, " +
                                   "so they may be the same one";
                     if (g.Holder != null)
                     {
@@ -840,7 +840,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                         ? $"call '{shown}.{callee}()'"
                         : $"pass '{shown}' to '{callee}'";
                     ReportShapeChange(guard: g, attempt: attempt,
-                        why: $"'{g.Shown}' is a token on '{ShownPath(path: reached)}', and '{callee}' can add to or remove from it",
+                        why: $"'{g.Shown}' is a reference on '{ShownPath(path: reached)}', and '{callee}' can add to or remove from it",
                         location: call.Location);
                 }
             }
@@ -902,7 +902,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     string which = same
                         ? $"'{ShownPath(path: container)}'"
                         : $"'{ShownPath(path: container)}' ('{ShownPath(path: changed)}' and '{ShownPath(path: container)}' " +
-                          $"are both tokens or shared handles on a {b!.Name}, so they may be the same one)";
+                          $"are both references or shared handles on a {b!.Name}, so they may be the same one)";
                     report(code: SemanticDiagnosticCode.ReshapingDuringIteration,
                         message:
                         $"You hand '{callee.Name}' a lambda that {how} while '{callee.Name}' is working on the elements " +

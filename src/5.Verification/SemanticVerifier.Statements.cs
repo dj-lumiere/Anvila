@@ -1266,6 +1266,8 @@ public sealed partial class SemanticVerifier
             varType = ErrorTypeSymbol.Instance;
         }
 
+        varType = ReferenceForLocal(varDecl: varDecl, varType: varType);
+
         ReportProtocolValueType(type: varType, location: varDecl.Location, what: $"'{varDecl.Name}'");
         // A name the builder wrote (`__` first: the value a `when try` matches, a loop's walk) keeps no link of the
         // program's own.
@@ -1603,6 +1605,105 @@ public sealed partial class SemanticVerifier
                LookupTypeWithImports(name: boundName) is { Category: not TypeCategory.Protocol } underlying
             ? underlying
             : type;
+    }
+
+    /// <summary>
+    /// The reference a local with no type written takes in place of the entity its initializer names (a local with a
+    /// reference type written takes it in <see cref="ValidateVariableInitializer"/>). A local that names an entity
+    /// another name still holds (<c>var b = a</c>, <c>var c = h.inner</c>) is a write reference to it, or a read reference
+    /// where that place is reached read-only. The initializer is replaced by the reference. Returns the local's type.
+    /// </summary>
+    private TypeSymbol ReferenceForLocal(VariableDeclaration varDecl, TypeSymbol varType)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || varDecl.Initializer is not { } initializer || varDecl.IsGlobal ||
+            varDecl.Name.StartsWith(value: "__", comparisonType: StringComparison.Ordinal))
+        {
+            return varType;
+        }
+
+        TypeSymbol? target = varDecl.Type != null
+            ? null
+            : initializer.ResolvedType is EntityTypeSymbol entity && ChecksOwnershipHere &&
+              ReadsKeptEntity(value: initializer, includeVariables: true)
+                ? ReferenceTypeOver(target: entity, writes: !StartsReadOnly(place: initializer) &&
+                                                            RootVariable(place: initializer) is not { IsModifiable: false })
+                : null;
+        if (target == null || ImplicitReference(value: initializer, target: target) is not { } reference)
+        {
+            return varType;
+        }
+
+        varDecl.Initializer = reference;
+        return target;
+    }
+
+    /// <summary>The member variable <paramref name="name"/> of a value of <paramref name="type"/>, reached through a
+    /// reference too, or null.</summary>
+    private static MemberVariableInfo? MemberVariableOf(TypeSymbol? type, string name)
+    {
+        if (type is { BareName: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying, TypeArguments: [{ } reached] })
+        {
+            type = reached;
+        }
+
+        List<MemberVariableInfo>? members = type switch
+        {
+            EntityTypeSymbol entity => (entity.GenericDefinition ?? entity).MemberVariables,
+            RecordTypeSymbol record => (record.GenericDefinition ?? record).MemberVariables,
+            _ => null
+        };
+        return members?.FirstOrDefault(predicate: m => m.Name == name);
+    }
+
+    /// <summary>
+    /// Reports <c>none</c> given to a link written without <c>?</c> (<c>target: @Enemy</c>): such a link always names an
+    /// entity, and only a use after that entity ended fails.
+    /// </summary>
+    private void ReportNoneIntoRequiredLink(Expression value, MemberVariableInfo? member)
+    {
+        if (member is not { IsRequiredLink: true } || value is not LiteralExpression { LiteralType: Tokenizer.TokenType.NoneValue })
+        {
+            return;
+        }
+
+        string written = member.Type.TypeArguments is [{ } token] ? token.ShortTypeName : member.Type.ShortTypeName;
+        ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
+            message: $"You give 'none' to '{member.Name}', a `{written}` link written without `?`, which always names " +
+                     $"an entity. Give it the entity it points at, or declare it `{written}?` to let it be empty.",
+            location: value.Location);
+    }
+
+    /// <summary>The read (<c>%T</c>) or write (<c>@T</c>) reference type over <paramref name="target"/>, or null when the
+    /// library does not declare the reference types.</summary>
+    private TypeSymbol? ReferenceTypeOver(TypeSymbol target, bool writes)
+    {
+        return _registry.LookupType(name: writes ? Declaration.RuntimeContract.Modifying : Declaration.RuntimeContract.Viewing)
+            is { } definition
+            ? _registry.GetOrCreateResolution(genericDef: definition, typeArguments: [target])
+            : null;
+    }
+
+    /// <summary>
+    /// The reference <paramref name="value"/> becomes where a reference of <paramref name="target"/>'s type is
+    /// expected (a typed local, a name assigned, a result): the entity's own, a handle's, or a write reference narrowed
+    /// to a read one, written the same way an argument is (<see cref="ImplicitTokenArgument"/>). Null when the value
+    /// is already of that type or does not convert. <paramref name="entitiesOnly"/> leaves a value alone (a name that
+    /// holds a reference to a value is not pointed at another place by an assignment).
+    /// </summary>
+    private Expression? ImplicitReference(Expression value, TypeSymbol target, bool entitiesOnly = false)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || value.ResolvedType is not { } source || source is ErrorTypeSymbol ||
+            source.FullName == target.FullName ||
+            target.BareName is not (Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying) ||
+            value is StealExpression ||
+            entitiesOnly && source is not EntityTypeSymbol &&
+            source.BareName is not (Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed or
+                Declaration.RuntimeContract.Modifying))
+        {
+            return null;
+        }
+
+        return ImplicitTokenArgument(argExpr: value, argType: source, paramType: target);
     }
 
     /// <summary>
@@ -1954,6 +2055,14 @@ public sealed partial class SemanticVerifier
             ? InImportStateOf(file: assign.Location.FileName,
                 analyze: () => AnalyzeExpression(expression: assign.Value, expectedType: targetType))
             : AnalyzeExpression(expression: assign.Value, expectedType: targetType);
+        // A name that holds a reference takes the entity's own (`m = other` for `m: @Node`).
+        if (assign.Target is IdentifierExpression &&
+            ImplicitReference(value: assign.Value, target: targetType, entitiesOnly: true) is
+                { } reference)
+        {
+            assign.Value = reference;
+            valueType = reference.ResolvedType ?? targetType;
+        }
         if (narrowedBefore != null)
         {
             ForgetNarrowing(target: assign.Target);
@@ -2160,6 +2269,7 @@ public sealed partial class SemanticVerifier
         MemberExpression member)
     {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
+        ReportNoneIntoRequiredLink(value: assign.Value, member: MemberVariableOf(type: objectType, name: member.MemberName));
 
         ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: assign.Location);
         ReportWriteThroughReadOnlyPlace(member: member, objectType: objectType, location: assign.Location);
@@ -2468,12 +2578,16 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        if (isDestroyDecl && routine.IsDangerous)
+        // A written `destruct` is a wall only the builder calls (at the scope's end, at `drop x`), and it handles what
+        // the entity holds by hand, so it is written `dangerous`. Its body is a danger context already.
+        if (isDestroyDecl && !routine.IsDangerous && _registry.Rules.AllowsUnsafeCode &&
+            Builder.Frontends.Languages.OfFile(fileName: routine.Location.FileName) == Language.Revare)
         {
             ReportError(code: SemanticDiagnosticCode.DestroyNotDangerous,
-                message: "You write `destruct` here with `dangerous`. The builder is the one that calls it (at the " +
-                         "scope's end, or at `drop x`), so it is a plain routine: write `routine " +
-                         $"{routine.Name}()` (`migrate` rewrites it).",
+                message: "You write `destruct` here without `dangerous`. A written destruct is called only by the " +
+                         "builder (at the scope's end, or at `drop x`) and handles what the entity holds by hand: write " +
+                         "`dangerous` in front of `routine`. Its body is a danger context, so it needs no `danger` " +
+                         "block inside (`migrate --step references` rewrites it).",
                 location: routine.Location);
         }
     }
@@ -2485,6 +2599,13 @@ public sealed partial class SemanticVerifier
         {
             TypeSymbol initType =
                 AnalyzeExpression(expression: varDecl.Initializer, expectedType: varType);
+            // A local with a reference type takes the entity's own (`var m: %Node = node`).
+            if (ImplicitReference(value: varDecl.Initializer, target: varType) is { } reference)
+            {
+                varDecl.Initializer = reference;
+                initType = reference.ResolvedType ?? varType;
+            }
+
             if (!IsAssignableTo(source: initType, target: varType))
             {
                 if (varDecl.ReplacementOf is { } replaced)

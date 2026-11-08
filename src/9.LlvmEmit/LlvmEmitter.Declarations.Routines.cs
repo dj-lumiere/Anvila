@@ -803,7 +803,8 @@ public partial class LlvmEmitter
             // it is not an overload/disambiguation axis, so two routines never differ only by it. Keeping
             // it out of the mangled name also makes the symbol independent of paths that disagree on the
             // flag (a fresh cold compile vs a .pbrf warm restore), so both produce identical defines.
-            if (r.IsDangerous)
+            // Every written `destruct` is dangerous, so the mark tells no two of them apart and stays out of its name.
+            if (r.IsDangerous && r.Name != Declaration.RuntimeContract.Destroy)
             {
                 attrs.Add(item: "dangerous");
             }
