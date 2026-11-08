@@ -102,6 +102,23 @@ internal sealed partial class AstPrinter
     }
 
     /// <summary>
+    /// <paramref name="condition"/> as one line, the way it is written after <c>if</c>. Throws
+    /// <see cref="FormatRefusedException"/> for a shape the formatter does not print or one that would need several
+    /// lines.
+    /// </summary>
+    public string PrintCondition(Expression condition)
+    {
+        string text = Expr(expression: condition, context: ExprContext.Statement)
+           .Flat();
+        if (text.Contains(value: '\n'))
+        {
+            throw Refuse(at: condition.Location, reason: "a condition that needs several lines");
+        }
+
+        return text;
+    }
+
+    /// <summary>
     /// The top-level nodes in the order they were printed, so the round-trip check can compare the reparsed tree
     /// with the original in that order. Null until <see cref="Print"/> runs.
     /// </summary>

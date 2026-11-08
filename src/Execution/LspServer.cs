@@ -4432,15 +4432,16 @@ public static class LspServer
     }
 
     /// <summary>
-    /// <c>textDocument/codeAction</c>: quick-fixes for the diagnostics in range. Currently one — an
-    /// unused Bool-returning call (RV-W007) gets a "Prepend drop" edit. The structure takes more.
+    /// <c>textDocument/codeAction</c>: quick-fixes for the diagnostics in range (an unused Bool-returning call, RV-W007,
+    /// gets a "Prepend drop" edit), and the refactors that cut indentation for an <c>if</c> on the lines of the range
+    /// (<see cref="LspRefactors"/>).
     /// </summary>
     private static void HandleCodeAction(Stream stdout, JsonElement id, JsonElement root)
     {
         if (!root.TryGetProperty(propertyName: PropParams, value: out JsonElement p) ||
             !p.TryGetProperty(propertyName: PropTextDocument, value: out JsonElement td) ||
             !td.TryGetProperty(propertyName: "uri", value: out JsonElement uriEl) ||
-            !Docs.TryGetValue(key: uriEl.GetString() ?? "", value: out DocState? doc))
+            !Texts.ContainsKey(key: uriEl.GetString() ?? ""))
         {
             WriteResult(stdout: stdout, id: id, result: new List<object?>());
             return;
@@ -4459,7 +4460,65 @@ public static class LspServer
             }
         }
 
+        AddRefactorCodeActions(actions: actions, uri: uri, p: p);
         WriteResult(stdout: stdout, id: id, result: actions);
+    }
+
+    /// <summary>Adds the indentation refactors for the <c>if</c> statements on the lines of the request's range.</summary>
+    private static void AddRefactorCodeActions(List<object?> actions, string uri, JsonElement p)
+    {
+        if (!p.TryGetProperty(propertyName: PropRange, value: out JsonElement range) ||
+            !range.TryGetProperty(propertyName: PropStart, value: out JsonElement start) ||
+            !range.TryGetProperty(propertyName: "end", value: out JsonElement end) ||
+            !Texts.TryGetValue(key: uri, value: out string? text))
+        {
+            return;
+        }
+
+        SyntaxTree.Program? analyzed = Docs.TryGetValue(key: uri, value: out DocState? doc) &&
+                                       IsCurrentAnalysis(uri: uri, doc: doc)
+            ? doc.Program
+            : null;
+        int first = start.GetProperty(propertyName: "line")
+                         .GetInt32();
+        int last = end.GetProperty(propertyName: "line")
+                      .GetInt32();
+        foreach (LspRefactors.Refactor refactor in LspRefactors.Compute(text: text, fileName: UriToFileName(uri: uri),
+                     language: _profile.Language, firstLine: first, lastLine: last, analyzed: analyzed))
+        {
+            int lastLength = text.Split(separator: '\n')[refactor.EndLine]
+                                 .TrimEnd(trimChar: '\r')
+                                 .Length;
+            actions.Add(item: new Dictionary<string, object?>
+            {
+                [key: "title"] = refactor.Title,
+                [key: "kind"] = "refactor.rewrite",
+                [key: "edit"] = new Dictionary<string, object?>
+                {
+                    [key: "changes"] = new Dictionary<string, object?>
+                    {
+                        [key: uri] = new List<object?>
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                [key: PropRange] = new Dictionary<string, object?>
+                                {
+                                    [key: PropStart] = new Dictionary<string, object?>
+                                    {
+                                        [key: "line"] = refactor.StartLine, [key: PropCharacter] = 0
+                                    },
+                                    [key: "end"] = new Dictionary<string, object?>
+                                    {
+                                        [key: "line"] = refactor.EndLine, [key: PropCharacter] = lastLength
+                                    }
+                                },
+                                [key: "newText"] = refactor.NewText
+                            }
+                        }
+                    }
+                }
+            });
+        }
     }
 
     /// <summary>If <paramref name="diag"/> carries the fix its diagnostic proposes (in <c>data.fix</c>, see
