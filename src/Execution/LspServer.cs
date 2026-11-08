@@ -285,7 +285,7 @@ public static class LspServer
                                     [key: "completionProvider"] =
                                         new Dictionary<string, object?>
                                         {
-                                            [key: "triggerCharacters"] = new List<object?> { "." },
+                                            [key: "triggerCharacters"] = new List<object?> { ".", "#" },
                                             [key: "resolveProvider"] = true
                                         },
                                     [key: "signatureHelpProvider"] =
@@ -298,6 +298,10 @@ public static class LspServer
                                     [key: "workspaceSymbolProvider"] = true,
                                     [key: "inlayHintProvider"] = true,
                                     [key: "codeActionProvider"] = true,
+                                    [key: "documentOnTypeFormattingProvider"] = new Dictionary<string, object?>
+                                    {
+                                        [key: "firstTriggerCharacter"] = "#"
+                                    },
                                     [key: "documentFormattingProvider"] = true,
                                     [key: "semanticTokensProvider"] =
                                         new Dictionary<string, object?>
@@ -383,6 +387,9 @@ public static class LspServer
                         HandleInlayHint(stdout: stdout, id: id, root: root);
                         break;
 
+                    case "textDocument/onTypeFormatting":
+                        HandleOnTypeFormatting(stdout: stdout, id: id, root: root);
+                        break;
                     case "textDocument/codeAction":
                         HandleCodeAction(stdout: stdout, id: id, root: root);
                         break;
@@ -2335,6 +2342,18 @@ public static class LspServer
 
         var items = new List<Dictionary<string, object?>>();
         var seen = new HashSet<string>();
+        if (DocFrameCompletion(uri: uri, line0: line0, char0: char0) is { } frame)
+        {
+            items.Add(item: frame);
+            WriteResult(stdout: stdout,
+                id: id,
+                result: new Dictionary<string, object?>
+                {
+                    [key: "isIncomplete"] = false, [key: "items"] = items
+                });
+            return;
+        }
+
         PopulateCompletionItems(doc: doc,
             line0: line0,
             char0: char0,
@@ -2347,6 +2366,69 @@ public static class LspServer
             {
                 [key: "isIncomplete"] = false, [key: "items"] = items
             });
+    }
+
+    /// <summary>The <c>###</c> completion: a doc comment's frame as a snippet in place of the <c>###</c> the cursor
+    /// ends, when a declaration starts below it (see <see cref="LspDocComments"/>).</summary>
+    private static Dictionary<string, object?>? DocFrameCompletion(string uri, int line0, int char0)
+    {
+        if (!Texts.TryGetValue(key: uri, value: out string? text))
+        {
+            return null;
+        }
+
+        string[] lines = text.Replace(oldValue: "\r\n", newValue: "\n").Split(separator: '\n');
+        if (line0 >= lines.Length || lines[line0][..Math.Min(val1: char0, val2: lines[line0].Length)].Trim() != "###" ||
+            LspDocComments.Frame(text: text, fileName: UriToFileName(uri: uri), language: _profile.Language, line: line0,
+                snippet: true) is not { } frame)
+        {
+            return null;
+        }
+
+        return new Dictionary<string, object?>
+        {
+            [key: "label"] = "###",
+            [key: "kind"] = 14,
+            [key: "detail"] = Ko(english: "doc comment", korean: "문서 주석"),
+            [key: "sortText"] = "0###",
+            [key: "filterText"] = "###",
+            [key: "insertTextFormat"] = 2,
+            [key: "textEdit"] = new Dictionary<string, object?>
+            {
+                [key: PropRange] = LineRange(line0: line0, length: lines[line0].Length),
+                [key: "newText"] = frame
+            }
+        };
+    }
+
+    /// <summary>The on-type answer to a third <c>#</c>: a doc comment's frame in place of the line.</summary>
+    private static void HandleOnTypeFormatting(Stream stdout, JsonElement id, JsonElement root)
+    {
+        var edits = new List<object?>();
+        if (TryReadPosition(root: root, uri: out string uri, line0: out int line0, char0: out _) &&
+            root.GetProperty(propertyName: PropParams).TryGetProperty(propertyName: "ch", value: out JsonElement ch) &&
+            ch.GetString() == "#" && Texts.TryGetValue(key: uri, value: out string? text) &&
+            LspDocComments.Frame(text: text, fileName: UriToFileName(uri: uri), language: _profile.Language, line: line0,
+                snippet: false) is { } frame)
+        {
+            string[] lines = text.Replace(oldValue: "\r\n", newValue: "\n").Split(separator: '\n');
+            edits.Add(item: new Dictionary<string, object?>
+            {
+                [key: PropRange] = LineRange(line0: line0, length: lines[line0].Length), [key: "newText"] = frame
+            });
+        }
+
+        WriteResult(stdout: stdout, id: id, result: edits);
+    }
+
+    /// <summary>The range of the 0-based line <paramref name="line0"/>, <paramref name="length"/> characters long.</summary>
+    private static Dictionary<string, object?> LineRange(int line0, int length)
+    {
+        return new Dictionary<string, object?>
+        {
+            [key: PropStart] = new Dictionary<string, object?> { [key: "line"] = line0, [key: PropCharacter] = 0 },
+            [key: "end"] = new Dictionary<string, object?> { [key: "line"] = line0, [key: PropCharacter] = length }
+        };
     }
 
     /// <summary>Fills the completion item list based on context: realm qualifier → realm-only routines;
@@ -4636,8 +4718,11 @@ public static class LspServer
                          .GetInt32();
         int last = end.GetProperty(propertyName: "line")
                       .GetInt32();
+        List<LspRefactors.Refactor> docFixes = LspDocComments.Fixes(text: text, fileName: UriToFileName(uri: uri),
+            language: _profile.Language, first: first, last: last, korean: _korean);
         foreach (LspRefactors.Refactor refactor in LspRefactors.Compute(text: text, fileName: UriToFileName(uri: uri),
-                     language: _profile.Language, firstLine: first, lastLine: last, analyzed: analyzed))
+                     language: _profile.Language, firstLine: first, lastLine: last, analyzed: analyzed)
+                    .Concat(second: docFixes))
         {
             int lastLength = text.Split(separator: '\n')[refactor.EndLine]
                                  .TrimEnd(trimChar: '\r')
@@ -4645,7 +4730,7 @@ public static class LspServer
             actions.Add(item: new Dictionary<string, object?>
             {
                 [key: "title"] = refactor.Title,
-                [key: "kind"] = "refactor.rewrite",
+                [key: "kind"] = docFixes.Contains(item: refactor) ? "quickfix" : "refactor.rewrite",
                 [key: "edit"] = new Dictionary<string, object?>
                 {
                     [key: "changes"] = new Dictionary<string, object?>
