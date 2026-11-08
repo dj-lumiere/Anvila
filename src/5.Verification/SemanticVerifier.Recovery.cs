@@ -55,10 +55,21 @@ public sealed partial class SemanticVerifier
     /// token first, which fails with <c>StaleLinkError</c> once the entity ended (a <c>try</c> gives none then). The
     /// optional's own routines (<c>is_present</c>, <c>represent</c>) stay on the link.
     /// </summary>
-    private TypeSymbol? LinkTokenOfReceiver(TypeSymbol objectType, string name)
+    private TypeSymbol? LinkTokenOfReceiver(TypeSymbol objectType, string name, SourceLocation location)
     {
+        // A token on a link (a `for` element over a list of links) is used as the link: through a read token it is a
+        // read-only link.
+        if (objectType is { BareName: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying, TypeArguments: [{ } held] } &&
+            Declaration.ImplicitToken.IsLink(type: held))
+        {
+            objectType = objectType.BareName == Declaration.RuntimeContract.Viewing ? ReadOnlyLinkOf(type: held) ?? held : held;
+        }
+
+        // The optional's own member variables are secret to the library and the bodies the builder writes: in a
+        // program, `n.parent.value` is the entity's member variable.
         if (!_registry.Rules.ChecksAccessTokens || !Declaration.ImplicitToken.IsLink(type: objectType) ||
-            name is Declaration.RuntimeContract.Carrier.PresentField or Declaration.RuntimeContract.Carrier.ValueField ||
+            name is Declaration.RuntimeContract.Carrier.PresentField or Declaration.RuntimeContract.Carrier.ValueField &&
+            (_isInCompilerGeneratedBody || IsStdlibFile(filePath: location.FileName)) ||
             _registry.GetOwnMemberRoutinesResolved(type: objectType).Any(predicate: r => r.Name == name))
         {
             return null;

@@ -415,7 +415,7 @@ public sealed partial class TypeRegistry
             return ProtocolHoldsEntities(protocol: dispatched);
         }
 
-        // A zero-is-none link (`Stamped[T]`) names an entity in the pool and holds none: freely copyable.
+        // A zero-is-none record (`@none_is_zero`) names what it reaches by value and holds no entity: freely copyable.
         if (type is RecordTypeSymbol { NoneIsZero: true })
         {
             return false;

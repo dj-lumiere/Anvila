@@ -57,6 +57,9 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
     /// that can add to or remove from a container check first that no use of it is open.</summary>
     internal bool RuntimeShapeUses { get; private set; }
 
+    /// <summary>Where those loops are written.</summary>
+    internal HashSet<SourceLocation> RuntimeShapeLoops { get; } = [];
+
     /// <summary>A container whose shape must stay still: its access path, its type, and why.</summary>
     private sealed record ShapeGuard(string Path, TypeSymbol? Type, bool IsLoop)
     {
@@ -763,6 +766,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     // shape at run time, and the change fails with ReshapingWhileInUseError when it is the same one.
                     guardedLoop.ChecksShapeAtRunTime = true;
                     RuntimeShapeUses = true;
+                    RuntimeShapeLoops.Add(item: guardedLoop.Location);
                 }
                 else if (path != null && MayBeSameContainer(operand: operand, path: path, guard: g))
                 {

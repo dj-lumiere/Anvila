@@ -104,8 +104,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
                 $"Cannot store {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. A token lives in a routine's locals and is never stored in a field. " +
-                $"To keep a link to the entity, keep a `Stamped[{TokenTarget(type: type)}]` there (its `stamp()`, read back with `fetch()`, which fails once the entity has ended), " +
-                $"or keep the entity itself, or a manager's handle (`Retained[{TokenTarget(type: type)}]`).",
+                $"Keep the `{TokenTarget(type: type)}` itself there, or a manager's handle " +
+                $"(`Retained[{TokenTarget(type: type)}]`). Only a token on an entity can be kept as a link (`Modifying[T]?`).",
                 location: location);
             return;
         }
@@ -339,9 +339,9 @@ public sealed partial class SemanticVerifier
             message:
             $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a token, and a token can't be a type " +
             $"argument: the token points at the place `{target}` is in, and what holds the token could still use it " +
-            $"after that place is gone. Keep a `Stamped[{target}]` there instead (the entity's `stamp()`, read back with " +
-            $"`fetch()`, which fails once the entity has ended), keep each token in a variable of its own, or keep the " +
-            $"`{target}` itself in the container (`List[{target}]`), or under a manager (`Retained[{target}]`).",
+            $"after that place is gone. Keep each token in a variable of its own, or keep the `{target}` itself in the " +
+            $"container (`List[{target}]`), or under a manager (`Retained[{target}]`). Only a token on an entity can be " +
+            $"kept as a link (`Modifying[T]?`).",
             location: location);
     }
 
@@ -1112,6 +1112,12 @@ public sealed partial class SemanticVerifier
     private void ValidateMemberVariableWriteAccess(TypeSymbol objectType,
         string memberVariableName, SourceLocation location)
     {
+        // A write through a link (`w.target.value = 1`) writes the entity's member variable through its token.
+        if (LinkTokenOfReceiver(objectType: objectType, name: memberVariableName, location: location) is { } linkToken)
+        {
+            objectType = linkToken;
+        }
+
         if (TryUnwrapMarkerReceiver(type: objectType, innerType: out TypeSymbol targetType))
         {
             objectType = targetType;
@@ -1152,6 +1158,58 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Analyzes a call, then applies the inline-token source check (RV-S639).</summary>
+    /// <summary>The names the arms of a <c>when</c> over a link bound in the program's own routines.</summary>
+    private readonly HashSet<string> _linkArmTokens = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// A routine of the program handed a token taken from a link (<c>node.parent.rename()</c>, an arm's token passed
+    /// on) checks that token where it uses it (LinkLiveCheckPass), so it can fail: marked here, while the calls above it
+    /// are analyzed, so a <c>try</c> or <c>check</c> there receives the failure.
+    /// </summary>
+    private void NoteLinkTokenHandedOn(CallExpression call)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || call.ResolvedRoutine is not { } called)
+        {
+            return;
+        }
+
+        // A call through a token runs the token's forwarder of the entity's routine: both can fail.
+        var chain = new List<RoutineInfo> { called };
+        RoutineInfo routine = called;
+        while (routine.WrapperForwarderInnerMemberRoutine is { } inner)
+        {
+            routine = inner;
+            chain.Add(item: inner);
+        }
+
+        if (routine.Location?.FileName is not { } file || IsStdlibFile(filePath: file))
+        {
+            return;
+        }
+
+        bool handsLink = call.Callee is MemberExpression { TakesLink: true } ||
+                         call.Callee is MemberExpression { Object: var receiver } && FromLinkArm(expr: receiver) ||
+                         call.Arguments.Any(predicate: a => FromLinkArm(expr: a is NamedArgumentExpression n ? n.Value : a));
+        if (handsLink)
+        {
+            foreach (RoutineInfo step in chain)
+            {
+                step.HasThrow = true;
+                step.IsFailable = true;
+            }
+        }
+
+        bool FromLinkArm(Expression expr)
+        {
+            return expr switch
+            {
+                IdentifierExpression id => _linkArmTokens.Contains(item: id.Name),
+                MemberExpression member => member.TakesLink || FromLinkArm(expr: member.Object),
+                _ => false
+            };
+        }
+    }
+
     private TypeSymbol AnalyzeCallWithInlineTokens(CallExpression call, TypeSymbol? expectedType)
     {
         // Every pass over this call's arguments (overload resolution, then the per-parameter check) knows which
@@ -1160,6 +1218,7 @@ public sealed partial class SemanticVerifier
         try
         {
             TypeSymbol result = AnalyzeCallExpression(call: call, expectedType: expectedType);
+            NoteLinkTokenHandedOn(call: call);
             return result;
         }
         finally

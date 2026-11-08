@@ -139,6 +139,9 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // file's program when it is lowered).
         new AccessLoweringPass(registry: ctx.Registry).RunOnVariantBodies(ctx: ctx);
         new LambdaLiftingPass(ctx: ctx).RunOnVariantBodies();
+        // The variants of the program's routines keep links and check shapes as the routines do.
+        new LinkConversionPass(ctx: ctx).RunOnVariantBodies();
+        new RuntimeShapeUseLoweringPass(ctx: ctx).RunOnVariantBodies();
         ctx.Registry.CompilationRules.LowerFirstInVariantBodies(ctx: ctx);
         new VariantReturnLoweringPass(ctx: ctx).RunOnVariantBodies();
         new LiteralLoweringPass(ctx: ctx).RunOnVariantBodies();

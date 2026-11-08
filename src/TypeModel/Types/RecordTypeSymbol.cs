@@ -289,7 +289,7 @@ public class RecordTypeSymbol : TypeSymbol
 
     /// <summary>
     /// Whether this record is marked <c>@none_is_zero</c>: its all-zero value stands for none, so an <c>Optional</c> over
-    /// it is the record alone with no presence flag (<c>Stamped[T]?</c> is the 8-byte stamp).
+    /// it is the record alone with no presence flag.
     /// </summary>
     public bool NoneIsZero { get; set; }
 

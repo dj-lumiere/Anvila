@@ -19,11 +19,29 @@ namespace Builder.Lowering.Passes;
 internal sealed class RuntimeShapeUseLoweringPass : AstRewriter
 {
     private readonly TypeRegistry _registry;
+    private readonly PostprocessingContext _ctx;
     private int _uses;
 
     internal RuntimeShapeUseLoweringPass(PostprocessingContext ctx)
     {
         _registry = ctx.Registry;
+        _ctx = ctx;
+    }
+
+    /// <summary>Runs over the recovery variants' bodies of the program's own routines: a variant is made from its
+    /// routine's body before the shape check marked its loops, so a loop is found again by where it is written.</summary>
+    public void RunOnVariantBodies()
+    {
+        if (!_registry.RuntimeShapeUses)
+        {
+            return;
+        }
+
+        BodyDispatch.RunOnVariantBodies(registry: _registry, bodies: _ctx.VariantBodies,
+            lower: (_, body) => string.IsNullOrEmpty(value: body.Location.FileName) ||
+                                _registry.IsStandardLibraryFile(filePath: body.Location.FileName)
+                ? body
+                : VisitStatement(stmt: body));
     }
 
     /// <summary>Runs over the program's routine bodies.</summary>
@@ -60,7 +78,8 @@ internal sealed class RuntimeShapeUseLoweringPass : AstRewriter
                 }
             }
 
-            if (statement is LoopStatement { ChecksShapeAtRunTime: true, IteratorName: { } iterator } loop &&
+            if (statement is LoopStatement { IteratorName: { } iterator } loop &&
+                (loop.ChecksShapeAtRunTime || _registry.RuntimeShapeLoops.Contains(item: loop.Location)) &&
                 ContainerOf(iterator: iterator, preceding: block.Statements.Take(count: i)) is { } container &&
                 Call(receiver: container, name: RuntimeContract.ShapeUse.Begin) is { } begin)
             {

@@ -2277,9 +2277,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RV-S061 for <c>==</c> / <c>!=</c> on a <c>Stamped[E]</c>: a stamp names an entity, so two compare by identity
-    /// (<c>===</c> / <c>!==</c>, the same entity), and a stamp has no value equality and no hash. Returns whether it
-    /// reported one.
+    /// RV-S061 for <c>==</c> / <c>!=</c> on a link: a link names an entity, so two compare by identity (<c>===</c> /
+    /// <c>!==</c>, the same entity and slot generation), and a link has no value equality. Returns whether it reported
+    /// one.
     /// </summary>
     private bool ReportStampEquality(TypeSymbol left, TypeSymbol right, BinaryOperator op, SourceLocation location)
     {
@@ -2298,17 +2298,7 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        if (!IsStampOperand(type: left) && !IsStampOperand(type: right))
-        {
-            return false;
-        }
-
-        ReportError(code: SemanticDiagnosticCode.OrderingNotSupported,
-            message: $"'{op.ToStringRepresentation()}' compares two values, and a 'Stamped' names an entity. Ask whether " +
-                     $"two stamps name the same entity with '{(op == BinaryOperator.Equal ? "===" : "!==")}'. To group " +
-                     "entities in a 'Set' or a 'Dict', key them on a number your program gives each one.",
-            location: location);
-        return true;
+        return false;
     }
 
     /// <summary>

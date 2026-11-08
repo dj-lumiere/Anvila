@@ -890,7 +890,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
         // A call through a link is made on its token, taken first.
-        if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName) is { } linkToken)
+        if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName, location: member.Location) is { } linkToken)
         {
             member.TakesLink = true;
             objectType = linkToken;

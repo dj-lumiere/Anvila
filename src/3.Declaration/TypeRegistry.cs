@@ -785,6 +785,10 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool RuntimeShapeUses { get; set; }
 
+    /// <summary>Where the loops that open a use of their container's shape at run time are written, so the copies of
+    /// their routines' bodies (the recovery variants) open it too.</summary>
+    public HashSet<SourceLocation> RuntimeShapeLoops { get; } = [];
+
     /// <summary>Whether any entity type of the build is retroactive.</summary>
     public bool HasRetroactiveTypes => RetroactiveTypes.Count > 0;
 
@@ -3206,8 +3210,8 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// What a wrapper forwarder returns when the routine it forwards to returns <paramref name="innerReturn"/>. Nothing
-    /// that changes comes out of a <c>Viewing</c>: a write token the routine hands out (<c>Stamped[T].fetch()</c>
-    /// through a viewed stamp) is handed out as a read token of the same value.
+    /// that changes comes out of a <c>Viewing</c>: a write token the routine hands out through a viewed value is handed
+    /// out as a read token of the same value.
     /// </summary>
     public TypeSymbol? ForwardedReturnType(TypeSymbol wrapper, TypeSymbol? innerReturn)
     {

@@ -826,6 +826,7 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
+            _linkArmTokens.Add(item: bound);
             SourceLocation bodyAt = clause.Body.Location;
             string useName = $"__link_use_{bodyAt.Line}_{bodyAt.Column}";
             if (clause.Body is BlockStatement { Statements: [DeclarationStatement { Declaration: VariableDeclaration first }, ..] } &&

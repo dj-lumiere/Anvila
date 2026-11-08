@@ -7,17 +7,16 @@ namespace Builder.Verification;
 
 /// <summary>
 /// What a <c>Viewing</c> promises: nothing reachable from it can be changed, including an entity reached through a
-/// stamp or a manager handle. Two questions follow. Does a value hold a way to change something
+/// manager handle. Two questions follow. Does a value hold a way to change something
 /// (<see cref="WayToChange"/>), and is an expression read from a viewed place (<see cref="IsViewed"/>)? A value that
 /// holds a way to change is read in place from a view and never copied out of it.
 /// </summary>
 internal static class ViewedValues
 {
-    /// <summary>The type names whose values are a way to change an entity: a stamp, the manager handles and a write
+    /// <summary>The type names whose values are a way to change an entity: the manager handles and a write
     /// token.</summary>
     private static readonly IReadOnlySet<string> WayNames = new HashSet<string>(comparer: StringComparer.Ordinal)
     {
-        RuntimeContract.StampedTypeName,
         RuntimeContract.Retained,
         RuntimeContract.Tracked,
         RuntimeContract.Guarded,
@@ -27,7 +26,7 @@ internal static class ViewedValues
 
     /// <summary>
     /// The part of <paramref name="type"/> that is a way to change an entity, as the source would name it:
-    /// <c>Stamped[Node]</c> for a stamp itself, <c>target: Stamped[Node]</c> for the member variable of a record, tuple
+    /// <c>Retained[Node]</c> for a handle itself, <c>target: Retained[Node]</c> for the member variable of a record, tuple
     /// or variant that holds one (found through nested members, the instance's own types). Null when the value holds
     /// none. An entity is never copied, so it is not looked into.
     /// </summary>
@@ -88,7 +87,7 @@ internal static class ViewedValues
     /// <summary>
     /// Whether the <c>me</c> of <paramref name="routine"/> is a viewed place: a <c>@readonly</c> member routine
     /// promises to change nothing reachable from <c>me</c>, as a <c>Viewing</c> does. The routines of a handle type
-    /// itself (<c>Retained.share</c>, <c>Stamped.fetch</c>) are the verbs that give a handle out, so their <c>me</c> is
+    /// itself (<c>Retained.share</c>) are the verbs that give a handle out, so their <c>me</c> is
     /// the handle and not a place a handle is reached through.
     /// </summary>
     internal static bool MeIsViewed(RoutineInfo? routine)

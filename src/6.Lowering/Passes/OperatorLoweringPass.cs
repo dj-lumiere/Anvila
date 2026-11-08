@@ -1488,44 +1488,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// operands normally. Extracted from <see cref="LowerBinaryExpression"/>.
     /// </summary>
     /// <summary>
-    /// <c>a === b</c> on two stamps: <c>a.same_entity(you: b)</c>, and <c>a !== b</c>: <c>a.other_entity(you: b)</c>.
-    /// A stamp is a value (a slot and its generation), not an address, so its two fields are compared. A token on a
-    /// stamp (a <c>for</c> element) is read by TokenReadLoweringPass first. Two <c>Stamped[T]?</c> call the
-    /// Optional's own pair (both none, or the same entity): compared as an address they matched whenever both were
-    /// present. Null for any other operands.
-    /// </summary>
-    private Expression? LowerStampIdentity(BinaryExpression bin, Expression left, Expression right)
-    {
-        string routineName = bin.Operator == BinaryOperator.IdentityEqual
-            ? Declaration.RuntimeContract.StampSameEntity
-            : Declaration.RuntimeContract.StampOtherEntity;
-        if (left.ResolvedType is not { } stampType || !IsStampOrOptionalStamp(type: stampType) ||
-            ctx.Registry.LookupMemberRoutineOverload(type: stampType,
-                memberRoutineName: routineName,
-                argTypes: [right.ResolvedType ?? stampType]) is not { } compare)
-        {
-            return null;
-        }
-
-        string paramName = compare.Parameters.FirstOrDefault(predicate: p => p.Name != "me")?.Name ?? "you";
-        return new CallExpression(
-            Callee: new MemberExpression(Object: left, MemberName: routineName, Location: bin.Location),
-            Arguments:
-            [
-                new NamedArgumentExpression(Name: paramName, Value: right, Location: right.Location)
-                {
-                    ResolvedType = right.ResolvedType
-                }
-            ],
-            Location: bin.Location)
-        {
-            ResolvedRoutine = compare,
-            ResolvedType = bin.ResolvedType,
-            LoweringKind = ClassifyCallLoweringKind(routine: compare, receiverType: stampType)
-        };
-    }
-
-    /// <summary>
     /// <c>a === b</c> on two links: <c>LLVM::link_same[E](a:, b:)</c>, and <c>a !== b</c>: <c>LLVM::link_other</c>. A
     /// link is the entity's address and its slot generation, so a link to an entity that ended is not the same as a
     /// link to the entity now in its slot. A token on a link (a <c>for</c> element) was read by TokenReadLoweringPass.
@@ -1562,14 +1524,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         };
     }
 
-    private static bool IsStampOrOptionalStamp(TypeSymbol type)
-    {
-        return type.BareName == Declaration.RuntimeContract.StampedTypeName ||
-               type.BareName == Declaration.RuntimeContract.OptionalCarrier &&
-               type.TypeArguments is { Count: 1 } arguments &&
-               arguments[index: 0].BareName == Declaration.RuntimeContract.StampedTypeName;
-    }
-
     private Expression LowerNonOverloadableBinary(Expression expr, BinaryExpression bin)
     {
         if (bin.Operator == BinaryOperator.Assign)
@@ -1601,11 +1555,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return sameLink;
         }
 
-        if (bin.Operator is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual &&
-            LowerStampIdentity(bin: bin, left: left0, right: right0) is { } sameEntity)
-        {
-            return sameEntity;
-        }
 
         return ReferenceEquals(objA: left0, objB: bin.Left) &&
                ReferenceEquals(objA: right0, objB: bin.Right)

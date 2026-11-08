@@ -27,10 +27,26 @@ internal static class LinkTaking
     /// </summary>
     public static CallExpression? Take(Expression link, TypeRegistry registry)
     {
-        if (link.ResolvedType is not { TypeArguments: [{ } token] } linkType ||
-            token.TypeArguments is not [{ } entity])
+        TypeSymbol? linkType = link.ResolvedType;
+        bool throughReadToken = linkType?.BareName == RuntimeContract.Viewing;
+        // A token on a link (a `for` element over a list of links) is read as the link it is on.
+        if (ReadTokenOnLink(value: link, registry: registry) is { } read)
+        {
+            link = read;
+            linkType = read.ResolvedType;
+        }
+
+        if (linkType is not { TypeArguments: [{ } token] } || token.TypeArguments is not [{ } entity])
         {
             return null;
+        }
+
+        // Through a read token on a write link, the token taken is a read token.
+        if (throughReadToken && token.BareName == RuntimeContract.Modifying &&
+            registry.LookupType(name: RuntimeContract.OptionalCarrier) is { } optionalDefinition)
+        {
+            token = registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Viewing, innerType: entity, isReadOnly: true);
+            linkType = registry.GetOrCreateResolution(genericDef: optionalDefinition, typeArguments: [token]);
         }
 
         string name = token.BareName == RuntimeContract.Viewing
@@ -50,6 +66,29 @@ internal static class LinkTaking
             ResolvedRoutine = instance,
             ResolvedType = token,
             LoweringKind = CallLoweringKind.DirectRoutine,
+            IsSynthesizedLowering = true
+        };
+    }
+
+    /// <summary>The link a token on a link reaches (<c>at.access()</c>, with <c>at</c> a <c>for</c> element over a list of
+    /// links), or null for any other value.</summary>
+    public static CallExpression? ReadTokenOnLink(Expression value, TypeRegistry registry)
+    {
+        if (value.ResolvedType is not { BareName: RuntimeContract.Viewing or RuntimeContract.Modifying, TypeArguments: [{ } held] } tokenOnLink ||
+            !ImplicitToken.IsLink(type: held) ||
+            registry.LookupMemberRoutine(type: tokenOnLink, memberRoutineName: RuntimeContract.Access) is not { } access)
+        {
+            return null;
+        }
+
+        return new CallExpression(
+            Callee: new MemberExpression(Object: value, MemberName: RuntimeContract.Access, Location: value.Location),
+            Arguments: [],
+            Location: value.Location)
+        {
+            ResolvedRoutine = access,
+            ResolvedType = held,
+            LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: access),
             IsSynthesizedLowering = true
         };
     }

@@ -459,9 +459,7 @@ internal sealed class ProtocolConformanceAnalyzer
             RecordTypeSymbol record => !Wrappers.IsWrapperType(type: record) &&
                                        (record.GenericDefinition?.Name ?? record.Name) is var name &&
                                        !RuntimeContract.WrapperTypes.Contains(item: name) &&
-                                       // A stamp names an entity: two compare by identity (`===`), never `==`,
-                                       // and it is no Set or Dict key.
-                                       name is not (RuntimeContract.Unbroken or RuntimeContract.StampedTypeName),
+                                       name is not RuntimeContract.Unbroken,
             EntityTypeSymbol => true,
             _ => false
         };

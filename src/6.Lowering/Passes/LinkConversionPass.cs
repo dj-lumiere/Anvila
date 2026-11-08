@@ -15,10 +15,24 @@ namespace Builder.Lowering.Passes;
 internal sealed class LinkConversionPass : AstRewriter
 {
     private readonly TypeRegistry _registry;
+    private readonly PostprocessingContext _ctx;
 
     internal LinkConversionPass(PostprocessingContext ctx)
     {
         _registry = ctx.Registry;
+        _ctx = ctx;
+    }
+
+    /// <summary>Runs over the recovery variants' bodies, made from the routines' bodies before they were lowered.</summary>
+    public void RunOnVariantBodies()
+    {
+        if (!_registry.Rules.ChecksAccessTokens)
+        {
+            return;
+        }
+
+        BodyDispatch.RunOnVariantBodies(registry: _registry, bodies: _ctx.VariantBodies,
+            lower: (_, body) => VisitStatement(stmt: body));
     }
 
     /// <summary>Runs over the program's routine bodies.</summary>
@@ -33,6 +47,12 @@ internal sealed class LinkConversionPass : AstRewriter
     /// </summary>
     private Expression Convert(Expression value, TypeSymbol? target, bool wrap = false)
     {
+        // A token on a link (a `for` element over a list of links) given where a link is kept hands over the link.
+        if (target != null && ImplicitToken.IsLink(type: target) && LinkTaking.ReadTokenOnLink(value: value, registry: _registry) is { } read)
+        {
+            return read;
+        }
+
         Expression token = MakeToken(value: value, target: target);
         // A link kept through a call or a subscript (`a.outs[k] = b`, `xs.add_last(value: b)`) is given the token as
         // its `Optional`, so its generation is taken here: the routine's own parameter is a type parameter.
@@ -261,7 +281,9 @@ internal sealed class LinkConversionPass : AstRewriter
     protected override Expression VisitCall(CallExpression e)
     {
         Expression visited = base.VisitCall(e: e);
-        if (visited is not CallExpression { ResolvedRoutine: { } routine } call)
+        // The take of a link's token is handed the link itself (or a token on it, read later), never a new link.
+        if (visited is not CallExpression { ResolvedRoutine: { } routine } call ||
+            (routine.GenericDefinition ?? routine).Name is RuntimeContract.TakeModifyingLink or RuntimeContract.TakeViewingLink)
         {
             return visited;
         }
@@ -325,6 +347,15 @@ internal sealed class LinkConversionPass : AstRewriter
         if (visited is not CreatorExpression creator || creator.ResolvedType is not { } made)
         {
             return visited;
+        }
+
+        // A link written around a token on a link (`Creature(parent: at)`, `at` a `for` element over a list of links)
+        // is that link itself.
+        if (ImplicitToken.IsLink(type: made) &&
+            creator.MemberVariables.FirstOrDefault(predicate: m => m.Name == RuntimeContract.Carrier.ValueField).Value is { } held &&
+            LinkTaking.ReadTokenOnLink(value: held, registry: _registry) is { } read)
+        {
+            return read;
         }
 
         List<MemberVariableInfo>? members = made switch

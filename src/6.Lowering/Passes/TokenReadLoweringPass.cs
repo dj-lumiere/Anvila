@@ -191,7 +191,7 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
     /// <summary>
     /// A construction takes each member variable's value as the member variable's type wants it: a token on a
     /// record given for a member that is not a token (<c>Creature(parent: at)</c> with <c>at</c> a <c>for</c>
-    /// element over a <c>List[Stamped[Creature]]</c> and <c>parent: Stamped[Creature]?</c>) is read through, so the
+    /// element over a <c>List[Modifying[Creature]?]</c> and <c>parent: Modifying[Creature]?</c>) is read through, so the
     /// member keeps the value and not the token's address.
     /// </summary>
     protected override Expression VisitCreator(CreatorExpression e)

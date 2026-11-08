@@ -746,7 +746,7 @@ public sealed partial class SemanticVerifier
     {
         return type is EntityTypeSymbol || type.BareName == Declaration.RuntimeContract.Addr ||
                Declaration.RuntimeContract.IdentityComparableWrapperTypes.Contains(item: type.BareName) ||
-               IsStampOperand(type: type) || IsLinkOperand(type: type);
+               IsLinkOperand(type: type);
     }
 
     /// <summary>Whether an identity operand is a link (<c>Modifying[E]?</c> / <c>Viewing[E]?</c> kept in a place), or a
@@ -757,16 +757,6 @@ public sealed partial class SemanticVerifier
         return Declaration.ImplicitToken.IsLink(type: type) ||
                type?.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
                type.TypeArguments is [{ } held] && Declaration.ImplicitToken.IsLink(type: held);
-    }
-
-    /// <summary>Whether an identity operand is a <c>Stamped[E]</c>, or a token on one (a <c>for</c> element over a list of
-    /// stamps): a link to an entity, which <c>===</c> compares by the entity it names.</summary>
-    internal static bool IsStampOperand(TypeSymbol? type)
-    {
-        return type?.BareName == Declaration.RuntimeContract.StampedTypeName ||
-               type?.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying or
-                   Declaration.RuntimeContract.OptionalCarrier &&
-               type.TypeArguments is [{ BareName: Declaration.RuntimeContract.StampedTypeName }];
     }
 
     /// <summary>Reports RV-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>

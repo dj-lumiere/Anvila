@@ -396,10 +396,6 @@ public static class RuntimeContract
     /// <remarks>Sites: BuilderInfoProvider, BuilderQueryInliningPass, GenericAstRewriter.</remarks>
     public const string DataSize = "data_size";
 
-    /// <summary>The standard library's <c>Stamped[T]</c> (System/Memory): a link to an entity in the <c>PoolManager</c>.</summary>
-    /// <remarks>Sites: SemanticVerifier.Expressions (IsStampOperand), ViewedValues.</remarks>
-    public const string StampedTypeName = "Stamped";
-
     /// <summary>The type <c>f.to[Work](...)</c> gives: concurrent work a verb starts and a collecting verb waits for.</summary>
     public const string WorkTypeName = "Work";
 
@@ -407,6 +403,11 @@ public static class RuntimeContract
     /// token taken from a link (a <c>Modifying[T]?</c> / <c>Viewing[T]?</c> kept in a place) is in use.</summary>
     /// <remarks>Sites: SemanticVerifier (the arms of a <c>when</c> over a link).</remarks>
     public const string LinkUseBegin = "begin_link_use";
+
+    /// <summary>Link.rvr: <c>T.require_live()</c>, put before a statement that uses a token a link may have given, which
+    /// fails with <c>EntityEndedError</c> once the entity ended.</summary>
+    /// <remarks>Sites: LinkLiveCheckPass.</remarks>
+    public const string RequireLive = "require_live";
 
     /// <summary>Link.rvr: <c>take_modifying_link(link:)</c>, the token a link holds for a use that does not take the link
     /// by <c>when</c> (<c>node.parent.id</c>), failing with <c>StaleLinkError</c> once the entity ended.</summary>
@@ -451,15 +452,6 @@ public static class RuntimeContract
         public const string Other = "link_other";
     }
 
-    /// <summary><c>Stamped[T].same_entity</c> (Stamped.rvr): what <c>a === b</c> on two stamps runs, the same slot and
-    /// generation. A stamp is a value of eight bytes, so the builder compares both fields instead of one address.</summary>
-    /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
-    public const string StampSameEntity = "same_entity";
-
-    /// <summary><c>Stamped[T].other_entity</c> (Stamped.rvr): what <c>a !== b</c> on two stamps runs.</summary>
-    /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
-    public const string StampOtherEntity = "other_entity";
-
     /// <summary>BuilderQuery: whether a value of the type holds a handle to a shared entity (<c>Roamed[E]</c>).</summary>
     public const string ReachesEntity = "reaches_entity";
 
@@ -472,7 +464,7 @@ public static class RuntimeContract
     public const string AdmitStoredInto = "admit_stored_into";
 
     /// <summary>BuilderQuery: the bytes of an entity's block (its member variables, aligned), -1 for a type that is no
-    /// entity. <c>PoolManager.add</c> copies that many bytes into a slot.</summary>
+    /// entity. A retroactive entity's slot holds that many bytes after its header.</summary>
     public const string BlockSize = "block_size";
 
     /// <summary><c>crash_message()</c> on error types — extracts the diagnostic string on the throw path.</summary>

@@ -542,6 +542,7 @@ public sealed partial class SemanticVerifier
             if (_variantBaseBodiesAnalyzed.Add(item: baseRoutine.RegistryKey))
             {
                 AnalyzeCompilerGeneratedBody(routineInfo: baseRoutine, body: baseBody);
+                _linkLiveChecks?.InsertInto(routine: baseRoutine, body: baseBody);
             }
 
             // A call written with type arguments (`x.to[U8]()`) is a plain call once analyzed: lower it so the

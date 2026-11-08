@@ -308,9 +308,8 @@ public sealed partial class SemanticVerifier
                 destructBody.Statements.Insert(index: 0, item: HollowGuard(location: destructBody.Location));
             }
 
-            // An entity of a retroactive type (a link to its type is kept somewhere) ends in two steps: its slot's
-            // generation goes up first, and the rest waits while a token taken from a link is in use. For any other
-            // type `begin_entity_end()` is true and the guard folds away.
+            // An entity of a retroactive type (a link to its type is kept somewhere) marks its slot ended first, so every
+            // link to it reads as none. For any other type `note_entity_end()` does nothing.
             if (routineInfo.Name == "destruct" &&
                 !(destructBody.Statements.Count > 1 && IsEntityEndGuard(statement: destructBody.Statements[index: 1])))
             {
@@ -2348,41 +2347,32 @@ public sealed partial class SemanticVerifier
             Location: location);
     }
 
-    /// <summary>The statement <c>if not me.begin_entity_end() then return</c> (Link.rvr): a retroactive entity's destruct
-    /// waits while a token taken from a link to it is in use.</summary>
-    private static IfStatement EntityEndGuard(SourceLocation location)
+    /// <summary>The statement <c>me.note_entity_end()</c> (Link.rvr): a retroactive entity's slot is marked ended first,
+    /// so every link to it reads as none while its destruct runs.</summary>
+    private static ExpressionStatement EntityEndGuard(SourceLocation location)
     {
-        var begins = new CallExpression(
+        var notes = new CallExpression(
             Callee: new MemberExpression(Object: new IdentifierExpression(Name: "me", Location: location),
                 MemberName: BeginEntityEndName,
                 Location: location),
             Arguments: [],
             Location: location) { IsSynthesizedLowering = true };
-        return new IfStatement(
-            Condition: new UnaryExpression(Operator: UnaryOperator.Not, Operand: begins, Location: location),
-            ThenStatement: new BlockStatement(Statements: [new ReturnStatement(Value: null, Location: location)],
-                Location: location),
-            ElseStatement: null,
-            Location: location);
+        return new ExpressionStatement(Expression: notes, Location: location);
     }
 
-    /// <summary>Whether <paramref name="statement"/> is the guard <see cref="EntityEndGuard"/> makes.</summary>
+    /// <summary>Whether <paramref name="statement"/> is the statement <see cref="EntityEndGuard"/> makes.</summary>
     private static bool IsEntityEndGuard(Statement statement)
     {
-        return statement is IfStatement
+        return statement is ExpressionStatement
         {
-            ElseStatement: null,
-            Condition: UnaryExpression
+            Expression: CallExpression
             {
-                Operand: CallExpression
-                {
-                    Callee: MemberExpression { MemberName: BeginEntityEndName, Object: IdentifierExpression { Name: "me" } }
-                }
+                Callee: MemberExpression { MemberName: BeginEntityEndName, Object: IdentifierExpression { Name: "me" } }
             }
         };
     }
 
-    private const string BeginEntityEndName = "begin_entity_end";
+    private const string BeginEntityEndName = "note_entity_end";
 
     /// <summary>The routine that gives back an entity's box (Link.rvr): the heap block, or a retroactive entity's slot.</summary>
     private const string GiveBackEntityBoxName = "give_back_entity_box";

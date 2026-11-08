@@ -194,7 +194,7 @@ public sealed partial class SemanticVerifier
 
         // A read through a link is made on its token, taken first.
         member.TakesLink = false;
-        if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName) is { } linkToken)
+        if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName, location: member.Location) is { } linkToken)
         {
             member.TakesLink = true;
             objectType = linkToken;
@@ -1701,9 +1701,9 @@ public sealed partial class SemanticVerifier
             return type;
         }
 
-        // A type built with type arguments and member-wise values (`Stamped[Node](slot: 0, generation: 0)`) obeys the
-        // same secrecy as one built without them: its secret member variables are filled only by its own module,
-        // so a value that must not be forged (a stamp is never empty) comes only from the type's creators.
+        // A type built with type arguments and member-wise values (`Box[S64](held: 0)`) obeys the same secrecy as one
+        // built without them: its secret member variables are filled only by its own module, so a value that must
+        // not be forged comes only from the type's creators.
         ValidateMemberwiseConstructionAccess(type: type,
             arguments: creator.MemberVariables
                               .Select(selector: mv => (Expression)new NamedArgumentExpression(Name: mv.Name,

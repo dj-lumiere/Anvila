@@ -947,7 +947,7 @@ public enum SemanticDiagnosticCode
     /// goes where the type is expected, a value converts with <c>x.to[T]()</c>.</summary>
     NumberBuiltFromBits = 655,
 
-    /// <summary>A value that holds a way to change an entity (a <c>Stamped</c>, a manager handle, a write token, or a
+    /// <summary>A value that holds a way to change an entity (a manager handle, a write token, or a
     /// record, tuple or variant with such a member variable) copied out of a <c>Viewing</c>. A view promises that
     /// nothing reachable from it can be changed, so such a value is read in place there.</summary>
     ViewedValueHoldsWayToChange = 657,
