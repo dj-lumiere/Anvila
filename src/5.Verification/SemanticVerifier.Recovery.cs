@@ -49,6 +49,24 @@ public sealed partial class SemanticVerifier
         return payload;
     }
 
+    /// <summary>
+    /// The token a link receiver gives a member read or call that does not take the link by <c>when</c>
+    /// (<c>node.parent.id</c>, <c>try node.parent.rename()</c>), or null for any other receiver. The builder takes the
+    /// token first, which fails with <c>StaleLinkError</c> once the entity ended (a <c>try</c> gives none then). The
+    /// optional's own routines (<c>is_present</c>, <c>represent</c>) stay on the link.
+    /// </summary>
+    private TypeSymbol? LinkTokenOfReceiver(TypeSymbol objectType, string name)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || !Declaration.ImplicitToken.IsLink(type: objectType) ||
+            name is Declaration.RuntimeContract.Carrier.PresentField or Declaration.RuntimeContract.Carrier.ValueField ||
+            _registry.GetOwnMemberRoutinesResolved(type: objectType).Any(predicate: r => r.Name == name))
+        {
+            return null;
+        }
+
+        return objectType.TypeArguments![index: 0];
+    }
+
     /// <summary>Prefix for hoisted per-sub-call temporaries in a composition base body.</summary>
     private const string RecoveryTempPrefix = "__rc_t";
 
@@ -709,6 +727,31 @@ public sealed partial class SemanticVerifier
 
         /// <summary>Hoists a resolved failable call into a fresh <c>var __rc_tN = call</c> and returns a
         /// reference to the temp (carrying the call's result type).</summary>
+        /// <summary>
+        /// A member read or call through a link (<c>try node.parent.id</c>) is made on the token taken first: the
+        /// take fails with <c>StaleLinkError</c> once the entity ended, which the keyword receives, and a use kept
+        /// next to it makes the entity's end wait while the token is used.
+        /// </summary>
+        protected override Expression VisitMember(MemberExpression e)
+        {
+            Expression rewritten = base.VisitMember(e: e);
+            if (rewritten is not MemberExpression { TakesLink: true } member ||
+                LinkTaking.Take(link: member.Object, registry: registry) is not { } take)
+            {
+                return rewritten;
+            }
+
+            Expression token = HoistFailable(call: take);
+            if (token is IdentifierExpression { Name: var tokenName } &&
+                LinkTaking.BeginUse(tokenName: tokenName, token: take.ResolvedType!, location: member.Location,
+                    registry: registry) is { } begin)
+            {
+                Hoisted.Add(item: LinkTaking.Local(name: $"{RecoveryTempPrefix}{_seq++}", value: begin));
+            }
+
+            return member with { Object = token, TakesLink = false };
+        }
+
         private Expression HoistFailable(CallExpression call)
         {
             string tempName = $"{RecoveryTempPrefix}{_seq++}";

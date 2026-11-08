@@ -651,6 +651,14 @@ public sealed partial class TypeRegistry
     /// module declares, or finds a library protocol of the same name.</param>
     internal bool TypeObeysProtocol(TypeSymbol type, string protocolName, TypeSymbol? resolvedProtocol = null)
     {
+        // A link compares and hashes by identity, the entity it names and its slot generation (Link.rvr).
+        // A token on a retroactive entity hashes as part of its link (`Optional[T].hash` asks it of its `T`).
+        if (protocolName is "Equatable" or "Hashable" && ImplicitToken.IsLink(type: type) ||
+            protocolName == "Hashable" && ImplicitToken.IsLinkToken(type: type))
+        {
+            return true;
+        }
+
         // A stored value of a protocol obeys that protocol and each protocol it obeys: a call of one of their routines
         // on it dispatches to the value's own type.
         if (DispatchedProtocol(type: type) is { } dispatched &&

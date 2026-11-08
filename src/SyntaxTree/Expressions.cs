@@ -728,6 +728,14 @@ public record MemberExpression(Expression Object, string MemberName, SourceLocat
     public bool UnwrapsOptionalReceiver { get; set; }
 
     /// <summary>
+    /// Set by analysis on a member read or call whose receiver is a link (<c>node.parent.id</c> with
+    /// <c>parent: Modifying[Node]?</c>) used without taking it by <c>when</c>: the member is bound on the token, and the
+    /// builder takes the token first (<c>take_modifying_link</c>), which fails with <c>StaleLinkError</c> once the entity
+    /// ended. Under <c>try</c> that failure gives none.
+    /// </summary>
+    public bool TakesLink { get; set; }
+
+    /// <summary>
     /// Set by analysis on a field read a check narrowed from a carrier (<c>info.returns</c> after
     /// <c>if info.returns is None</c> leaves): the declared carrier type. <see cref="Expression.ResolvedType"/> is the
     /// payload, and lowering reads the payload out of the field.

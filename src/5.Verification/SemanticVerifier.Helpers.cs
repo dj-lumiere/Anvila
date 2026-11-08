@@ -2283,8 +2283,22 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private bool ReportStampEquality(TypeSymbol left, TypeSymbol right, BinaryOperator op, SourceLocation location)
     {
-        if (op is not (BinaryOperator.Equal or BinaryOperator.NotEqual) ||
-            !IsStampOperand(type: left) && !IsStampOperand(type: right))
+        if (op is not (BinaryOperator.Equal or BinaryOperator.NotEqual))
+        {
+            return false;
+        }
+
+        if (IsLinkOperand(type: left) || IsLinkOperand(type: right))
+        {
+            ReportError(code: SemanticDiagnosticCode.OrderingNotSupported,
+                message: $"'{op.ToStringRepresentation()}' compares two values, and a link names an entity. Ask whether " +
+                         $"two links name the same entity with '{(op == BinaryOperator.Equal ? "===" : "!==")}'. A link " +
+                         "to an entity that ended is not the same as a link to the entity now in its place.",
+                location: location);
+            return true;
+        }
+
+        if (!IsStampOperand(type: left) && !IsStampOperand(type: right))
         {
             return false;
         }

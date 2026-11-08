@@ -2806,6 +2806,13 @@ internal static class GenericAstRewriter
                     : TokenType.False,
                 Location: location) { ResolvedType = boolType },
 
+            RuntimeContract.IsLinkToken when boolType != null => new LiteralExpression(
+                Value: ImplicitToken.IsLinkToken(type: typeInfo),
+                LiteralType: ImplicitToken.IsLinkToken(type: typeInfo)
+                    ? TokenType.True
+                    : TokenType.False,
+                Location: location) { ResolvedType = boolType },
+
             RuntimeContract.IsRetroactive when boolType != null => new LiteralExpression(
                 Value: typeInfo is EntityTypeSymbol { IsRetroactive: true },
                 LiteralType: typeInfo is EntityTypeSymbol { IsRetroactive: true }
@@ -3993,7 +4000,11 @@ internal static class GenericAstRewriter
                 Location: negLit.Location) { ResolvedType = negLit.ResolvedType };
         }
 
-        if (ctx.ActiveExpandHandle != null && cond is LiteralExpression { Value: bool taken })
+        // A condition that folded to a constant only now that the type parameters are bound (a builder query such as
+        // `T.is_link_token()`) keeps only its taken branch too: the other one may be written for other types.
+        if ((ctx.ActiveExpandHandle != null || ifs.Condition is not LiteralExpression &&
+                !(ifs.Condition is UnaryExpression { Operand: LiteralExpression })) &&
+            cond is LiteralExpression { Value: bool taken })
         {
             Statement? branch = taken
                 ? ifs.ThenStatement

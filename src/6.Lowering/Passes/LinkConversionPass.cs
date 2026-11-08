@@ -91,6 +91,126 @@ internal sealed class LinkConversionPass : AstRewriter
         };
     }
 
+    /// <summary>The count of the tokens taken from links in this body, for unique local names.</summary>
+    private int _taken;
+
+    /// <inheritdoc/>
+    protected override Statement VisitBlock(BlockStatement s)
+    {
+        // A statement that uses a link without taking it by `when` (`node.parent.rename()`) takes its token first,
+        // and keeps it in use for as long as the statement runs.
+        List<Statement>? statements = null;
+        for (int i = 0; i < s.Statements.Count; i++)
+        {
+            Statement statement = s.Statements[index: i];
+            List<Statement>? taken = TakeLinks(statement: statement);
+            if (taken == null)
+            {
+                statements?.Add(item: statement);
+                continue;
+            }
+
+            statements ??= [.. s.Statements.Take(count: i)];
+            statements.AddRange(collection: taken);
+        }
+
+        return base.VisitBlock(s: statements == null ? s : s with { Statements = statements });
+    }
+
+    /// <summary>
+    /// The statements <paramref name="statement"/> becomes when it uses links without taking them by <c>when</c>: each
+    /// token taken into a local, a use kept on it, then the statement on the locals. A statement that names nothing new
+    /// is put in a block of its own, so the uses end with it. Null when the statement takes no link.
+    /// </summary>
+    private List<Statement>? TakeLinks(Statement statement)
+    {
+        var collector = new LinkTakeCollector(registry: _registry, first: _taken);
+        Statement rewritten = statement switch
+        {
+            ExpressionStatement expression => expression with { Expression = collector.VisitExpression(expr: expression.Expression) },
+            AssignmentStatement assignment => assignment with
+            {
+                Target = collector.VisitExpression(expr: assignment.Target),
+                Value = collector.VisitExpression(expr: assignment.Value)
+            },
+            DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } initializer } declaration } local =>
+                local with { Declaration = declaration with { Initializer = collector.VisitExpression(expr: initializer) } },
+            ReturnStatement { Value: { } value } result => result with { Value = collector.VisitExpression(expr: value) },
+            IfStatement branch => branch with { Condition = collector.VisitExpression(expr: branch.Condition) },
+            _ => statement
+        };
+        if (collector.Hoisted.Count == 0)
+        {
+            return null;
+        }
+
+        _taken = collector.Next;
+        List<Statement> taken = [.. collector.Hoisted, rewritten];
+        return statement is ExpressionStatement or AssignmentStatement or IfStatement
+            ? [new BlockStatement(Statements: taken, Location: statement.Location)]
+            : taken;
+    }
+
+    /// <inheritdoc/>
+    protected override Expression VisitMember(MemberExpression e)
+    {
+        // A link used where its statement cannot keep the token in a local (a loop's condition, one side of `and`)
+        // takes the token in place.
+        Expression visited = base.VisitMember(e: e);
+        return visited is MemberExpression { TakesLink: true } member &&
+               LinkTaking.Take(link: member.Object, registry: _registry) is { } take
+            ? member with { Object = take, TakesLink = false }
+            : visited;
+    }
+
+    /// <summary>
+    /// Takes the token of each link a statement uses into a local (<c>var __lk_N = take_modifying_link(link: ...)</c>,
+    /// then <c>var __lu_N = __lk_N.begin_link_use()</c>), where the statement surely evaluates it: not inside one side
+    /// of <c>and</c>/<c>or</c>, a conditional, a <c>when</c> or a lambda.
+    /// </summary>
+    private sealed class LinkTakeCollector(TypeRegistry registry, int first) : AstRewriter
+    {
+        public List<Statement> Hoisted { get; } = [];
+
+        public int Next { get; private set; } = first;
+
+        public override Expression VisitExpression(Expression expr)
+        {
+            return expr switch
+            {
+                BinaryExpression { Operator: BinaryOperator.And or BinaryOperator.Or } logical =>
+                    logical with { Left = VisitExpression(expr: logical.Left) },
+                ConditionalExpression or WhenExpression or BlockExpression or LambdaExpression or RecoveryExpression => expr,
+                _ => base.VisitExpression(expr: expr)
+            };
+        }
+
+        protected override Expression VisitMember(MemberExpression e)
+        {
+            Expression visited = base.VisitMember(e: e);
+            if (visited is not MemberExpression { TakesLink: true } member ||
+                LinkTaking.Take(link: member.Object, registry: registry) is not { } take)
+            {
+                return visited;
+            }
+
+            int n = Next++;
+            string tokenName = $"{LinkTaking.TokenPrefix}{n}";
+            Hoisted.Add(item: LinkTaking.Local(name: tokenName, value: take));
+            if (LinkTaking.BeginUse(tokenName: tokenName, token: take.ResolvedType!, location: member.Location,
+                    registry: registry) is { } begin)
+            {
+                Hoisted.Add(item: LinkTaking.Local(name: $"{LinkTaking.UsePrefix}{n}", value: begin));
+            }
+
+            return member with
+            {
+                Object = new IdentifierExpression(Name: tokenName, Location: member.Location) { ResolvedType = take.ResolvedType },
+                TakesLink = false
+            };
+        }
+    }
+
     /// <inheritdoc/>
     protected override Statement VisitAssignment(AssignmentStatement s)
     {

@@ -408,8 +408,19 @@ public static class RuntimeContract
     /// <remarks>Sites: SemanticVerifier (the arms of a <c>when</c> over a link).</remarks>
     public const string LinkUseBegin = "begin_link_use";
 
+    /// <summary>Link.rvr: <c>take_modifying_link(link:)</c>, the token a link holds for a use that does not take the link
+    /// by <c>when</c> (<c>node.parent.id</c>), failing with <c>StaleLinkError</c> once the entity ended.</summary>
+    /// <remarks>Sites: LinkTaking (the recovery hoister, LinkConversionPass).</remarks>
+    public const string TakeModifyingLink = "take_modifying_link";
+
+    /// <summary>The same for a <c>Viewing[T]?</c> link.</summary>
+    public const string TakeViewingLink = "take_viewing_link";
+
     /// <summary>BuilderQuery: whether an entity type is retroactive (a link to it is kept in the program).</summary>
     public const string IsRetroactive = "is_retroactive";
+
+    /// <summary>BuilderQuery: whether a type is a token on a retroactive entity type, so its optional is a link.</summary>
+    public const string IsLinkToken = "is_link_token";
 
     /// <summary>The routines (Link.rvr, NativeDeclarations.rvr) a link's layout and a retroactive entity's slot are
     /// written with. A link of a retroactive type is 128 bits: the entity's address and its slot's generation.</summary>
@@ -431,8 +442,13 @@ public static class RuntimeContract
         /// <summary><c>LLVM::link_token[T](link:)</c>: the token a link holds.</summary>
         public const string Token = "link_token";
 
-        /// <summary><c>LLVM::link_same[T](a:, b:)</c>: whether two links name the same entity.</summary>
+        /// <summary><c>LLVM::link_same[T](a:, b:)</c>: whether two links name the same entity, what <c>a === b</c> on
+        /// two links runs (OperatorLoweringPass).</summary>
         public const string Same = "link_same";
+
+        /// <summary><c>LLVM::link_other[T](a:, b:)</c>: whether two links name different entities, what <c>a !== b</c>
+        /// runs.</summary>
+        public const string Other = "link_other";
     }
 
     /// <summary><c>Stamped[T].same_entity</c> (Stamped.rvr): what <c>a === b</c> on two stamps runs, the same slot and
@@ -879,6 +895,7 @@ public static class RuntimeContract
             DataSize,
             ReachesEntity,
             IsRetroactive,
+            IsLinkToken,
             SharesEntityAcrossTasks,
             BlockSize,
             "full_type_name",

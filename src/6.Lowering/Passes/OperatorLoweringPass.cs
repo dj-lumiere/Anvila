@@ -1525,6 +1525,43 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         };
     }
 
+    /// <summary>
+    /// <c>a === b</c> on two links: <c>LLVM::link_same[E](a:, b:)</c>, and <c>a !== b</c>: <c>LLVM::link_other</c>. A
+    /// link is the entity's address and its slot generation, so a link to an entity that ended is not the same as a
+    /// link to the entity now in its slot. A token on a link (a <c>for</c> element) was read by TokenReadLoweringPass.
+    /// Null for any other operands.
+    /// </summary>
+    private Expression? LowerLinkIdentity(BinaryExpression bin, Expression left, Expression right)
+    {
+        if (!Declaration.ImplicitToken.IsLink(type: left.ResolvedType) ||
+            !Declaration.ImplicitToken.IsLink(type: right.ResolvedType) ||
+            Declaration.ImplicitToken.LinkedEntity(token: left.ResolvedType!.TypeArguments![index: 0]) is not { } entity)
+        {
+            return null;
+        }
+
+        string name = bin.Operator == BinaryOperator.IdentityEqual
+            ? Declaration.RuntimeContract.Link.Same
+            : Declaration.RuntimeContract.Link.Other;
+        RoutineInfo definition =
+            ctx.Registry.LookupGenericOverload(name: name, includeForeign: true, module: "System") ??
+            throw new InvalidOperationException(message: $"LLVM::{name} is not registered.");
+        RoutineInfo instance = ctx.Registry.GetOrCreateRoutineResolution(genericDef: definition, typeArguments: [entity]);
+        return new CallExpression(
+            Callee: new IdentifierExpression(Name: instance.Name, Location: bin.Location) { ResolvedRoutine = instance },
+            Arguments:
+            [
+                new NamedArgumentExpression(Name: "a", Value: left, Location: left.Location) { ResolvedType = left.ResolvedType },
+                new NamedArgumentExpression(Name: "b", Value: right, Location: right.Location) { ResolvedType = right.ResolvedType }
+            ],
+            Location: bin.Location)
+        {
+            ResolvedRoutine = instance,
+            ResolvedType = bin.ResolvedType,
+            LoweringKind = CallLoweringKind.DirectRoutine
+        };
+    }
+
     private static bool IsStampOrOptionalStamp(TypeSymbol type)
     {
         return type.BareName == Declaration.RuntimeContract.StampedTypeName ||
@@ -1558,6 +1595,12 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
         Expression left0 = VisitExpression(expr: bin.Left);
         Expression right0 = VisitExpression(expr: bin.Right);
+        if (bin.Operator is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual &&
+            LowerLinkIdentity(bin: bin, left: left0, right: right0) is { } sameLink)
+        {
+            return sameLink;
+        }
+
         if (bin.Operator is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual &&
             LowerStampIdentity(bin: bin, left: left0, right: right0) is { } sameEntity)
         {

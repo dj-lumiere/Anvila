@@ -528,6 +528,12 @@ public sealed partial class SemanticVerifier
             matchedType = reached;
         }
 
+        // A write link matched from a viewed place gives a read token.
+        if (ReadOnlyLinkOf(type: matchedType) is { } readOnlyLink && IsViewedHere(expression: whenStmt.Expression))
+        {
+            matchedType = readOnlyLink;
+        }
+
         // Buildtime arm-expansion: concrete arms are unknown until monomorphization.
         // Validate leniently and skip exhaustiveness/order checks.
         if (whenStmt.ArmExpansion is { } armExp)
@@ -863,6 +869,13 @@ public sealed partial class SemanticVerifier
             elsePat.RemainingType = rest;
             elsePat.BindsCarrierError = rest is not null && GetCarrierBaseName(type: matchedType) == "Check" &&
                                         rest.BareName == Builder.Declaration.RuntimeContract.Crashables;
+            // An element a read-only walk hands out that holds a link (a `Dict` entry with a link value) is a viewed
+            // name, so the link in it reads as a read-only link.
+            if (ctx.ViewingElement && rest is TupleTypeSymbol entry &&
+                entry.ElementTypes.Any(predicate: part => ReadOnlyLinkOf(type: part) != null))
+            {
+                _viewedWhenSubject = true;
+            }
             DeclarePatternVariable(name: elseName,
                 type: rest == null
                     ? ErrorTypeSymbol.Instance
@@ -1403,8 +1416,18 @@ public sealed partial class SemanticVerifier
                 location: destruct.Initializer.Location);
         }
 
-        // Analyze the destructuring pattern and bind variables
-        AnalyzeDestructuringPattern(pattern: destruct.Pattern, sourceType: initType);
+        // Analyze the destructuring pattern and bind variables. The parts of a viewed value (a `for` element over a
+        // `Viewing[Dict[...]]`) are viewed names too, so a link among them reads as a read-only link.
+        bool viewedBefore = _viewedWhenSubject;
+        _viewedWhenSubject = viewedBefore || IsViewedHere(expression: destruct.Initializer);
+        try
+        {
+            AnalyzeDestructuringPattern(pattern: destruct.Pattern, sourceType: initType);
+        }
+        finally
+        {
+            _viewedWhenSubject = viewedBefore;
+        }
     }
 
     /// <summary>

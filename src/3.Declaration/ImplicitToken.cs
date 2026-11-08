@@ -71,6 +71,13 @@ internal static class ImplicitToken
                LinkedEntity(token: token) != null;
     }
 
+    /// <summary>Whether <paramref name="type"/> is a token on a retroactive entity type, so its optional is a link laid
+    /// out as the entity's address and its slot generation.</summary>
+    public static bool IsLinkToken(TypeSymbol? type)
+    {
+        return type != null && LinkedEntity(token: type) is { IsRetroactive: true };
+    }
+
     /// <summary>The entity type a token is on when a link may hold it (<c>Node</c> of <c>Modifying[Node]</c>), or null
     /// for any other type, a token on a record or on an entity laid out in place included.</summary>
     public static EntityTypeSymbol? LinkedEntity(TypeSymbol token)

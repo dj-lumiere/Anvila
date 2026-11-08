@@ -142,17 +142,10 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeMemberExpression(MemberExpression member)
     {
         TypeSymbol declared = AnalyzeMemberExpressionCore(member: member);
-        // A link read through a `Viewing` (`n.parent` with `n: Viewing[Node]`) is a read-only link: nothing reachable
-        // from a view is changed, and the two links are the same 128 bits.
-        if (Declaration.ImplicitToken.IsLink(type: declared) &&
-            declared.TypeArguments![index: 0] is { BareName: Declaration.RuntimeContract.Modifying, TypeArguments: [var linked] } &&
-            IsViewedHere(expression: member.Object) &&
-            _registry.LookupType(name: Declaration.RuntimeContract.OptionalCarrier) is { } optionalDefinition)
+        // A link read through a `Viewing` is a read-only link (see AnalyzeExpressionCore).
+        if (ReadOnlyLinkOf(type: declared) is { } readOnlyLink && IsViewedHere(expression: member.Object))
         {
-            TypeSymbol readToken = _registry.GetOrCreateWrapperType(wrapperName: Declaration.RuntimeContract.Viewing,
-                innerType: linked,
-                isReadOnly: true);
-            declared = _registry.GetOrCreateResolution(genericDef: optionalDefinition, typeArguments: [readToken]);
+            declared = readOnlyLink;
             member.ResolvedType = declared;
         }
 
@@ -169,9 +162,43 @@ public sealed partial class SemanticVerifier
         return declared;
     }
 
+    /// <summary>The read-only link (<c>Viewing[Node]?</c>) a write link (<c>Modifying[Node]?</c>) reads as from a viewed
+    /// place, or null for any other type.</summary>
+    private TypeSymbol? ReadOnlyLinkOf(TypeSymbol type)
+    {
+        // A read token on a write link (a `for` element over a viewed list of links) reads it as a read-only link.
+        if (type is { BareName: Declaration.RuntimeContract.Viewing, TypeArguments: [{ } held] } &&
+            ReadOnlyLinkOf(type: held) is { } readOnlyHeld)
+        {
+            return _registry.GetOrCreateWrapperType(wrapperName: Declaration.RuntimeContract.Viewing,
+                innerType: readOnlyHeld,
+                isReadOnly: true);
+        }
+
+        if (!Declaration.ImplicitToken.IsLink(type: type) ||
+            type.TypeArguments![index: 0] is not { BareName: Declaration.RuntimeContract.Modifying, TypeArguments: [var linked] } ||
+            _registry.LookupType(name: Declaration.RuntimeContract.OptionalCarrier) is not { } optionalDefinition)
+        {
+            return null;
+        }
+
+        TypeSymbol readToken = _registry.GetOrCreateWrapperType(wrapperName: Declaration.RuntimeContract.Viewing,
+            innerType: linked,
+            isReadOnly: true);
+        return _registry.GetOrCreateResolution(genericDef: optionalDefinition, typeArguments: [readToken]);
+    }
+
     private TypeSymbol AnalyzeMemberExpressionCore(MemberExpression member)
     {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
+
+        // A read through a link is made on its token, taken first.
+        member.TakesLink = false;
+        if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName) is { } linkToken)
+        {
+            member.TakesLink = true;
+            objectType = linkToken;
+        }
 
         // A buildtime `expand` handle has no member projections — its metadata is read via the
         // function-form intrinsics (`nameof(m)`/`orderof(m)`/…), so `m.<anything>` is a mistake.

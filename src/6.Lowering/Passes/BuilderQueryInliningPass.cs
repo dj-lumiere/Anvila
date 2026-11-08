@@ -83,6 +83,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             "type_kind",
             RuntimeContract.ReachesEntity,
             RuntimeContract.IsRetroactive,
+            RuntimeContract.IsLinkToken,
             RuntimeContract.SharesEntityAcrossTasks,
             RuntimeContract.BlockSize
         };
@@ -625,6 +626,16 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                 bool reaches = HandleReach.Reaches(type: type);
                 return new LiteralExpression(Value: reaches,
                     LiteralType: reaches
+                        ? TokenType.True
+                        : TokenType.False,
+                    Location: loc) { ResolvedType = _boolType };
+            }
+
+            case RuntimeContract.IsLinkToken when _boolType != null:
+            {
+                bool linkToken = ImplicitToken.IsLinkToken(type: type);
+                return new LiteralExpression(Value: linkToken,
+                    LiteralType: linkToken
                         ? TokenType.True
                         : TokenType.False,
                     Location: loc) { ResolvedType = _boolType };

@@ -142,6 +142,15 @@ public sealed partial class SemanticVerifier
             return existingAnnotation;
         }
 
+        // A link read from a viewed place (`n.parent` with `n: Viewing[Node]`, `links[0]` or a `for` element over a
+        // `Viewing[List[Modifying[Node]?]]`) is a read-only link: nothing reachable from a view is changed, and the two
+        // links are the same 128 bits.
+        if (expression is IdentifierExpression or MemberExpression or IndexExpression or CallExpression &&
+            ReadOnlyLinkOf(type: resultType) is { } readOnlyLink && IsViewedHere(expression: expression))
+        {
+            resultType = readOnlyLink;
+        }
+
         // Set the resolved type directly (no conversion needed)
         expression.ResolvedType = resultType;
 
@@ -737,7 +746,17 @@ public sealed partial class SemanticVerifier
     {
         return type is EntityTypeSymbol || type.BareName == Declaration.RuntimeContract.Addr ||
                Declaration.RuntimeContract.IdentityComparableWrapperTypes.Contains(item: type.BareName) ||
-               IsStampOperand(type: type);
+               IsStampOperand(type: type) || IsLinkOperand(type: type);
+    }
+
+    /// <summary>Whether an identity operand is a link (<c>Modifying[E]?</c> / <c>Viewing[E]?</c> kept in a place), or a
+    /// token on one (a <c>for</c> element over a list of links): <c>===</c> compares the entity it names and the slot
+    /// generation it was made with.</summary>
+    internal static bool IsLinkOperand(TypeSymbol? type)
+    {
+        return Declaration.ImplicitToken.IsLink(type: type) ||
+               type?.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+               type.TypeArguments is [{ } held] && Declaration.ImplicitToken.IsLink(type: held);
     }
 
     /// <summary>Whether an identity operand is a <c>Stamped[E]</c>, or a token on one (a <c>for</c> element over a list of
