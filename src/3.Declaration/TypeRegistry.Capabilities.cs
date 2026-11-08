@@ -654,7 +654,7 @@ public sealed partial class TypeRegistry
         // A link compares and hashes by identity, the entity it names and its slot generation (Link.rvr).
         // A token on a retroactive entity hashes as part of its link (`Optional[T].hash` asks it of its `T`).
         if (protocolName is "Equatable" or "Hashable" && ImplicitToken.IsLink(type: type) ||
-            protocolName == "Hashable" && ImplicitToken.IsLinkToken(type: type))
+            protocolName is "Equatable" or "Hashable" && ImplicitToken.IsLinkToken(type: type))
         {
             return true;
         }

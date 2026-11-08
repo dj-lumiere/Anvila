@@ -760,7 +760,10 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     ReportShapeChange(guard: g, attempt: attempt, why: why, location: call.Location);
                 }
                 else if (path != null && MayBeSameContainer(operand: operand, path: path, guard: g) &&
-                         g is { IsLoop: true, Holder: null, Loop: { } guardedLoop })
+                         g is { IsLoop: true, Holder: null, Loop: { } guardedLoop } &&
+                         // Two shared handles of one kind stay a build error: the walk goes through the handle.
+                         (operand.ResolvedType is null || SharedHandleInner(type: operand.ResolvedType) == null) &&
+                         (g.Type is null || SharedHandleInner(type: g.Type) == null))
                 {
                     // The build cannot prove the two containers apart: the loop opens a use of its container's
                     // shape at run time, and the change fails with ReshapingWhileInUseError when it is the same one.

@@ -340,19 +340,19 @@ internal static class Wrappers
         if (type is RecordTypeSymbol record && !(record is
                 { IsGenericDefinition: true, TypeArguments: not { Count: > 0 } }))
         {
-            return FindInRecord(record: record, prefix: prefix, visited: visited, isOffender: isOffender);
+            return FindInRecord(record: record, prefix: prefix, visited: visited, isOffender: isOffender, skipLinks: skipLinks);
         }
 
         if (type is TupleTypeSymbol tuple)
         {
-            return FindInTuple(tuple: tuple, prefix: prefix, visited: visited, isOffender: isOffender);
+            return FindInTuple(tuple: tuple, prefix: prefix, visited: visited, isOffender: isOffender, skipLinks: skipLinks);
         }
 
         return null;
     }
 
     internal static (string, string)? FindInRecord(RecordTypeSymbol record, string prefix,
-        HashSet<string> visited, Func<string, bool> isOffender)
+        HashSet<string> visited, Func<string, bool> isOffender, bool skipLinks = false)
     {
         if (!visited.Add(item: record.FullName))
         {
@@ -367,7 +367,8 @@ internal static class Wrappers
             (string, string)? found = FindOffendingWrapperCore(type: member.Type,
                 prefix: childPath,
                 visited: visited,
-                isOffender: isOffender);
+                isOffender: isOffender,
+                skipLinks: skipLinks);
             if (found != null)
             {
                 return found;
@@ -378,7 +379,7 @@ internal static class Wrappers
     }
 
     internal static (string, string)? FindInTuple(TupleTypeSymbol tuple, string prefix,
-        HashSet<string> visited, Func<string, bool> isOffender)
+        HashSet<string> visited, Func<string, bool> isOffender, bool skipLinks = false)
     {
         if (!visited.Add(item: tuple.FullName))
         {
@@ -394,7 +395,8 @@ internal static class Wrappers
                 type: tuple.ElementTypes[index: i],
                 prefix: childPath,
                 visited: visited,
-                isOffender: isOffender);
+                isOffender: isOffender,
+                skipLinks: skipLinks);
             if (found != null)
             {
                 return found;

@@ -145,7 +145,9 @@ public sealed partial class SemanticVerifier
         // A link read from a viewed place (`n.parent` with `n: Viewing[Node]`, `links[0]` or a `for` element over a
         // `Viewing[List[Modifying[Node]?]]`) is a read-only link: nothing reachable from a view is changed, and the two
         // links are the same 128 bits.
-        if (expression is IdentifierExpression or MemberExpression or IndexExpression or CallExpression &&
+        // A body the builder wrote (a token's forwarder) hands the link on as its routine gives it.
+        if (!_isInCompilerGeneratedBody && _currentRoutine is not { WrapperForwarderInnerMemberRoutine: not null } &&
+            expression is IdentifierExpression or MemberExpression or IndexExpression or CallExpression &&
             ReadOnlyLinkOf(type: resultType) is { } readOnlyLink && IsViewedHere(expression: expression))
         {
             resultType = readOnlyLink;

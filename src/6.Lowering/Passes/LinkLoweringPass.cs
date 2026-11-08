@@ -115,6 +115,20 @@ internal sealed class LinkLoweringPass : AstRewriter
             return creator;
         }
 
+        // A link written around a link (a forwarder handing on its routine's link) is that link.
+        if (present is LiteralExpression { Value: true } &&
+            (LinkedEntity(type: token.ResolvedType) != null ||
+             token is CallExpression { ResolvedRoutine.ReturnType: { } returned } && LinkedEntity(type: returned) != null))
+        {
+            // The call gives the link itself, though its value was typed as the token in it.
+            if (token is CallExpression { ResolvedRoutine.ReturnType: { } linkType } call)
+            {
+                call.ResolvedType = linkType;
+            }
+
+            return token;
+        }
+
         return Call(name: RuntimeContract.Link.Make,
             entity: linked,
             arguments: [("present", present), ("token", token)],
