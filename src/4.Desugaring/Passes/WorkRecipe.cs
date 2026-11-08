@@ -22,6 +22,8 @@ namespace Builder.Desugaring.Passes;
 ///     danger
 ///         var r = recipe
 ///         work_wait_released(recipe: r)
+///         if work_discarded(recipe: r)
+///             (move the arguments into locals, recipe_free(recipe: r), return)
 ///         var outcome = __work_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...)
 ///         work_finish[R](recipe: r, outcome: outcome.hijack())
 ///     return
@@ -154,6 +156,44 @@ internal static class WorkRecipe
                 typeArguments: null,
                 arguments: [Named(name: "recipe", value: Id(name: "r", loc: loc))],
                 loc: loc),
+            Location: loc));
+
+        // A Work let go without ever being started is discarded: its disposal runs this routine with slot 0 holding the
+        // discard mark. The arguments move into locals that scope teardown frees, and the recipe is freed.
+        var discard = new List<Statement>();
+        for (int i = 0; i < routine.Parameters.Count; i++)
+        {
+            Parameter p = routine.Parameters[index: i];
+            discard.Add(item: new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: $"discarded_{i}",
+                    Type: null,
+                    Initializer: Call(name: "recipe_take",
+                        typeArguments: [SlotType(parameter: p)],
+                        arguments:
+                        [
+                            Named(name: "recipe", value: Id(name: "r", loc: loc)),
+                            Named(name: "slot", value: U64(value: i + 1, loc: loc))
+                        ],
+                        loc: loc),
+                    Visibility: VisibilityModifier.Open,
+                    Location: loc),
+                Location: loc));
+        }
+
+        discard.Add(item: new ExpressionStatement(
+            Expression: Call(name: "recipe_free",
+                typeArguments: null,
+                arguments: [Named(name: "recipe", value: Id(name: "r", loc: loc))],
+                loc: loc),
+            Location: loc));
+        discard.Add(item: new ReturnStatement(Value: null, Location: loc));
+        statements.Add(item: new IfStatement(
+            Condition: Call(name: "work_discarded",
+                typeArguments: null,
+                arguments: [Named(name: "recipe", value: Id(name: "r", loc: loc))],
+                loc: loc),
+            ThenStatement: new BlockStatement(Statements: discard, Location: loc),
+            ElseStatement: null,
             Location: loc));
 
         // The work returns what it came to (`check` over the call chain): a failure stays in the Work and surfaces
