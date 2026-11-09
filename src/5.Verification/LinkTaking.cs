@@ -10,16 +10,13 @@ namespace Builder.Verification;
 /// The calls the builder writes where a link (<c>Modifying[Node]?</c> / <c>Viewing[Node]?</c> kept in a place) is used
 /// without taking it by <c>when</c>: <c>node.parent.id</c>, <c>node.parent.rename()</c>, and the same under <c>try</c>.
 /// The token is taken first (Link.rvr), which fails with <c>StaleLinkError</c> once the entity ended (with
-/// <c>AbsentValueError</c> for an empty link), and a <c>begin_link_use()</c> keeps the entity's end waiting while the
-/// token is used.
+/// <c>AbsentValueError</c> for an empty link). The token keeps the link's generation, so a use the builder checks
+/// fails once the entity ended.
 /// </summary>
 internal static class LinkTaking
 {
     /// <summary>The name of the local that holds a token taken from a link.</summary>
     public const string TokenPrefix = "__lk_";
-
-    /// <summary>The name of the local that keeps a token taken from a link in use.</summary>
-    public const string UsePrefix = "__lu_";
 
     /// <summary>
     /// <c>take_modifying_link(link: ...)</c> (or the <c>Viewing</c> one) on <paramref name="link"/>, or null when the
@@ -89,34 +86,6 @@ internal static class LinkTaking
             ResolvedRoutine = access,
             ResolvedType = held,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: access),
-            IsSynthesizedLowering = true
-        };
-    }
-
-    /// <summary><c>token.begin_link_use()</c> on the local <paramref name="tokenName"/>, or null when the token type has
-    /// no such routine.</summary>
-    public static CallExpression? BeginUse(string tokenName, TypeSymbol token, SourceLocation location,
-        TypeRegistry registry)
-    {
-        if (registry.LookupMemberRoutineOverload(type: token, memberRoutineName: RuntimeContract.LinkUseBegin, argTypes: []) is
-            not { } begin)
-        {
-            return null;
-        }
-
-        return new CallExpression(
-            Callee: new MemberExpression(Object: new IdentifierExpression(Name: tokenName, Location: location)
-                {
-                    ResolvedType = token
-                },
-                MemberName: RuntimeContract.LinkUseBegin,
-                Location: location) { ResolvedType = begin.ReturnType },
-            Arguments: [],
-            Location: location)
-        {
-            ResolvedRoutine = begin,
-            ResolvedType = begin.ReturnType,
-            LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: begin),
             IsSynthesizedLowering = true
         };
     }

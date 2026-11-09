@@ -588,6 +588,20 @@ internal sealed class LapilaRoutineWriter
                         Type: target, IsPlace: false);
         }
 
+        // A reference is 128 bits whose low half is the address: an address goes in and out through 64 bits.
+        if (cast.Conversion == RepresentationConversion.IntToPointer && from == "U128")
+        {
+            string address = $"inttoptr[U64, Addr](trunc[U128, U64]({Value(operand: inner)}))";
+            return new Operand(Text: Temp(type: target, expression: to == "Addr" ? address : $"bitcast[Addr, {to}]({address})"),
+                Type: target, IsPlace: false);
+        }
+
+        if (cast.Conversion == RepresentationConversion.PointerToInt && to == "U128")
+        {
+            return new Operand(Text: Temp(type: target, expression: $"zext[U64, U128](ptrtoint[{from}, U64]({Value(operand: inner)}))"),
+                Type: target, IsPlace: false);
+        }
+
         string operation = cast.Conversion switch
         {
             RepresentationConversion.Truncate => "trunc",
@@ -1424,19 +1438,13 @@ internal sealed class LapilaRoutineWriter
     }
 
     /// <summary>
-    /// The bytes a new entity goes to: the box the lowering wrote (a slot of a retroactive type's store, Link.rvr), else
-    /// a heap block from the runtime.
+    /// The bytes a new entity goes to: the box the lowering wrote, a slot of its type's store (LinkLoweringPass).
     /// </summary>
     private string EntityBlock(EntityTypeSymbol entity, Expression? box)
     {
-        if (box != null)
-        {
-            return Temp(type: entity, expression: Value(operand: Evaluate(expression: box)));
-        }
-
-        string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
-            returnType: "Addr");
-        return Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
+        return box != null
+            ? Temp(type: entity, expression: Value(operand: Evaluate(expression: box)))
+            : throw Unsupported(what: $"a new {entity.Name} without its slot");
     }
 
     /// <summary>A variant (Check and Lookup among them) built from its tag and payload: zeroed storage, the tag,

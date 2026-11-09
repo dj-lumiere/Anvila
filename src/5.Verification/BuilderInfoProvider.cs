@@ -219,7 +219,7 @@ public static class BuilderInfoProvider
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);
             MaybeRegister(owner: type,
-                name: RuntimeContract.IsRetroactive,
+                name: RuntimeContract.IsEntityType,
                 returnType: types.BoolType,
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);

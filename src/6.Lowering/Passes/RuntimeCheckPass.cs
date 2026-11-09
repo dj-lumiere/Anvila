@@ -12,21 +12,24 @@ namespace Builder.Lowering.Passes;
 /// bodies are analyzed. They go in before the recovery variants are made, and a routine that gets one can fail, so a
 /// <c>try</c> or <c>check</c> above any call that reaches it receives the failure like any other.
 /// <list type="bullet">
-/// <item>A token taken from a link. An entity ends where its original ends, and such a token may still be in use then
-/// (a call through it ends the entity, the routine it was handed to goes on). Before each statement that reaches a
-/// member through a token the builder cannot prove comes from an original, the builder puts
-/// <c>token.require_live()</c> (Link.rvr), which fails with <c>EntityEndedError</c> once the entity's slot is marked
-/// ended. A token is unproven when it was taken from a link (the arm of a <c>when</c> over one, a link used directly)
-/// or given by a call of a routine value (a lambda may give one taken from what it captured), when a local was given one, or when it is a token parameter (or <c>me</c>) of a routine some call hands an
-/// unproven token to, found across the program's routines until nothing changes. The routines a <c>try</c> or
-/// <c>check</c> over an expression is made into count as the program's routines, so a use under the keyword is checked
-/// in there and the keyword receives the failure. A token a routine-value call gives, used in the same expression
-/// (<c>f().x</c>), has no statement of its own to be checked before: it is wrapped in <c>live_modifying[T](token:)</c>
-/// (or the <c>Viewing</c> one), which checks it and gives it back. Only tokens on retroactive entity
-/// types are checked: no other entity ends while a link to it is used. A token taken from a link keeps the slot from
-/// being reused while it is in use, so the check reads a header that is still the entity's. In a generic routine a token
-/// over a type parameter is checked by <c>require_modifying_live[T]</c> / <c>require_viewing_live[T]</c>, which do
-/// nothing in an instance whose type is not a retroactive entity.</item>
+/// <item>A reference the builder cannot prove alive. An entity ends where its original ends, and its slot can hold a new
+/// entity at once, so a reference keeps the generation its entity's slot had when the reference was made. Before each
+/// statement that reaches a member through a reference the builder cannot prove comes from an original, the builder puts
+/// <c>require_modifying_live[T](token: n)</c> (or the <c>Viewing</c> one, Link.rvr), which fails with
+/// <c>EntityEndedError</c> once the slot's generation is no longer the reference's. A reference is unproven when it was
+/// taken from a link (the arm of a <c>when</c> over one, a link used directly) or given by a call of a routine value (a
+/// lambda may give one taken from what it captured), when a local was given one, or when it is a reference parameter
+/// (or <c>me</c>) of a routine some call hands an unproven reference to, found across the program's routines until
+/// nothing changes. A routine whose <c>me</c> is unproven keeps the generation <c>me</c>'s slot has when it starts and
+/// compares with it (<c>require_entity_generation</c>). The routines a <c>try</c> or <c>check</c> over an expression is
+/// made into count as the program's routines, so a use under the keyword is checked in there and the keyword receives
+/// the failure. A statement that calls another routine may end an entity part way through, so each use of an unproven
+/// reference in it is also checked where it is used: it is wrapped in <c>live_modifying[T](token:)</c> (or the
+/// <c>Viewing</c> one), which checks it and gives it back. So is a reference a routine-value call gives, used in the same
+/// expression (<c>f().x</c>). A reference handed to another routine carries its generation, and that routine checks it
+/// before each use. What remains unchecked is a call's receiver: an unproven reference (or a member path read from one)
+/// is checked when the receiver is evaluated, before the call's arguments, so an argument that ends the entity
+/// (<c>n.attach(world.remove(n))</c>) is not seen.</item>
 /// <item>A container a running loop may walk. When the shape check left a loop to check its container at run time
 /// (RuntimeShapeUseLoweringPass opens the use), every call of an <c>@reshaping</c> routine and every subscript write
 /// that may add a key first checks its receiver (<c>xs.require_shape_free()</c>, ShapeUse.rvr), which fails with
@@ -78,8 +81,8 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
     /// <summary>Whether a check went into the routine being walked.</summary>
     private bool _inserted;
 
-    /// <summary>Whether tokens taken from links are checked: the program keeps a link to some entity type.</summary>
-    private readonly bool _links = registry.HasRetroactiveTypes && registry.Rules.ChecksAccessTokens;
+    /// <summary>Whether references the builder could not prove alive are checked: the build checks references.</summary>
+    private readonly bool _links = registry.Rules.ChecksAccessTokens;
 
     /// <summary>Whether changes to containers are checked: some loop checks its container at run time.</summary>
     private readonly bool _shapes = registry.RuntimeShapeUses && registry.Rules.ChecksAccessTokens;
@@ -137,7 +140,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             }
 
             _inserted = false;
-            Walk(stmt: body, names: [.. Unproven(key: key)], insert: true);
+            InsertChecks(routine: info, body: body, names: [.. Unproven(key: key)]);
             // A routine that now checks a token can fail, so a `try` or `check` above a call of it receives the failure.
             if (_inserted)
             {
@@ -162,7 +165,20 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             : new HashSet<string>(comparer: StringComparer.Ordinal);
         if (_shapes || _links)
         {
-            Walk(stmt: body, names: names, insert: true);
+            InsertChecks(routine: routine, body: body, names: names);
+        }
+    }
+
+    /// <summary>Puts the checks into a routine's body. When <c>me</c> is unproven, the body first keeps the generation
+    /// its slot has, which each check of <c>me</c> compares with: the call that handed it was checked right before.</summary>
+    private void InsertChecks(RoutineInfo routine, Statement body, HashSet<string> names)
+    {
+        Walk(stmt: body, names: names, insert: true);
+        if (_links && names.Contains(item: "me") && body is BlockStatement block &&
+            MeGenerationLocal(routine: routine, location: block.Location) is { } generation)
+        {
+            block.Statements.Insert(index: 0, item: generation);
+            _inserted = true;
         }
     }
 
@@ -191,16 +207,17 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                 HashSet<string> scope = names;
                 for (int i = 0; i < block.Statements.Count; i++)
                 {
-                    if (insert && _links && WrapLiveUses(stmt: block.Statements[index: i]) is { } wrapped)
-                    {
-                        block.Statements[index: i] = wrapped;
-                    }
-
+                    // The statement as written is noted and checked, then its uses are wrapped where it calls more.
                     Statement inner = block.Statements[index: i];
                     Note(stmt: inner, names: scope);
                     if (insert)
                     {
                         List<Statement> checks = Checks(stmt: inner, names: scope);
+                        if (_links && WrapLiveUses(stmt: inner, names: scope) is { } wrapped)
+                        {
+                            block.Statements[index: i] = wrapped;
+                        }
+
                         if (checks.Count > 0)
                         {
                             _inserted = true;
@@ -209,7 +226,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                         }
                     }
 
-                    Walk(stmt: inner, names: scope, insert: insert);
+                    Walk(stmt: block.Statements[index: i], names: scope, insert: insert);
                     if (GivenUnproven(stmt: inner, names: scope) is { } local && !scope.Contains(item: local))
                     {
                         scope = [.. scope, local];
@@ -291,9 +308,9 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
         return stmt switch
         {
             DeclarationStatement { Declaration: VariableDeclaration { Name: var name, Initializer: { } init } }
-                when RetroactiveEntity(type: init.ResolvedType) != null && IsUnproven(expr: init, names: names) => name,
+                when CheckedEntity(type: init.ResolvedType) != null && IsUnproven(expr: init, names: names) => name,
             AssignmentStatement { Target: IdentifierExpression { Name: var name }, Value: var value }
-                when RetroactiveEntity(type: value.ResolvedType) != null && IsUnproven(expr: value, names: names) => name,
+                when CheckedEntity(type: value.ResolvedType) != null && IsUnproven(expr: value, names: names) => name,
             _ => null
         };
     }
@@ -368,7 +385,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                         return;
                     }
 
-                    if (receiver != null && RetroactiveEntity(type: routine.OwnerType) != null &&
+                    if (receiver != null && CheckedEntity(type: routine.OwnerType) != null &&
                         IsUnproven(expr: receiver, names: names))
                     {
                         Mark(routine: routine, parameter: "me");
@@ -384,7 +401,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                                 ? parameters[index: i]
                                 : null;
                         Expression value = argument is NamedArgumentExpression wrapped ? wrapped.Value : argument;
-                        if (parameter != null && RetroactiveEntity(type: parameter.Type) != null &&
+                        if (parameter != null && CheckedEntity(type: parameter.Type) != null &&
                             IsUnproven(expr: value, names: names))
                         {
                             Mark(routine: routine, parameter: parameter.Name);
@@ -446,9 +463,11 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
     /// <c>f()[0]</c>, <c>f().rename()</c>), wrapped in the check that gives it back, or null when it has none. Only the
     /// statement's own expressions are rewritten: a nested statement is reached by its own block.
     /// </summary>
-    private Statement? WrapLiveUses(Statement stmt)
+    private Statement? WrapLiveUses(Statement stmt, HashSet<string> names)
     {
-        var wrapper = new LiveUseWrapper(pass: this);
+        // A statement that calls a routine besides the uses themselves may end an entity part way through: each use of
+        // an unproven reference in it is then checked where it is used, not only before the statement.
+        var wrapper = new LiveUseWrapper(pass: this, names: CallsBesidesUses(stmt: stmt, names: names) ? names : null);
         Statement rewritten = stmt switch
         {
             ExpressionStatement e => wrapper.VisitExpression(expr: e.Expression) is var x && !ReferenceEquals(objA: x, objB: e.Expression)
@@ -489,7 +508,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
     private CallExpression? LiveCheck(Expression value)
     {
         if (value.ResolvedType is not { BareName: var wrapper, TypeArguments: [{ } over] } tokenType ||
-            wrapper is not (RuntimeContract.Modifying or RuntimeContract.Viewing) || RetroactiveEntity(type: tokenType) == null)
+            wrapper is not (RuntimeContract.Modifying or RuntimeContract.Viewing) || CheckedEntity(type: tokenType) == null)
         {
             return null;
         }
@@ -527,8 +546,48 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
 
     /// <summary>Wraps each token a routine-value call gives where a member or an element is reached through it. A
     /// <c>try</c> / <c>check</c> is left as it is: its expression is checked in the routine it was made into.</summary>
-    private sealed class LiveUseWrapper(RuntimeCheckPass pass) : AstRewriter
+    /// <summary>Whether a statement's own expressions call a routine other than one called on an unproven name
+    /// (<c>n.rename(to: t)</c>): only another call can end an entity between the check before the statement and the use.
+    /// The arguments of such a call are calls of their own when they call anything.</summary>
+    private static bool CallsBesidesUses(Statement stmt, HashSet<string> names)
     {
+        bool found = false;
+        foreach (Expression root in OwnExpressions(stmt: stmt))
+        {
+            AstWalker.WalkExpressions(root: root,
+                visit: e =>
+                {
+                    if (found)
+                    {
+                        return;
+                    }
+
+                    found = e switch
+                    {
+                        CallExpression { Callee: MemberExpression { Object: IdentifierExpression id } }
+                            when names.Contains(item: id.Name) => false,
+                        CallExpression { IsSynthesizedLowering: true, ResolvedRoutine: { } called } when IsLinkTake(routine: called) => false,
+                        CallExpression or GenericMemberRoutineCallExpression => true,
+                        _ => false
+                    };
+                });
+        }
+
+        return found;
+    }
+
+    private sealed class LiveUseWrapper(RuntimeCheckPass pass, HashSet<string>? names) : AstRewriter
+    {
+        /// <summary>The use of an unproven reference as the object of a member or an element, wrapped in its check, or
+        /// null when <paramref name="obj"/> is not one.</summary>
+        private Expression? CheckedUse(Expression obj)
+        {
+            return names != null && obj is IdentifierExpression id && names.Contains(item: id.Name) &&
+                   CheckedEntity(type: id.ResolvedType) != null
+                ? pass.LiveCheck(value: id)
+                : null;
+        }
+
         protected override Expression VisitRecovery(RecoveryExpression e)
         {
             return e;
@@ -537,6 +596,11 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
         protected override Expression VisitMember(MemberExpression e)
         {
             Expression visited = base.VisitMember(e: e);
+            if (visited is MemberExpression { TakesLink: false } use && CheckedUse(obj: use.Object) is { } checkedUse)
+            {
+                return use with { Object = checkedUse };
+            }
+
             return visited is MemberExpression { TakesLink: false, Object: CallExpression call } member &&
                    GivesUnprovenToken(call: call) && pass.LiveCheck(value: call) is { } live
                 ? member with { Object = live }
@@ -546,6 +610,11 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
         protected override Expression VisitIndex(IndexExpression e)
         {
             Expression visited = base.VisitIndex(e: e);
+            if (visited is IndexExpression use && CheckedUse(obj: use.Object) is { } checkedUse)
+            {
+                return use with { Object = checkedUse };
+            }
+
             return visited is IndexExpression { Object: CallExpression call } element &&
                    GivesUnprovenToken(call: call) && pass.LiveCheck(value: call) is { } live
                 ? element with { Object = live }
@@ -567,9 +636,9 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             : routine.RegistryKey;
     }
 
-    /// <summary>The type a token (or an entity itself, as <c>me</c>) reaches when its entities may end while a link
-    /// to them is used: a retroactive entity, or a type parameter an instance may bind to one. Null for any other.</summary>
-    private static TypeSymbol? RetroactiveEntity(TypeSymbol? type)
+    /// <summary>The type a token (or an entity itself, as <c>me</c>) reaches when its entity may end while the token is
+    /// used: an entity, or a type parameter an instance may bind to one. Null for any other.</summary>
+    private static TypeSymbol? CheckedEntity(TypeSymbol? type)
     {
         if (type?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying && type.TypeArguments is [{ } inner])
         {
@@ -578,7 +647,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
 
         return type switch
         {
-            EntityTypeSymbol { IsRetroactive: true } entity => entity,
+            EntityTypeSymbol entity => entity,
             GenericParameterTypeSymbol parameter => parameter,
             _ => null
         };
@@ -597,41 +666,15 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                 {
                     if (e is not MemberExpression { TakesLink: false } member ||
                         Root(expr: member.Object) is not { } name || !names.Contains(item: name.Name) ||
-                        RetroactiveEntity(type: name.ResolvedType) is not { } entity || !seen.Add(item: name.Name))
+                        CheckedEntity(type: name.ResolvedType) is not { } entity || !seen.Add(item: name.Name))
                     {
                         return;
                     }
 
-                    // A token over a type parameter (in a generic routine) is checked by a routine every instance has:
-                    // it does nothing where the instance's type is not a retroactive entity.
-                    if (entity is GenericParameterTypeSymbol)
+                    if (Check(name: name, location: stmt.Location) is { } check)
                     {
-                        if (GenericCheck(token: name, location: stmt.Location) is { } generic)
-                        {
-                            checks.Add(item: new ExpressionStatement(Expression: generic, Location: stmt.Location));
-                        }
-
-                        return;
+                        checks.Add(item: new ExpressionStatement(Expression: check, Location: stmt.Location));
                     }
-
-                    if (registry.LookupMemberRoutineOverload(type: entity, memberRoutineName: RuntimeContract.RequireLive,
-                            argTypes: []) is not { } require)
-                    {
-                        return;
-                    }
-
-                    var call = new CallExpression(
-                        Callee: new MemberExpression(Object: name with { }, MemberName: RuntimeContract.RequireLive,
-                            Location: stmt.Location) { ResolvedType = require.ReturnType },
-                        Arguments: [],
-                        Location: stmt.Location)
-                    {
-                        ResolvedRoutine = require,
-                        ResolvedType = require.ReturnType,
-                        LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: require),
-                        IsSynthesizedLowering = true
-                    };
-                    checks.Add(item: new ExpressionStatement(Expression: call, Location: stmt.Location));
                 });
         }
 
@@ -729,30 +772,58 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
         };
     }
 
-    /// <summary><c>require_modifying_live[T](token: n)</c> (or the <c>Viewing</c> one) for a token over the type
-    /// parameter <c>T</c>, or null when the token is neither.</summary>
-    private CallExpression? GenericCheck(IdentifierExpression token, SourceLocation location)
+    /// <summary>The local that keeps the generation <c>me</c>'s slot had when a routine started, in a routine whose
+    /// <c>me</c> a reference the builder could not prove alive may be handed to.</summary>
+    private const string MeGeneration = "__me_generation";
+
+    /// <summary>The check of one unproven name: <c>require_modifying_live[T](token: n)</c> (or the <c>Viewing</c> one)
+    /// for a token, <c>me.require_entity_generation(generation: __me_generation)</c> for <c>me</c>. Null when the name is
+    /// neither.</summary>
+    private CallExpression? Check(IdentifierExpression name, SourceLocation location)
     {
-        if (token.ResolvedType is not { BareName: var wrapper, TypeArguments: [GenericParameterTypeSymbol over] } tokenType ||
+        if (name.ResolvedType is EntityTypeSymbol entity)
+        {
+            return name.Name == "me" && registry.LookupMemberRoutineOverload(type: entity,
+                memberRoutineName: RuntimeContract.RequireEntityGeneration, argTypes: [U64]) is { } require
+                ? new CallExpression(
+                    Callee: new MemberExpression(Object: name with { }, MemberName: RuntimeContract.RequireEntityGeneration,
+                        Location: location) { ResolvedType = require.ReturnType },
+                    Arguments:
+                    [
+                        new NamedArgumentExpression(Name: "generation",
+                            Value: new IdentifierExpression(Name: MeGeneration, Location: location) { ResolvedType = U64 },
+                            Location: location) { ResolvedType = U64 }
+                    ],
+                    Location: location)
+                {
+                    ResolvedRoutine = require,
+                    ResolvedType = require.ReturnType,
+                    LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: require),
+                    IsSynthesizedLowering = true
+                }
+                : null;
+        }
+
+        if (name.ResolvedType is not { BareName: var wrapper, TypeArguments: [{ } over] } tokenType ||
             wrapper is not (RuntimeContract.Modifying or RuntimeContract.Viewing))
         {
             return null;
         }
 
-        string name = wrapper == RuntimeContract.Modifying
+        string routine = wrapper == RuntimeContract.Modifying
             ? RuntimeContract.RequireModifyingLive
             : RuntimeContract.RequireViewingLive;
-        if (registry.LookupGenericOverload(name: name, module: "System") is not { } definition)
+        if (registry.LookupGenericOverload(name: routine, module: "System") is not { } definition)
         {
             return null;
         }
 
         RoutineInfo instance = registry.GetOrCreateRoutineResolution(genericDef: definition, typeArguments: [over]);
         return new CallExpression(
-            Callee: new IdentifierExpression(Name: name, Location: location) { ResolvedRoutine = instance },
+            Callee: new IdentifierExpression(Name: routine, Location: location) { ResolvedRoutine = instance },
             Arguments:
             [
-                new NamedArgumentExpression(Name: "token", Value: token with { }, Location: location)
+                new NamedArgumentExpression(Name: "token", Value: name with { }, Location: location)
                 {
                     ResolvedType = tokenType
                 }
@@ -763,9 +834,48 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             ResolvedType = instance.ReturnType,
             LoweringKind = CallLoweringKind.DirectRoutine,
             IsSynthesizedLowering = true,
-            TypeArguments = [new TypeExpression(Name: over.Name, GenericArguments: null, Location: location)]
+            // Over a type parameter each instance of the routine binds its own instance of the check.
+            TypeArguments = over is GenericParameterTypeSymbol
+                ? [new TypeExpression(Name: over.Name, GenericArguments: null, Location: location)]
+                : null
         };
     }
+
+    /// <summary><c>var __me_generation = me.entity_generation()</c>, the first statement of a routine whose <c>me</c> is
+    /// unproven, or null when <c>me</c> is no entity.</summary>
+    private DeclarationStatement? MeGenerationLocal(RoutineInfo routine, SourceLocation location)
+    {
+        if (routine.OwnerType is not EntityTypeSymbol owner ||
+            registry.LookupMemberRoutineOverload(type: owner, memberRoutineName: RuntimeContract.EntityGeneration,
+                argTypes: []) is not { } generation)
+        {
+            return null;
+        }
+
+        var call = new CallExpression(
+            Callee: new MemberExpression(Object: new IdentifierExpression(Name: "me", Location: location) { ResolvedType = owner },
+                MemberName: RuntimeContract.EntityGeneration,
+                Location: location) { ResolvedType = generation.ReturnType },
+            Arguments: [],
+            Location: location)
+        {
+            ResolvedRoutine = generation,
+            ResolvedType = generation.ReturnType,
+            LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: generation),
+            IsSynthesizedLowering = true
+        };
+        return new DeclarationStatement(
+            Declaration: new VariableDeclaration(Name: MeGeneration,
+                Type: null,
+                Initializer: call,
+                Visibility: VisibilityModifier.Secret,
+                Location: location),
+            Location: location);
+    }
+
+    /// <summary>The builder's <c>U64</c> type.</summary>
+    private TypeSymbol U64 => registry.LookupType(name: "U64") ??
+                              throw new InvalidOperationException(message: "System.U64 is not registered.");
 
     /// <summary>The name a member path starts at (<c>n</c> of <c>n.items[0].x</c>), or null.</summary>
     private static IdentifierExpression? Root(Expression expr)

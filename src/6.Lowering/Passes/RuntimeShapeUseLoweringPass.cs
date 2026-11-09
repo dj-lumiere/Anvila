@@ -144,15 +144,15 @@ internal sealed class RuntimeShapeUseLoweringPass : AstRewriter
                 {
                     Expression: CallExpression
                     {
-                        ResolvedRoutine.Name: RuntimeContract.ShapeUse.RequireFree or RuntimeContract.RequireLive,
-                        Callee: MemberExpression { Object: var receiver }
+                        ResolvedRoutine.Name: RuntimeContract.ShapeUse.RequireFree or RuntimeContract.RequireEntityGeneration or
+                        RuntimeContract.RequireModifyingLive or RuntimeContract.RequireViewingLive
                     } check
                 })
             {
                 break;
             }
 
-            if (check.ResolvedRoutine.Name == RuntimeContract.ShapeUse.RequireFree &&
+            if (check is { ResolvedRoutine.Name: RuntimeContract.ShapeUse.RequireFree, Callee: MemberExpression { Object: var receiver } } &&
                 RuntimeCheckPass.PathText(expr: receiver) is { } path)
             {
                 paths.Add(item: path);

@@ -973,14 +973,6 @@ public static class LspServer
         string name = HeaderText(type: definition);
         SourceLocation? declaredAt = DeclarationOf(type: definition);
         string? documentation = DocAbove(location: declaredAt);
-        // The builder decides per type whether links to it are kept: say so, and where the first one is.
-        if (definition is EntityTypeSymbol { RetroactiveSite: { } site })
-        {
-            string note = $"Retroactive: a link to it (an optional token) is kept at {Path.GetFileName(path: site.FileName)}:" +
-                          $"{site.Line}, so each of its entities lives in a slot, and a link to one that ended reads as none.";
-            documentation = documentation == null ? note : $"{documentation}\n\n{note}";
-        }
-
         return (SourceHeader(location: declaredAt) ??
                 (kind != null
                     ? $"{kind} {name}"

@@ -16,25 +16,13 @@ public partial class LlvmEmitter
         List<string>? memberVariableValues = null)
     {
         string typeName = GetEntityTypeName(entity: entity);
-        int size = entity.HeapBlockSize(pointerSize: _pointerSizeBytes);
 
-        // Allocate memory: the box lowering wrote (a slot of a retroactive type's store), else a heap block.
-        string rawPtr;
-        if (box != null)
-        {
-            rawPtr = EmitExpression(sb: sb, expr: box);
-        }
-        else if (entity.IsRetroactive)
-        {
-            throw new InvalidOperationException(
-                message: $"An entity of the retroactive type '{entity.Name}' reached the LLVM emitter without its slot " +
-                         $"(LinkLoweringPass) in [{_currentRoutineDiagName}].");
-        }
-        else
-        {
-            rawPtr = NextTemp();
-            EmitLine(sb: sb, line: $"  {rawPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
-        }
+        // The memory is the box lowering wrote: a slot of the type's store.
+        string rawPtr = box != null
+            ? EmitExpression(sb: sb, expr: box)
+            : throw new InvalidOperationException(
+                message: $"An entity of '{entity.Name}' reached the LLVM emitter without its slot (LinkLoweringPass) in " +
+                         $"[{_currentRoutineDiagName}].");
 
         // Initialize member variables
         for (int i = 0; i < entity.MemberVariables.Count; i++)

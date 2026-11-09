@@ -61,8 +61,10 @@ internal sealed class AddressLoweringPass(TypeRegistry registry) : AstRewriter
                     LiteralType: TokenType.TextLiteral,
                     Location: call.Location) { ResolvedType = call.ResolvedType };
 
+            // A reference holds an address already: its own `hijack()` reads it, not the place the reference is kept in.
             case RuntimeContract.RawPointer.Hijack
-                when receiver is RecordTypeSymbol { BackendType: null or not "ptr" } record:
+                when receiver is RecordTypeSymbol { BackendType: null or not "ptr" } record &&
+                     record.BareName is not (RuntimeContract.Viewing or RuntimeContract.Modifying):
                 return AddressOf(storage: member.Object, type: record, location: call.Location);
 
             case RuntimeContract.RawPointer.Hijack when receiver is VariantTypeSymbol variant:

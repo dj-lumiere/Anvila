@@ -17,31 +17,6 @@ public class EntityTypeSymbol : TypeSymbol
     /// <inheritdoc/>
     public override bool ImplicitConstructorReturnsInFlight => true;
 
-    /// <summary>
-    /// Where the program first keeps a link (<c>@T</c> / <c>%T</c>) to this entity type, or null. A type with a link
-    /// anywhere in the program is retroactive: its entities live in slots whose generation goes up when one ends, so
-    /// every link to it reads as none from then on. Set by RetroactivityPass after the program's bodies are analyzed.
-    /// </summary>
-    public SourceLocation? RetroactiveSite { get; set; }
-
-    /// <summary>Whether this entity type is retroactive (see <see cref="RetroactiveSite"/>).</summary>
-    public bool IsRetroactive => RetroactiveSite != null;
-
-    /// <summary>
-    /// Whether code or a layout the builder made already relies on whether this type is retroactive: an answer of
-    /// <c>T.is_retroactive()</c> written into a body, an entity given its box, a link laid out. The type cannot become
-    /// retroactive after that (<c>TypeRegistry.MarkRetroactive</c> fails loudly), since that code would be wrong.
-    /// </summary>
-    public bool RetroactivityRelied { get; set; }
-
-    /// <summary><see cref="IsRetroactive"/> for code or a layout the builder makes from the answer (see
-    /// <see cref="RetroactivityRelied"/>).</summary>
-    public bool ReadRetroactivity()
-    {
-        RetroactivityRelied = true;
-        return IsRetroactive;
-    }
-
     /// <summary>MemberVariables declared in this entity.</summary>
     public List<MemberVariableInfo> MemberVariables
     {
@@ -379,10 +354,14 @@ public class EntityTypeSymbol : TypeSymbol
 
         if (type is RecordTypeSymbol { GenericDefinition: not null } recordType)
         {
-            return registry != null
+            TypeSymbol resolved = registry != null
                 ? registry.GetOrCreateResolution(genericDef: recordType.GenericDefinition,
                     typeArguments: newArgs)
                 : recordType.GenericDefinition.CreateInstance(typeArguments: newArgs);
+            // A link written without `?` stays one in each instance: it never holds none.
+            return registry != null && TypeRegistry.IsRequiredLink(type: recordType)
+                ? registry.RequiredLinkOf(optional: resolved)
+                : resolved;
         }
 
         if (type is ProtocolTypeSymbol { GenericDefinition: not null } protocolType)

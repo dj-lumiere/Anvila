@@ -119,11 +119,11 @@ internal static class ImplicitToken
                                                          arm.TypeArguments![index: 0].FullName));
     }
 
-    /// <summary>Whether <paramref name="type"/> is a token on a retroactive entity type, so its optional is a link laid
-    /// out as the entity's address and its slot generation.</summary>
+    /// <summary>Whether <paramref name="type"/> is a reference to an entity type, so its optional is a link laid out as
+    /// the entity's address and its slot generation.</summary>
     public static bool IsLinkToken(TypeSymbol? type)
     {
-        return type != null && LinkedEntity(token: type) is { IsRetroactive: true };
+        return type != null && LinkedEntity(token: type) != null;
     }
 
     /// <summary>The entity type a token is on when a link may hold it (<c>Node</c> of <c>Modifying[Node]</c>), or null

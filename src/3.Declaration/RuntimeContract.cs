@@ -407,18 +407,9 @@ public static class RuntimeContract
     /// <summary>The type <c>f.to[Work](...)</c> gives: concurrent work a verb starts and a collecting verb waits for.</summary>
     public const string WorkTypeName = "Work";
 
-    /// <summary>Link.rvr: <c>Modifying[T].begin_link_use()</c> (and the <c>Viewing</c> one), kept as a local for as long as a
-    /// token taken from a link (a <c>Modifying[T]?</c> / <c>Viewing[T]?</c> kept in a place) is in use.</summary>
-    /// <remarks>Sites: SemanticVerifier (the arms of a <c>when</c> over a link).</remarks>
-    public const string LinkUseBegin = "begin_link_use";
-
-    /// <summary>Link.rvr: <c>T.require_live()</c>, put before a statement that uses a token a link may have given, which
-    /// fails with <c>EntityEndedError</c> once the entity ended.</summary>
-    /// <remarks>Sites: RuntimeCheckPass.</remarks>
-    public const string RequireLive = "require_live";
-
-    /// <summary>Link.rvr: <c>require_modifying_live[T](token:)</c> and <c>require_viewing_live[T](token:)</c>, the
-    /// checks of <see cref="RequireLive"/> written in a generic routine over a token on a type parameter.</summary>
+    /// <summary>Link.rvr: <c>require_modifying_live[T](token:)</c> and <c>require_viewing_live[T](token:)</c>, put before a
+    /// statement that uses a reference the builder could not prove alive, which fail with <c>EntityEndedError</c> once
+    /// the entity ended (its slot's generation is no longer the reference's).</summary>
     /// <remarks>Sites: RuntimeCheckPass.</remarks>
     public const string RequireModifyingLive = "require_modifying_live";
 
@@ -434,6 +425,16 @@ public static class RuntimeContract
     /// <inheritdoc cref="LiveModifying"/>
     public const string LiveViewing = "live_viewing";
 
+    /// <summary>Link.rvr: <c>T.entity_generation()</c>, kept when a routine starts whose <c>me</c> a reference the builder
+    /// could not prove alive was handed to.</summary>
+    /// <remarks>Sites: RuntimeCheckPass.</remarks>
+    public const string EntityGeneration = "entity_generation";
+
+    /// <summary>Link.rvr: <c>T.require_entity_generation(generation:)</c>, put before a statement that uses such a
+    /// <c>me</c>.</summary>
+    /// <remarks>Sites: RuntimeCheckPass.</remarks>
+    public const string RequireEntityGeneration = "require_entity_generation";
+
     /// <summary>Link.rvr: <c>take_modifying_link(link:)</c>, the token a link holds for a use that does not take the link
     /// by <c>when</c> (<c>node.parent.id</c>), failing with <c>StaleLinkError</c> once the entity ended.</summary>
     /// <remarks>Sites: LinkTaking (the recovery hoister, LinkConversionPass).</remarks>
@@ -442,22 +443,26 @@ public static class RuntimeContract
     /// <summary>The same for a <c>Viewing[T]?</c> link.</summary>
     public const string TakeViewingLink = "take_viewing_link";
 
-    /// <summary>BuilderQuery: whether an entity type is retroactive (a link to it is kept in the program).</summary>
-    public const string IsRetroactive = "is_retroactive";
+    /// <summary>BuilderQuery: whether a type is an entity type, whose values live in slots of its type's store.</summary>
+    public const string IsEntityType = "is_entity_type";
 
-    /// <summary>BuilderQuery: whether a type is a token on a retroactive entity type, so its optional is a link.</summary>
+    /// <summary>BuilderQuery: whether a type is a reference to an entity type, so its optional is a link.</summary>
     public const string IsLinkToken = "is_link_token";
 
-    /// <summary>The routines (Link.rvr, NativeDeclarations.rvr) a link's layout and a retroactive entity's slot are
-    /// written with. A link of a retroactive type is 128 bits: the entity's address and its slot's generation.</summary>
+    /// <summary>The routines (Link.rvr, NativeDeclarations.rvr) an entity's slot, a reference's and a link's layout are
+    /// written with. A reference to an entity, and a link, is 128 bits: the entity's address and its slot's generation.</summary>
     /// <remarks>Sites: LinkLoweringPass.</remarks>
     public static class Link
     {
-        /// <summary><c>LLVM::slot_store[T]()</c>: the address of a retroactive type's slot store.</summary>
+        /// <summary><c>LLVM::slot_store[T]()</c>: the address of an entity type's slot store.</summary>
         public const string SlotStore = "slot_store";
 
-        /// <summary><c>C::rf_slot_take(store:, size:)</c>: a slot for a new entity of a retroactive type.</summary>
+        /// <summary><c>C::rf_slot_take(store:, size:)</c>: a slot for a new entity.</summary>
         public const string SlotTake = "rf_slot_take";
+
+        /// <summary><c>LLVM::token_make[T](at:)</c>: a reference to the entity at an address, with its slot's
+        /// generation.</summary>
+        public const string TokenMake = "token_make";
 
         /// <summary><c>LLVM::link_make[T](present:, token:)</c>: a link from a token.</summary>
         public const string Make = "link_make";
@@ -911,7 +916,7 @@ public static class RuntimeContract
             "annotations",
             DataSize,
             ReachesEntity,
-            IsRetroactive,
+            IsEntityType,
             IsLinkToken,
             SharesEntityAcrossTasks,
             BlockSize,

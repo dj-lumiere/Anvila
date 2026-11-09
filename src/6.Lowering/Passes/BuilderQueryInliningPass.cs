@@ -82,7 +82,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             "is_in_flight",
             "type_kind",
             RuntimeContract.ReachesEntity,
-            RuntimeContract.IsRetroactive,
+            RuntimeContract.IsEntityType,
             RuntimeContract.IsLinkToken,
             RuntimeContract.SharesEntityAcrossTasks,
             RuntimeContract.BlockSize
@@ -631,21 +631,21 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                     Location: loc) { ResolvedType = _boolType };
             }
 
-            case RuntimeContract.IsLinkToken when _boolType != null:
+            case RuntimeContract.IsEntityType when _boolType != null:
             {
-                bool linkToken = ImplicitToken.IsLinkToken(type: type);
-                return new LiteralExpression(Value: linkToken,
-                    LiteralType: linkToken
+                bool entity = type is EntityTypeSymbol;
+                return new LiteralExpression(Value: entity,
+                    LiteralType: entity
                         ? TokenType.True
                         : TokenType.False,
                     Location: loc) { ResolvedType = _boolType };
             }
 
-            case RuntimeContract.IsRetroactive when _boolType != null:
+            case RuntimeContract.IsLinkToken when _boolType != null:
             {
-                bool retroactive = type is EntityTypeSymbol entity && entity.ReadRetroactivity();
-                return new LiteralExpression(Value: retroactive,
-                    LiteralType: retroactive
+                bool linkToken = ImplicitToken.IsLinkToken(type: type);
+                return new LiteralExpression(Value: linkToken,
+                    LiteralType: linkToken
                         ? TokenType.True
                         : TokenType.False,
                     Location: loc) { ResolvedType = _boolType };

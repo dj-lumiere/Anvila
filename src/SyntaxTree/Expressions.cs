@@ -691,8 +691,8 @@ public record CreatorExpression(
     public RoutineInfo? ResolvedCreatorRoutine { get; set; }
 
     /// <summary>
-    /// For an entity, the call that gives the address its bytes go to, when it is not the heap block every entity
-    /// gets: an entity of a retroactive type lives in a slot of its type's store (LinkLoweringPass). Null otherwise.
+    /// For an entity, the call that gives the address its bytes go to: a slot of its type's store (LinkLoweringPass).
+    /// Null before that pass and for any other type.
     /// </summary>
     public Expression? Box { get; init; }
 }
@@ -1010,12 +1010,6 @@ public record LambdaExpression(
     /// routine, but not kept in a member variable or returned.
     /// </summary>
     public List<BoundCapture>? BoundTo { get; set; }
-
-    /// <summary>True for a lambda that gives back a reference taken from what it captured: the builder cannot prove
-    /// that entity is still there when the lambda is called, so the entity's type is retroactive and every reference a
-    /// call of a routine value gives is checked where it is used (<c>EntityEndedError</c>). Set by the token lifetime
-    /// check.</summary>
-    public bool GivesUnprovenToken { get; set; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
@@ -1457,8 +1451,8 @@ public record SharedConstantListExpression(
 /// <param name="Location">Source location of the routine body it starts.</param>
 public record EntityAllocationExpression(SourceLocation Location) : Expression(Location: Location)
 {
-    /// <summary>The call that gives the address the entity's bytes go to, when it is not a heap block: a slot of a
-    /// retroactive type's store (LinkLoweringPass). Null otherwise.</summary>
+    /// <summary>The call that gives the address the entity's bytes go to: a slot of its type's store
+    /// (LinkLoweringPass). Null before that pass.</summary>
     public Expression? Box { get; init; }
 
     /// <inheritdoc/>

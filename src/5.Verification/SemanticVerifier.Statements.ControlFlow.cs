@@ -520,7 +520,7 @@ public sealed partial class SemanticVerifier
     private void AnalyzeWhenStatement(WhenStatement whenStmt)
     {
         TypeSymbol matchedType = AnalyzeExpression(expression: whenStmt.Expression);
-        KeepLinkUses(whenStmt: whenStmt, matchedType: matchedType);
+        NoteLinkArmTokens(whenStmt: whenStmt, matchedType: matchedType);
         // A token (`for m in marks` binds one) is matched by the value it reaches.
         if (Declaration.RuntimeContract.AccessTokenTypes.Contains(item: matchedType.BareName) &&
             Wrappers.GetWrapperInnerType(wrapperType: matchedType) is { } reached)
@@ -780,16 +780,8 @@ public sealed partial class SemanticVerifier
         bool ForStep = false,
         bool ViewedSubject = false);
 
-    /// <summary>
-    /// A <c>when</c> over a link kept in a place (<c>when node.parent</c> with <c>parent: Modifying[Node]?</c>) gives the
-    /// entity's token while the entity is there (the link's presence is the check of its slot's generation). Each arm
-    /// that binds the token first keeps a <c>begin_link_use()</c> local, so the entity's destruct waits while the token
-    /// is in use and runs at the arm's end if the entity ended meanwhile. A <c>when</c> over a value a call gives (a
-    /// <c>try</c>, a <c>for</c> step) takes no link, so it is left alone.
-    /// </summary>
     /// <summary>Whether <paramref name="type"/> is an optional token on a type parameter (<c>Modifying[T]?</c> in a
-    /// generic body): a link once an instance makes <c>T</c> a retroactive entity, so its arms keep a use too, which
-    /// does nothing for any other <c>T</c>.</summary>
+    /// generic body): a link once an instance makes <c>T</c> an entity.</summary>
     private static bool IsGenericLink(TypeSymbol type)
     {
         return type is { BareName: Declaration.RuntimeContract.OptionalCarrier, TypeArguments: [{ } token] } &&
@@ -797,7 +789,13 @@ public sealed partial class SemanticVerifier
                token.TypeArguments is [GenericParameterTypeSymbol];
     }
 
-    private void KeepLinkUses(WhenStatement whenStmt, TypeSymbol matchedType)
+    /// <summary>
+    /// A <c>when</c> over a link kept in a place (<c>when node.parent</c> with <c>parent: Modifying[Node]?</c>) gives the
+    /// entity's token while the entity is there (the link's presence is the check of its slot's generation). The token
+    /// each arm binds keeps the link's generation, and the names are noted as tokens taken from a link. A <c>when</c>
+    /// over a value a call gives (a <c>try</c>, a <c>for</c> step) takes no link, so it is left alone.
+    /// </summary>
+    private void NoteLinkArmTokens(WhenStatement whenStmt, TypeSymbol matchedType)
     {
         if (!_registry.Rules.ChecksAccessTokens || whenStmt.ArmExpansion != null || whenStmt.IsForStep ||
             !Declaration.ImplicitToken.IsLink(type: matchedType) && !IsGenericLink(type: matchedType) ||
@@ -827,43 +825,6 @@ public sealed partial class SemanticVerifier
             }
 
             _linkArmTokens.Add(item: bound);
-            SourceLocation bodyAt = clause.Body.Location;
-            string useName = $"__link_use_{bodyAt.Line}_{bodyAt.Column}";
-            if (clause.Body is BlockStatement { Statements: [DeclarationStatement { Declaration: VariableDeclaration first }, ..] } &&
-                first.Name == useName)
-            {
-                continue;
-            }
-
-            var use = new DeclarationStatement(
-                Declaration: new VariableDeclaration(Name: useName,
-                    Type: null,
-                    Initializer: new CallExpression(
-                        Callee: new MemberExpression(Object: new IdentifierExpression(Name: bound, Location: bodyAt),
-                            MemberName: Declaration.RuntimeContract.LinkUseBegin,
-                            Location: bodyAt),
-                        Arguments: [],
-                        Location: bodyAt),
-                    Visibility: VisibilityModifier.Open,
-                    Location: bodyAt)
-                {
-                    // In a generic body the use's type is known only in each instance: the late teardown of the
-                    // instance ends it.
-                    OwesTeardown = generic,
-                    OwnsItsValue = generic
-                },
-                Location: bodyAt);
-            if (clause.Body is BlockStatement block)
-            {
-                block.Statements.Insert(index: 0, item: use);
-            }
-            else
-            {
-                whenStmt.Clauses[index: i] = clause with
-                {
-                    Body = new BlockStatement(Statements: [use, clause.Body], Location: bodyAt)
-                };
-            }
         }
     }
 

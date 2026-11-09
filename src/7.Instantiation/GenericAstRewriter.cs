@@ -2806,16 +2806,16 @@ internal static class GenericAstRewriter
                     : TokenType.False,
                 Location: location) { ResolvedType = boolType },
 
-            RuntimeContract.IsLinkToken when boolType != null => new LiteralExpression(
-                Value: ImplicitToken.IsLinkToken(type: typeInfo),
-                LiteralType: ImplicitToken.IsLinkToken(type: typeInfo)
+            RuntimeContract.IsEntityType when boolType != null => new LiteralExpression(
+                Value: typeInfo is EntityTypeSymbol,
+                LiteralType: typeInfo is EntityTypeSymbol
                     ? TokenType.True
                     : TokenType.False,
                 Location: location) { ResolvedType = boolType },
 
-            RuntimeContract.IsRetroactive when boolType != null => new LiteralExpression(
-                Value: typeInfo is EntityTypeSymbol retroactive && retroactive.ReadRetroactivity(),
-                LiteralType: typeInfo is EntityTypeSymbol { IsRetroactive: true }
+            RuntimeContract.IsLinkToken when boolType != null => new LiteralExpression(
+                Value: ImplicitToken.IsLinkToken(type: typeInfo),
+                LiteralType: ImplicitToken.IsLinkToken(type: typeInfo)
                     ? TokenType.True
                     : TokenType.False,
                 Location: location) { ResolvedType = boolType },

@@ -215,8 +215,8 @@ internal sealed class LinkConversionPass : AstRewriter
     }
 
     /// <summary>
-    /// Takes the token of each link a statement uses into a local (<c>var __lk_N = take_modifying_link(link: ...)</c>,
-    /// then <c>var __lu_N = __lk_N.begin_link_use()</c>), where the statement surely evaluates it: not inside one side
+    /// Takes the token of each link a statement uses into a local (<c>var __lk_N = take_modifying_link(link: ...)</c>),
+    /// where the statement surely evaluates it: not inside one side
     /// of <c>and</c>/<c>or</c>, a conditional, a <c>when</c> or a lambda.
     /// </summary>
     private sealed class LinkTakeCollector(TypeRegistry registry, int first) : AstRewriter
@@ -248,11 +248,6 @@ internal sealed class LinkConversionPass : AstRewriter
             int n = Next++;
             string tokenName = $"{LinkTaking.TokenPrefix}{n}";
             Hoisted.Add(item: LinkTaking.Local(name: tokenName, value: take));
-            if (LinkTaking.BeginUse(tokenName: tokenName, token: take.ResolvedType!, location: member.Location,
-                    registry: registry) is { } begin)
-            {
-                Hoisted.Add(item: LinkTaking.Local(name: $"{LinkTaking.UsePrefix}{n}", value: begin, owesTeardown: true));
-            }
 
             return member with
             {

@@ -126,7 +126,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         }
 
         // Through a token on the container (`s[0]` with `s: Modifying[List[Dict[K, V]]]`) the accessor is the
-        // container's own. The token shares the container's pointer, so it is the receiver as it is.
+        // container's own, called on the address the token holds (WrapperProjectionLoweringPass takes it).
         if (containerType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
             containerType.TypeArguments is [{ } tokenInner])
         {
@@ -171,9 +171,9 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         var callee = new MemberExpression(Object: container,
             MemberName: accessor,
             Location: element.Location);
-        // The token IS the element's own pointer (Viewing/Modifying and an entity share one pointer
-        // representation), so the call or field access on it dispatches on the ELEMENT type, exactly as
-        // a wrapper forwarder would after unwrapping. The read/write intent and the container freeze
+        // The token stands for the element (WrapperProjectionLoweringPass takes the address it holds), so the call
+        // or field access on it dispatches on the ELEMENT type, exactly as a wrapper forwarder would after
+        // unwrapping. The read/write intent and the container freeze
         // were already checked at analysis (RV-S639). An entity-typed temporary is not torn down, so
         // the element stays owned by the container.
         return new CallExpression(Callee: callee, Arguments: [FirstOperand(argument: IndexOperand(index: index, routine: mint), routine: mint)],
@@ -1985,17 +1985,17 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // A Mielia collection held by its `Roamed` handle counts as the collection (RoamedProjectionLoweringPass
         // projects the receiver), as `getitem` does.
         // Through a token on an entity container (`xs[^1]` with `xs: Modifying[List[S64]]`) the count is the
-        // container's own: the token shares the entity's pointer, so it is the receiver as it is (as in
-        // MintElementToken). This holds whether or not the token type has a forwarded `count` registered: such a
-        // forwarder is reached by no call the collector sees, so a call to it links to nothing.
+        // container's own, called on the address the token holds. This holds whether or not the token type has a
+        // forwarded `count` registered: such a forwarder is reached by no call the collector sees, so a call to it
+        // links to nothing.
         if (targetType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
             targetType.TypeArguments is [EntityTypeSymbol tokenInner])
         {
             targetType = tokenInner;
-            // The count call reads the receiver as the container itself, so later passes resolve `count` on the
-            // container and not on the token type.
-            loweredObj = loweredObj with { };
-            loweredObj.ResolvedType = tokenInner;
+            loweredObj = new BackendCastExpression(Value: loweredObj, Location: loweredObj.Location)
+            {
+                ResolvedType = tokenInner
+            };
         }
 
         RoutineInfo? countRoutine = ctx.Registry.LookupMemberRoutine(type: targetType,

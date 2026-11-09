@@ -55,7 +55,7 @@ internal sealed class LapilaIntrinsics
     /// <param name="spill">Stores a value of a type in a fresh slot and returns the slot.</param>
     /// <param name="emit">Writes a statement before the expression. A line that starts with four spaces is nested in the
     /// line before it.</param>
-    /// <param name="typeStore">The address of a retroactive entity type's slot store.</param>
+    /// <param name="typeStore">The address of an entity type's slot store.</param>
     /// <param name="typeNamed">A builder type by its name (<c>U64</c>).</param>
     public static string Translate(RoutineInfo routine, List<(string Value, TypeSymbol? Type)> arguments,
         TypeSymbol? resultType, Func<TypeSymbol?, string> typeText, Func<TypeSymbol?, string> zero,
@@ -185,12 +185,15 @@ internal sealed class LapilaIntrinsics
                 $".stride({Index(index: 1)}).peek()",
             "set_byte_at" => SetElement(),
             "entity_from_hijacked" => Argument(index: 0),
-            // Links of retroactive entity types (Link.rvr): 128 bits, the entity's address in the low half and its
-            // slot's generation in the high half.
+            // References and links (Link.rvr): 128 bits, the entity's address in the low half and its slot's
+            // generation in the high half.
             "slot_store" => Store(),
+            "token_make" => TokenMake(),
+            "token_live" => TokenLive(),
+            "slot_generation" => $"({Argument(index: 0)} -% ByteSize.construct(bytes: 8)).to[@U64]().peek()",
             "link_make" => LinkMake(),
             "link_live" => LinkLive(),
-            "link_token" => $"inttoptr[U64, Addr](trunc[U128, U64]({Argument(index: 0)}))",
+            "link_token" => Argument(index: 0),
             "link_same" => $"ieq[U128]({Argument(index: 0)}, {Argument(index: 1)})",
             "link_other" => $"ine[U128]({Argument(index: 0)}, {Argument(index: 1)})",
             _ => throw new NotSupportedException(
@@ -216,19 +219,39 @@ internal sealed class LapilaIntrinsics
     {
         string header = _spill(arg1: Store(), arg2: _pointer);
         _emit(obj: $"if ine[U64]({address}, 0)");
-        _emit(obj: $"    {header}.store(inttoptr[U64, Addr]({address}) -% ByteSize.construct(bytes: 16))");
+        _emit(obj: $"    {header}.store(inttoptr[U64, Addr]({address}) -% ByteSize.construct(bytes: 8))");
         return $"{header}.load().to[@U64]().peek()";
     }
 
-    /// <summary>A link from a token: its address and its slot's generation now, all zero when not present.</summary>
+    /// <summary>A reference to the entity at an address: its address and its slot's generation now, all zero for the
+    /// zero address.</summary>
+    private string TokenMake()
+    {
+        string address = _spill(arg1: $"ptrtoint[Addr, U64]({Argument(index: 0)})", arg2: _u64);
+        string generation = Generation(address: $"{address}.load()");
+        string token = _spill(arg1: _zero(arg: _u128), arg2: _u128);
+        _emit(obj: $"if ine[U64]({address}.load(), 0)");
+        _emit(obj: $"    {token}.store(bor[U128](shl[U128](val: zext[U64, U128]({generation}), amt: 64), " +
+                   $"zext[U64, U128]({address}.load())))");
+        return $"{token}.load()";
+    }
+
+    /// <summary>Whether a reference's entity has not ended: its slot's generation is still the reference's, or the
+    /// reference is to the zero address.</summary>
+    private string TokenLive()
+    {
+        string address = _spill(arg1: $"trunc[U128, U64]({Argument(index: 0)})", arg2: _u64);
+        string generation = Generation(address: $"{address}.load()");
+        return $"(ieq[U64]({address}.load(), 0) or ieq[U64]({generation}, " +
+               $"trunc[U128, U64](lshr[U128](val: {Argument(index: 0)}, amt: 64))))";
+    }
+
+    /// <summary>A link from a reference: the reference itself, all zero when not present or to the zero address.</summary>
     private string LinkMake()
     {
-        string address = _spill(arg1: $"ptrtoint[Addr, U64]({Argument(index: 1)})", arg2: _u64);
-        string generation = Generation(address: $"{address}.load()");
         string link = _spill(arg1: _zero(arg: _u128), arg2: _u128);
-        _emit(obj: $"if {Argument(index: 0)}");
-        _emit(obj: $"    {link}.store(bor[U128](shl[U128](val: zext[U64, U128]({generation}), amt: 64), " +
-                   $"zext[U64, U128]({address}.load())))");
+        _emit(obj: $"if {Argument(index: 0)} and ine[U64](trunc[U128, U64]({Argument(index: 1)}), 0)");
+        _emit(obj: $"    {link}.store({Argument(index: 1)})");
         return $"{link}.load()";
     }
 

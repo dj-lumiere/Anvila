@@ -179,9 +179,9 @@ public partial class LlvmEmitter
     private readonly Dictionary<string, string> _typeStores = new(comparer: StringComparer.Ordinal);
 
     /// <summary>
-    /// Replaces each <c>{store T}</c> of a template line with the address of the zeroed 16-byte global that belongs to
+    /// Replaces each <c>{store T}</c> of a template line with the address of the zeroed 32-byte global that belongs to
     /// the type the instantiated routine binds <c>T</c> to: one per type in the program, the same one in every module
-    /// (a retroactive entity type's slot store, Link.rvr).
+    /// (an entity type's slot store, Link.rvr).
     /// </summary>
     private string SubstituteTypeStores(string line, RoutineInfo routine)
     {
@@ -211,7 +211,7 @@ public partial class LlvmEmitter
             if (!_typeStores.TryGetValue(key: typeName, value: out string? global))
             {
                 global = $"@\"rv.store.{typeName.Replace(oldValue: "\"", newValue: "")}\"";
-                EmitLine(sb: _globalDeclarations, line: $"{global} = linkonce_odr global [2 x i64] zeroinitializer, align 16");
+                EmitLine(sb: _globalDeclarations, line: $"{global} = linkonce_odr global [4 x i64] zeroinitializer, align 16");
                 _typeStores[key: typeName] = global;
             }
 

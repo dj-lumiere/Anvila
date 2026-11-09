@@ -308,8 +308,7 @@ public sealed partial class SemanticVerifier
                 destructBody.Statements.Insert(index: 0, item: HollowGuard(location: destructBody.Location));
             }
 
-            // An entity of a retroactive type (a link to its type is kept somewhere) marks its slot ended first, so every
-            // link to it reads as none. For any other type `note_entity_end()` does nothing.
+            // An entity marks its slot ended first, so every reference and link to it reads as ended.
             if (routineInfo.Name == "destruct" &&
                 !(destructBody.Statements.Count > 1 && IsEntityEndGuard(statement: destructBody.Statements[index: 1])))
             {
@@ -1269,10 +1268,7 @@ public sealed partial class SemanticVerifier
         varType = ReferenceForLocal(varDecl: varDecl, varType: varType);
 
         ReportProtocolValueType(type: varType, location: varDecl.Location, what: $"'{varDecl.Name}'");
-        // A name the builder wrote (`__` first: the value a `when try` matches, a loop's walk) keeps no link of the
-        // program's own.
-        ValidateNoTokenTypeArgument(type: varType, what: $"'{varDecl.Name}'", location: varDecl.Location,
-            keepsLinks: !varDecl.Name.StartsWith(value: "__", comparisonType: StringComparison.Ordinal));
+        ValidateNoTokenTypeArgument(type: varType, what: $"'{varDecl.Name}'", location: varDecl.Location);
 
         // #16: Plain `var x: T` without an initializer is disallowed.
         // Use `lateinit var x: T` (eager allocation, late initialization).
@@ -1660,7 +1656,7 @@ public sealed partial class SemanticVerifier
             source.FullName == target.FullName ||
             target.BareName is not (Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying) ||
             value is StealExpression ||
-            entitiesOnly && source is not EntityTypeSymbol &&
+            entitiesOnly && source is not EntityTypeSymbol && !Declaration.ImplicitToken.IsLink(type: source) &&
             source.BareName is not (Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed or
                 Declaration.RuntimeContract.Modifying))
         {
@@ -2019,7 +2015,8 @@ public sealed partial class SemanticVerifier
             ? InImportStateOf(file: assign.Location.FileName,
                 analyze: () => AnalyzeExpression(expression: assign.Value, expectedType: targetType))
             : AnalyzeExpression(expression: assign.Value, expectedType: targetType);
-        // A name that holds a reference takes the entity's own (`m = other` for `m: @Node`).
+        // A name that holds a reference takes the entity's own (`m = other` for `m: @Node`), and a link's reference
+        // (`cur = cur.out[k]`), taken as a use of the link is: it fails once the entity ended.
         if (assign.Target is IdentifierExpression &&
             ImplicitReference(value: assign.Value, target: targetType, entitiesOnly: true) is
                 { } reference)
@@ -2419,8 +2416,8 @@ public sealed partial class SemanticVerifier
             Location: location);
     }
 
-    /// <summary>The statement <c>me.note_entity_end()</c> (Link.rvr): a retroactive entity's slot is marked ended first,
-    /// so every link to it reads as none while its destruct runs.</summary>
+    /// <summary>The statement <c>me.note_entity_end()</c> (Link.rvr): an entity's slot is marked ended first, so every
+    /// reference and link to it reads as ended while its destruct runs.</summary>
     private static ExpressionStatement EntityEndGuard(SourceLocation location)
     {
         var notes = new CallExpression(
@@ -2446,7 +2443,7 @@ public sealed partial class SemanticVerifier
 
     private const string BeginEntityEndName = "note_entity_end";
 
-    /// <summary>The routine that gives back an entity's box (Link.rvr): the heap block, or a retroactive entity's slot.</summary>
+    /// <summary>The routine that gives back an entity's box (Link.rvr): its slot, back to its type's store.</summary>
     private const string GiveBackEntityBoxName = "give_back_entity_box";
 
     /// <summary>The expression <c>me.get_address()</c>.</summary>
@@ -2488,8 +2485,7 @@ public sealed partial class SemanticVerifier
         } && IsMeAddress(expression: on);
     }
 
-    /// <summary>The statement <c>C::rf_invalidate(ptr: me.get_address())</c>: the entity's box is given back through its
-    /// address, so no <c>Hijacked[T]</c> is built for the type.</summary>
+    /// <summary>The statement <c>me.give_back_entity_box()</c>: the entity's slot goes back to its type's store.</summary>
     private static ExpressionStatement BoxGiveBack(SourceLocation location)
     {
         var giveBack = new CallExpression(

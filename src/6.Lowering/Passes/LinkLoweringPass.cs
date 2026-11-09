@@ -8,14 +8,16 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Writes how links and retroactive entities are laid out, as calls of the routines Link.rvr declares, so the emitter
-/// only translates them. A link of a retroactive type (<c>Modifying[Node]?</c> where links to <c>Node</c> are kept) is
-/// 128 bits: the entity's address and the generation its slot had when the link was made.
+/// Writes how entities, references and links are laid out, as calls of the routines Link.rvr declares, so the emitter
+/// only translates them. A reference to an entity (<c>Modifying[Node]</c>) is 128 bits: the entity's address and the
+/// generation its slot had when the reference was made. A link (<c>Modifying[Node]?</c>) is the reference it holds, all
+/// zero for none.
 /// <list type="bullet">
-/// <item>An entity of a retroactive type gets its bytes from a slot of its type's store:
+/// <item>Every entity gets its bytes from a slot of its type's store:
 /// <c>C::rf_slot_take(store: LLVM::slot_store[T](), size: ...)</c> is the creator's box.</item>
-/// <item>A link built from a token (an <c>Optional</c> creator) is <c>LLVM::link_make[T](present:, token:)</c>, which
-/// reads the slot's generation.</item>
+/// <item>A reference made from an entity's address (<c>Modifying[T](me.hijack())</c>) is
+/// <c>LLVM::token_make[T](at:)</c>, which reads the slot's generation.</item>
+/// <item>A link built from a token (an <c>Optional</c> creator) is <c>LLVM::link_make[T](present:, token:)</c>.</item>
 /// <item>Whether a link is present (<c>.present</c>) is <c>LLVM::link_live[T](link:)</c>: the address is not zero and
 /// the slot's generation is still the link's.</item>
 /// <item>The token a link holds (<c>.value</c>, a pattern's payload) is <c>LLVM::link_token[T](link:)</c>.</item>
@@ -40,18 +42,12 @@ internal sealed class LinkLoweringPass : AstRewriter
         _addr = Lookup(name: "Addr");
     }
 
-    /// <summary>Lowers the links and the retroactive entities of one routine body in place.</summary>
+    /// <summary>Lowers the entities, references and links of one routine body in place.</summary>
     public static void Run(Statement body, TypeRegistry registry)
     {
         if (body is not BlockStatement block)
         {
             throw new InvalidOperationException(message: $"A routine body must be a block, got {body.GetType().Name}.");
-        }
-
-        // Nothing to do in a program that keeps no link: no type is retroactive.
-        if (!registry.HasRetroactiveTypes)
-        {
-            return;
         }
 
         var pass = new LinkLoweringPass(registry: registry);
@@ -67,7 +63,7 @@ internal sealed class LinkLoweringPass : AstRewriter
                throw new InvalidOperationException(message: $"System.{name} is not registered.");
     }
 
-    /// <summary>The entity a link of <paramref name="type"/> names, when it is a link of a retroactive type.</summary>
+    /// <summary>The entity a link of <paramref name="type"/> names, when it is a link.</summary>
     private static EntityTypeSymbol? LinkedEntity(TypeSymbol? type)
     {
         return type is RecordTypeSymbol { IsLinkOptional: true, TypeArguments: [RecordTypeSymbol { TypeArguments: [EntityTypeSymbol entity] }] }
@@ -85,7 +81,7 @@ internal sealed class LinkLoweringPass : AstRewriter
         }
 
         TypeSymbol? made = creator.ConstructedType ?? creator.ResolvedType;
-        if (made is EntityTypeSymbol entity && entity.ReadRetroactivity() && creator.Box == null)
+        if (made is EntityTypeSymbol entity && creator.Box == null)
         {
             return creator with { Box = TakeSlot(entity: entity, location: creator.Location) };
         }
@@ -141,7 +137,7 @@ internal sealed class LinkLoweringPass : AstRewriter
 
         return Call(name: RuntimeContract.Link.Make,
             entity: linked,
-            arguments: [("present", present), ("token", token)],
+            arguments: [("present", present), ("token", AsReference(value: token, entity: linked))],
             type: made!,
             location: creator.Location);
     }
@@ -149,13 +145,47 @@ internal sealed class LinkLoweringPass : AstRewriter
     /// <inheritdoc/>
     public override Expression VisitExpression(Expression expr)
     {
-        if (expr is EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity, Box: null } allocation &&
-            entity.ReadRetroactivity())
+        if (expr is EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity, Box: null } allocation)
         {
             return allocation with { Box = TakeSlot(entity: entity, location: allocation.Location) };
         }
 
+        // The address of a place handed where a reference is expected (`Dict.getitem(key:)` given a key's place) is the
+        // reference made from it: a reference is 128 bits, the address and an entity's slot generation.
+        if (expr is AddressOfExpression { ResolvedType: RecordTypeSymbol { BareName: RuntimeContract.Viewing or RuntimeContract.Modifying } reference } address)
+        {
+            Expression place = base.VisitExpression(expr: address) is AddressOfExpression visited
+                ? visited with { ResolvedType = _addr }
+                : throw new InvalidOperationException(message: $"An address at {address.Location} did not stay an address.");
+            return VisitBackendCast(e: new BackendCastExpression(Value: place, Location: address.Location)
+            {
+                ResolvedType = reference
+            });
+        }
+
         return base.VisitExpression(expr: expr);
+    }
+
+    /// <inheritdoc/>
+    protected override Expression VisitBackendCast(BackendCastExpression e)
+    {
+        Expression visited = base.VisitBackendCast(e: e);
+        // A reference to an entity made from the entity's address takes the slot's generation along.
+        if (visited is BackendCastExpression
+            {
+                ReinterpretsBits: false,
+                ResolvedType: RecordTypeSymbol { BareName: RuntimeContract.Viewing or RuntimeContract.Modifying, TypeArguments: [EntityTypeSymbol entity] } token,
+                Value.ResolvedType: EntityTypeSymbol or RecordTypeSymbol { BackendType: "ptr" }
+            } cast)
+        {
+            return Call(name: RuntimeContract.Link.TokenMake,
+                entity: entity,
+                arguments: [("at", cast.Value)],
+                type: token,
+                location: cast.Location);
+        }
+
+        return visited;
     }
 
     /// <inheritdoc/>
@@ -218,7 +248,11 @@ internal sealed class LinkLoweringPass : AstRewriter
             Expression holder = VisitLinkHolder(expr: held.Object);
             Expression link = Call(name: RuntimeContract.Link.Make,
                 entity: linked,
-                arguments: [("present", True(location: s.Location)), ("token", VisitExpression(expr: s.Value))],
+                arguments:
+                [
+                    ("present", True(location: s.Location)),
+                    ("token", AsReference(value: VisitExpression(expr: s.Value), entity: linked))
+                ],
                 type: holder.ResolvedType!,
                 location: s.Location);
             return s with { Target = holder, Value = link };
@@ -241,7 +275,21 @@ internal sealed class LinkLoweringPass : AstRewriter
         };
     }
 
-    /// <summary>The box of a new entity of a retroactive type: a slot of its type's store.</summary>
+    /// <summary>The reference a link keeps: <paramref name="value"/> itself, or a reference made from it when it is the
+    /// entity (an instance of a generic type whose member variable over its type parameter is a link).</summary>
+    private Expression AsReference(Expression value, EntityTypeSymbol entity)
+    {
+        return value.ResolvedType is EntityTypeSymbol
+            ? Call(name: RuntimeContract.Link.TokenMake,
+                entity: entity,
+                arguments: [("at", value)],
+                type: _registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Modifying, innerType: entity,
+                    isReadOnly: false),
+                location: value.Location)
+            : value;
+    }
+
+    /// <summary>The box of a new entity: a slot of its type's store.</summary>
     private CallExpression TakeSlot(EntityTypeSymbol entity, SourceLocation location)
     {
         CallExpression store = Call(name: RuntimeContract.Link.SlotStore,

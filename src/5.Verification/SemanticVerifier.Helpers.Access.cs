@@ -121,35 +121,6 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Marks each entity type a link in <paramref name="type"/> is on as retroactive (<c>Node</c> for a kept
-    /// <c>Modifying[Node]?</c>), remembering the first place one is kept: its entities then live in slots whose generation
-    /// goes up when one ends, so the link reads as none from then on. <paramref name="topLevel"/> counts
-    /// <paramref name="type"/> itself (a member variable, a global, a local), else only links inside it (a collection's
-    /// element).
-    /// </summary>
-    private void NoteLinks(TypeSymbol type, SourceLocation location, bool topLevel, HashSet<TypeSymbol>? seen = null)
-    {
-        seen ??= [];
-        if (type is RoutineTypeSymbol || !seen.Add(item: type) || string.IsNullOrEmpty(value: location.FileName) ||
-            IsStdlibFile(filePath: location.FileName))
-        {
-            return;
-        }
-
-        if (topLevel && Declaration.ImplicitToken.IsLink(type: type) &&
-            Declaration.ImplicitToken.LinkedEntity(token: type.TypeArguments![index: 0]) is { RetroactiveSite: null } linked)
-        {
-            _registry.MarkRetroactive(entity: linked, site: location);
-        }
-
-        IEnumerable<TypeSymbol> parts = type is TupleTypeSymbol tuple ? tuple.ElementTypes : type.TypeArguments ?? [];
-        foreach (TypeSymbol argument in parts)
-        {
-            NoteLinks(type: argument, location: location, topLevel: true, seen: seen);
-        }
-    }
-
-    /// <summary>
     /// Rejects an optional token on an entity (a link) as a parameter or a result in the program's own routines: a link
     /// is taken where it is kept, and the routine is handed the token, or hands one back.
     /// </summary>
@@ -280,13 +251,8 @@ public sealed partial class SemanticVerifier
     /// iterator's <c>emit</c> under <c>try</c>), which the caller unpacks with <c>when</c> where it gets it.
     /// </summary>
     private void ValidateNoTokenTypeArgument(TypeSymbol type, string what, SourceLocation location,
-        bool carrierAllowed = false, bool keepsLinks = true)
+        bool carrierAllowed = false)
     {
-        if (_registry.Rules.ChecksAccessTokens)
-        {
-            NoteLinks(type: type, location: location, topLevel: !carrierAllowed && keepsLinks);
-        }
-
         if (!_registry.Rules.ChecksAccessTokens || _isInCompilerGeneratedBody)
         {
             return;

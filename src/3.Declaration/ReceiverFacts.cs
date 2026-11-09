@@ -30,7 +30,7 @@ internal static class ReceiverFacts
     {
         return routine.MutationCategory == MutationCategory.Readonly &&
                (routine.OwnerType is EntityTypeSymbol ||
-                routine.OwnerType is RecordTypeSymbol owner &&
+                routine.OwnerType is RecordTypeSymbol { BackendType: "ptr" } owner &&
                 RuntimeContract.WrapperTypes.Contains(item: (owner.GenericDefinition ?? owner).BareName));
     }
 

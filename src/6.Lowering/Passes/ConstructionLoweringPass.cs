@@ -303,7 +303,8 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
         }
 
         return valueType is RecordTypeSymbol { BackendType: not null } ||
-               valueType is EntityTypeSymbol && record.BackendType == "ptr";
+               valueType is EntityTypeSymbol &&
+               (record.BackendType == "ptr" || record.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying);
     }
 
     /// <summary>True when <paramref name="creator"/> is the synthesized creator taking exactly the member

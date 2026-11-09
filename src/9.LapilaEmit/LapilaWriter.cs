@@ -614,8 +614,8 @@ internal sealed class LapilaWriter
     private readonly Dictionary<string, string> _typeStores = new(comparer: StringComparer.Ordinal);
 
     /// <summary>
-    /// The address of the slot store of the retroactive entity type <paramref name="type"/>: a zeroed 16-byte global
-    /// (its free list and its number, Ingrid's slots.lpa), one per type. Its name comes from the type's qualified
+    /// The address of the slot store of the entity type <paramref name="type"/>: a zeroed 32-byte global (its lock, its
+    /// pages with room and its slot size, Ingrid's slots.lpa), one per type. Its name comes from the type's qualified
     /// name, so a resident base and a delta name the same store alike.
     /// </summary>
     public string TypeStore(TypeSymbol type)
@@ -623,11 +623,11 @@ internal sealed class LapilaWriter
         if (!_typeStores.TryGetValue(key: type.FullName, value: out string? global))
         {
             global = $"RV_STORE_{Sanitize(text: type.FullName)}_{StableHash(text: type.FullName):x8}";
-            _globals.Append(value: $"global {global}: &U128\n\n");
+            _globals.Append(value: $"global {global}: &Items[U64, 4]\n\n");
             _typeStores[key: type.FullName] = global;
         }
 
-        return $"bitcast[@U128, Addr]({global})";
+        return $"bitcast[@Items[U64, 4], Addr]({global})";
     }
 
     /// <summary>A hash of <paramref name="text"/> that is the same in every process (FNV-1a over its UTF-16 units).</summary>
@@ -889,7 +889,7 @@ internal sealed class LapilaWriter
                 return "Addr";
             case RoutineTypeSymbol:
                 return RoutineValueRecord;
-            // A link of a retroactive type is 128 bits: the entity's address and its slot's generation (Link.rvr).
+            // A link is 128 bits: the entity's address and its slot's generation (Link.rvr).
             case RecordTypeSymbol { IsLinkOptional: true }:
                 return "U128";
             case ConstGenericValueTypeSymbol constant:

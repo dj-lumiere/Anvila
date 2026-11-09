@@ -269,16 +269,16 @@ public class RecordTypeSymbol : TypeSymbol
                                     IsLinkOptional;
 
     /// <summary>
-    /// Whether this is a link of a retroactive entity type: <c>Modifying[E]?</c> / <c>Viewing[E]?</c> where links to
-    /// <c>E</c> are kept in the program. It is laid out as 128 bits, the entity's address in the low half and its slot's
-    /// generation in the high half, all zero for none. Its presence is the check that the slot's generation is still the
-    /// link's, so a link whose entity ended reads as none. Every other optional token keeps the value layout.
+    /// Whether this is a link: <c>Modifying[E]?</c> / <c>Viewing[E]?</c> over an entity type. It is laid out as the
+    /// reference it holds, 128 bits, the entity's address in the low half and its slot's generation in the high half, all
+    /// zero for none. Its presence is the check that the slot's generation is still the link's, so a link whose entity
+    /// ended reads as none. An optional reference to a record keeps the value layout.
     /// </summary>
     public bool IsLinkOptional =>
         CarrierKind == CarrierKind.Optional &&
         TypeArguments is [RecordTypeSymbol { TypeArguments: [EntityTypeSymbol entity] } token] &&
         (token.GenericDefinition?.Name ?? token.Name) is RuntimeContract.Viewing or RuntimeContract.Modifying &&
-        entity.ReadRetroactivity();
+        !entity.IsGenericDefinition;
 
     /// <summary>Whether a <see cref="CarrierKind.Optional"/> carrier over <paramref name="typeArguments"/> is laid out as
     /// an address: its one argument is an entity reached through its address.</summary>
@@ -869,10 +869,14 @@ public class RecordTypeSymbol : TypeSymbol
         // Get the generic definition and create resolved instance with new args
         if (type is RecordTypeSymbol { GenericDefinition: not null } recordType)
         {
-            return registry != null
+            TypeSymbol resolved = registry != null
                 ? registry.GetOrCreateResolution(genericDef: recordType.GenericDefinition,
                     typeArguments: newArgs)
                 : recordType.GenericDefinition.CreateInstance(typeArguments: newArgs);
+            // A link written without `?` stays one in each instance: it never holds none.
+            return registry != null && TypeRegistry.IsRequiredLink(type: recordType)
+                ? registry.RequiredLinkOf(optional: resolved)
+                : resolved;
         }
 
         if (type is EntityTypeSymbol { GenericDefinition: not null } entityType)

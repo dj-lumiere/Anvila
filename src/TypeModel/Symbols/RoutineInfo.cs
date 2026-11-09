@@ -860,10 +860,14 @@ public sealed class RoutineInfo
 
         if (type is RecordTypeSymbol { GenericDefinition: not null } recordType)
         {
-            return registry != null
+            TypeSymbol resolved = registry != null
                 ? registry.GetOrCreateResolution(genericDef: recordType.GenericDefinition,
                     typeArguments: newArgs)
                 : recordType.GenericDefinition.CreateInstance(typeArguments: newArgs);
+            // A link written without `?` stays one in each instance: it never holds none.
+            return registry != null && TypeRegistry.IsRequiredLink(type: recordType)
+                ? registry.RequiredLinkOf(optional: resolved)
+                : resolved;
         }
 
         if (type is ProtocolTypeSymbol { GenericDefinition: not null } protocolType)

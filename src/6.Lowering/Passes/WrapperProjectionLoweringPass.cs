@@ -60,6 +60,83 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
     /// <inheritdoc/>
     protected override Expression VisitCall(CallExpression e)
     {
+        Expression visited = VisitCallParts(e: e);
+        return visited is CallExpression call ? ReferenceAsEntity(call: call) : visited;
+    }
+
+    /// <summary>
+    /// A call that hands out a reference to an entity kept elsewhere but stands for the entity (<c>me[i]</c> on a list of
+    /// entities is <c>me.modify_at(i)</c> typed as the element, OperatorLoweringPass), or is called on such a reference
+    /// with a routine of the entity's own (a reference to a container indexed in place): the reference is 128 bits and
+    /// the entity an address, so the address it holds is taken where the entity is meant.
+    /// </summary>
+    private Expression ReferenceAsEntity(CallExpression call)
+    {
+        if (call.Callee is MemberExpression { Object: { ResolvedType: { } held } receiver } callee &&
+            IsReference(type: held) && held.TypeArguments![index: 0] is EntityTypeSymbol referenced &&
+            call.ResolvedRoutine is { OwnerType: EntityTypeSymbol owner, IsCreator: false } &&
+            (owner.FullName == referenced.FullName || owner.Name == referenced.Name ||
+             referenced.GenericDefinition is { } definition && ReferenceEquals(objA: definition, objB: owner)))
+        {
+            call = call with
+            {
+                Callee = callee with
+                {
+                    Object = new BackendCastExpression(Value: receiver, Location: receiver.Location) { ResolvedType = referenced }
+                }
+            };
+        }
+
+        // A reference handed to a parameter of the entity's own type (an element reached through a reference, handed to
+        // a generic routine bound to the entity) is the address it holds.
+        List<TypeSymbol?>? parameters = call.Callee.ResolvedType is RoutineTypeSymbol routineValue
+            ? [.. routineValue.ParameterTypes]
+            : call.ResolvedRoutine?.Parameters.Where(predicate: p => p.Name != "me").Select(selector: p => p.Type).ToList();
+        if (parameters != null)
+        {
+            List<Expression>? arguments = null;
+            for (int slot = 0; slot < call.Arguments.Count && slot < parameters.Count; slot++)
+            {
+                Expression argument = call.Arguments[index: slot];
+                Expression value = argument is NamedArgumentExpression named ? named.Value : argument;
+                if (parameters[index: slot] is not EntityTypeSymbol wanted || !IsReference(type: value.ResolvedType) ||
+                    value.ResolvedType!.TypeArguments![index: 0] is not EntityTypeSymbol given ||
+                    given.FullName != wanted.FullName)
+                {
+                    continue;
+                }
+
+                var address = new BackendCastExpression(Value: value, Location: value.Location) { ResolvedType = given };
+                arguments ??= [.. call.Arguments];
+                arguments[index: slot] = argument is NamedArgumentExpression wrapped
+                    ? wrapped with { Value = address, ResolvedType = given }
+                    : address;
+            }
+
+            if (arguments != null)
+            {
+                call = call with { Arguments = arguments };
+            }
+        }
+
+        if (call.ResolvedType is EntityTypeSymbol entity &&
+            call.ResolvedRoutine?.ReturnType?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying &&
+            call.ResolvedRoutine.ReturnType.TypeArguments is [_])
+        {
+            TypeSymbol reference = registry.GetOrCreateWrapperType(wrapperName: call.ResolvedRoutine.ReturnType.BareName,
+                innerType: entity,
+                isReadOnly: call.ResolvedRoutine.ReturnType.BareName == RuntimeContract.Viewing);
+            return new BackendCastExpression(Value: call with { ResolvedType = reference }, Location: call.Location)
+            {
+                ResolvedType = entity
+            };
+        }
+
+        return call;
+    }
+
+    private Expression VisitCallParts(CallExpression e)
+    {
         if (e.Callee is not MemberExpression callee)
         {
             Expression rewritten = base.VisitCall(e: e);
@@ -139,17 +216,50 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
             : call with { Arguments = arguments };
     }
 
+    /// <inheritdoc/>
+    protected override Expression VisitWrapperProjection(WrapperProjectionExpression e)
+    {
+        Expression visited = base.VisitWrapperProjection(e: e);
+        return visited is WrapperProjectionExpression { Kind: WrapperProjectionKind.RecordAddress } projection &&
+               IsReference(type: projection.Wrapper.ResolvedType)
+            ? projection with { Wrapper = PlaceAddress(reference: projection.Wrapper) }
+            : visited;
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a reference (<c>Viewing[T]</c>, <c>Modifying[T]</c>): 128 bits, the
+    /// address of the place and the generation of an entity's slot.</summary>
+    private static bool IsReference(TypeSymbol? type)
+    {
+        return type is RecordTypeSymbol { BareName: RuntimeContract.Viewing or RuntimeContract.Modifying, TypeArguments: [_] };
+    }
+
+    /// <summary>The address a reference holds, its low half, as an <c>Addr</c>.</summary>
+    private BackendCastExpression PlaceAddress(Expression reference)
+    {
+        return new BackendCastExpression(Value: reference, Location: reference.Location)
+        {
+            ResolvedType = registry.LookupType(name: "Addr") ??
+                           throw new InvalidOperationException(message: "System.Addr is not registered.")
+        };
+    }
+
     /// <summary>
     /// The projection of <paramref name="wrapper"/> to its inner entity, or null when it is not a concrete
-    /// wrapper of an entity, or <paramref name="ownMemberName"/> names a member variable of the wrapper itself.
+    /// wrapper of an entity, or <paramref name="ownMemberName"/> names a member variable of the wrapper itself. A
+    /// reference to an entity is projected as the address it holds.
     /// </summary>
-    private WrapperProjectionExpression? Project(Expression wrapper, string? ownMemberName)
+    private Expression? Project(Expression wrapper, string? ownMemberName)
     {
         TypeSymbol? type = wrapper.ResolvedType;
 
         if (type == null || ContainsGenericParameter(type: type))
         {
             return null;
+        }
+
+        if (IsReference(type: type) && type.TypeArguments![index: 0] is EntityTypeSymbol referenced)
+        {
+            return new BackendCastExpression(Value: wrapper, Location: wrapper.Location) { ResolvedType = referenced };
         }
 
         EntityTypeSymbol? controller = registry.GetControllerType(wrapper: type);
@@ -182,7 +292,9 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
             return null;
         }
 
-        return new WrapperProjectionExpression(Wrapper: wrapper,
+        return new WrapperProjectionExpression(Wrapper: p.Kind == WrapperProjectionKind.RecordAddress && IsReference(type: type)
+                ? PlaceAddress(reference: wrapper)
+                : wrapper,
             Kind: p.Kind,
             Controller: p.Kind == WrapperProjectionKind.ControllerData ? controller : null,
             FieldIndex: p.FieldIndex,

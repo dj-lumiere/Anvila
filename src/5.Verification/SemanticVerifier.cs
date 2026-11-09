@@ -875,32 +875,6 @@ public sealed partial class SemanticVerifier
         EagerSynthesizeAllWrapperForwarders();
     }
 
-    /// <summary>Marks the entity type of each reference a lambda of the program gives from what it captured as
-    /// retroactive (see <see cref="LambdaExpression.GivesUnprovenToken"/>).</summary>
-    private void MarkLambdaReferencesRetroactive()
-    {
-        if (!_registry.Rules.ChecksAccessTokens)
-        {
-            return;
-        }
-
-        foreach (Program program in _registry.UserPrograms.Select(selector: p => p.Program))
-        {
-            AstWalker.Walk(root: program,
-                visit: node =>
-                {
-                    if (node is LambdaExpression
-                        {
-                            GivesUnprovenToken: true, ResolvedType: RoutineTypeSymbol { ReturnType: { } given }
-                        } lambda &&
-                        Declaration.ImplicitToken.LinkedEntity(token: given) is { } entity)
-                    {
-                        _registry.MarkRetroactive(entity: entity, site: lambda.Location);
-                    }
-                });
-        }
-    }
-
     /// <summary>
     /// Phase 6 (global): Runs registry-wide synthesis once after all Phase 4 analysis.
     /// Generates error-handling variants, wired routine bodies, prunes unused generics,
@@ -909,12 +883,6 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void RunPhase6GlobalDesugaring()
     {
-        // A lambda that gives a reference taken from what it captured makes that entity's type retroactive: a call of
-        // it may give a reference to an entity that ended, which is checked where it is used.
-        MarkLambdaReferencesRetroactive();
-        // Every instance the program's own bodies made is known now: a link one of them names makes its entity type
-        // retroactive before anything is lowered.
-        _registry.NoteLinksInInstances();
         // A token a link may have given is checked where it is used, and a container a running loop may walk where it
         // is changed, before the recovery variants are made.
         _runtimeChecks = new RuntimeCheckPass(registry: _registry);

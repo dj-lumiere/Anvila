@@ -817,22 +817,7 @@ internal partial class Program
                 }
 
                 PrepareResidents(room: roomKey);
-                Builder.Declaration.TypeRegistry.LastBuildLinkedLibraryEntity = false;
                 exit = BuildDelta(deltaIr: out ir);
-
-                // A program that keeps a link to a library entity type lays that type out in slots, which the resident
-                // library object and the analyzed library kept between builds (both made without the link) do not: it is
-                // built again from scratch as the full IR, and nothing of this build goes into a resident layer.
-                if (exit == 0 && Builder.Declaration.TypeRegistry.LastBuildLinkedLibraryEntity)
-                {
-                    layer?.ForgetObserved();
-                    residentSymbols = null;
-                    residentInstanceKeys = null;
-                    baseObjectPath = null;
-                    layerObjectPaths = [];
-                    layer = null;
-                    exit = BuildDelta(deltaIr: out ir, cold: true);
-                }
 
                 // The program needs another room than the base it was built against: it gets a base built for that
                 // size and is built again against it. When that base cannot be built, the program is built as the

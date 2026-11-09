@@ -772,13 +772,6 @@ public sealed partial class TypeRegistry
     public bool TasksCross { get; set; } = true;
 
     /// <summary>
-    /// The entity types the build made retroactive, in the order it did: a link (<c>Modifying[T]?</c> /
-    /// <c>Viewing[T]?</c>) to each is kept somewhere in the program, so its entities live in slots whose generation goes
-    /// up when one ends. <c>check --json</c> lists them with the place of the first link.
-    /// </summary>
-    public List<EntityTypeSymbol> RetroactiveTypes { get; } = [];
-
-    /// <summary>
     /// Whether some Revare loop of the program opens a use of its container's shape at run time (the shape check could
     /// not prove a change inside it reaches another container), so the program's calls that can add to or remove from a
     /// container check first that no use of it is open (RuntimeShapeUseLoweringPass).
@@ -788,134 +781,6 @@ public sealed partial class TypeRegistry
     /// <summary>Where the loops that open a use of their container's shape at run time are written, so the copies of
     /// their routines' bodies (the recovery variants) open it too.</summary>
     public HashSet<SourceLocation> RuntimeShapeLoops { get; } = [];
-
-    /// <summary>Whether any entity type of the build is retroactive.</summary>
-    public bool HasRetroactiveTypes => RetroactiveTypes.Count > 0;
-
-    /// <summary>
-    /// Makes <paramref name="entity"/> retroactive, remembering <paramref name="site"/> as the first place a link to it
-    /// is kept. A type already retroactive keeps its first place.
-    /// </summary>
-    public void MarkRetroactive(EntityTypeSymbol entity, SourceLocation site)
-    {
-        // A type the program does not declare itself (a library type, or one restored from the library kept between
-        // builds) is laid out without slots in what was built ahead of time.
-        string? declaredIn = (entity.Location ?? entity.GenericDefinition?.Location)?.FileName;
-        if (declaredIn == null || IsStandardLibraryFile(filePath: declaredIn))
-        {
-            LinksLibraryEntity = true;
-            LastBuildLinkedLibraryEntity = true;
-        }
-
-        if (entity.RetroactiveSite != null)
-        {
-            return;
-        }
-
-        // Once retroactivity is decided, code and layouts are made from it. A type found retroactive later (by an
-        // instance made while a generic body is made concrete) is still safe until something relied on the answer.
-        if (RetroactivityDecided && entity.RetroactivityRelied)
-        {
-            throw new InvalidOperationException(
-                message: $"The entity type '{entity.FullName}' became retroactive at {site} after code or a layout the " +
-                         "builder made already relied on it not being retroactive. Decide its retroactivity before that " +
-                         "code is lowered.");
-        }
-
-        entity.RetroactiveSite = site;
-        RetroactiveTypes.Add(item: entity);
-    }
-
-    /// <summary>Whether the program keeps a link to an entity type the standard library declares (a <c>List[S64]</c>),
-    /// so that type's entities live in slots in this build, unlike in a library object built ahead of time.</summary>
-    public bool LinksLibraryEntity { get; private set; }
-
-    /// <summary>
-    /// Whether the last build of this process kept a link to a library entity type (<see cref="LinksLibraryEntity"/>).
-    /// The compile daemon reads it after a build against its resident library object: that object lays such a type out
-    /// without slots, so the program is built again as a whole. Cleared by the daemon before each build.
-    /// </summary>
-    public static bool LastBuildLinkedLibraryEntity { get; set; }
-
-    /// <summary>
-    /// Makes retroactive each entity type a link in an instance of a generic type names: a member variable the
-    /// definition writes over its type parameter (<c>link: Modifying[T]?</c> in <c>Wrap[Node]</c>), or a type argument
-    /// (<c>List[Modifying[Node]?]</c>). Called for each instance as it is made, and for every instance once the
-    /// program's own bodies are analyzed, when the definitions' member types are known.
-    /// </summary>
-    public void NoteInstanceLinks(TypeSymbol instance)
-    {
-        if (!Rules.ChecksAccessTokens || instance.BareName == RuntimeContract.OptionalCarrier ||
-            instance.TypeArguments is not { Count: > 0 } arguments)
-        {
-            return;
-        }
-
-        SourceLocation? site = instance.Location;
-        var seen = new HashSet<TypeSymbol>(comparer: ReferenceEqualityComparer.Instance);
-        foreach (TypeSymbol argument in arguments)
-        {
-            NoteLinkIn(type: argument, site: site, seen: seen);
-        }
-
-        List<MemberVariableInfo>? members = instance switch
-        {
-            EntityTypeSymbol entity => entity.MemberVariables,
-            RecordTypeSymbol record => record.MemberVariables,
-            _ => null
-        };
-        foreach (MemberVariableInfo member in members ?? [])
-        {
-            NoteLinkIn(type: member.Type, site: member.Location ?? site, seen: seen);
-        }
-    }
-
-    /// <summary>
-    /// Whether retroactivity is decided: the program's bodies are analyzed and every instance they made was looked at.
-    /// From then on code and layouts are made from <see cref="EntityTypeSymbol.IsRetroactive"/>, and a type that
-    /// becomes retroactive after something relied on it fails the build loudly (<see cref="MarkRetroactive"/>).
-    /// </summary>
-    public bool RetroactivityDecided { get; private set; }
-
-    /// <summary><see cref="NoteInstanceLinks"/> for every instance made so far, then retroactivity is decided: what
-    /// was read of it during analysis (a size asked for) relied on nothing lowered.</summary>
-    public void NoteLinksInInstances()
-    {
-        foreach (TypeSymbol instance in AllConcreteGenericInstancesUnfiltered.ToList())
-        {
-            NoteInstanceLinks(instance: instance);
-        }
-
-        foreach (TypeSymbol type in GetAllTypes().Concat(second: AllConcreteGenericInstancesUnfiltered))
-        {
-            if (type is EntityTypeSymbol entity)
-            {
-                entity.RetroactivityRelied = false;
-            }
-        }
-
-        RetroactivityDecided = true;
-    }
-
-    private void NoteLinkIn(TypeSymbol type, SourceLocation? site, HashSet<TypeSymbol> seen)
-    {
-        if (type is RoutineTypeSymbol || !seen.Add(item: type))
-        {
-            return;
-        }
-
-        if (ImplicitToken.IsLink(type: type) && site != null &&
-            ImplicitToken.LinkedEntity(token: type.TypeArguments![index: 0]) is { RetroactiveSite: null } linked)
-        {
-            MarkRetroactive(entity: linked, site: site);
-        }
-
-        IEnumerable<TypeSymbol> parts = type is TupleTypeSymbol tuple ? tuple.ElementTypes : type.TypeArguments ?? [];
-        foreach (TypeSymbol part in parts)
-        {
-            NoteLinkIn(type: part, site: site, seen: seen);
-        }
-    }
 
     /// <summary>
     /// Whether the build checks the sharing invariant: a debug build takes an entity's access lock with
@@ -2559,7 +2424,6 @@ public sealed partial class TypeRegistry
         }
 
         TypeSymbol resolved = bestDef.CreateInstance(typeArguments: typeArguments);
-        NoteInstanceLinks(instance: resolved);
         // Decl-position expand: materialize struct-of-arrays column members from the generic def's
         // templates (one per member of the concrete source type). Appends real member variables so the
         // SoA layout falls out of ordinary record layout.

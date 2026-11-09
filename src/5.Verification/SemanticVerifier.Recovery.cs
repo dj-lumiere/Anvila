@@ -660,15 +660,6 @@ public sealed partial class SemanticVerifier
                         routine: unwrap,
                         resultType: reachedType,
                         location: viaOptional.Location));
-                    // A token taken from an optional token (a link, in a generic body or not) stays in use while the
-                    // call runs, so the entity's end waits for it.
-                    if (reachedType.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying &&
-                        value is IdentifierExpression { Name: var tokenName } &&
-                        LinkTaking.BeginUse(tokenName: tokenName, token: reachedType, location: viaOptional.Location,
-                            registry: registry) is { } begin)
-                    {
-                        Hoisted.Add(item: LinkTaking.Local(name: $"{RecoveryTempPrefix}{_seq++}", value: begin));
-                    }
                     MemberExpression onValue = viaOptional with { Object = value, UnwrapsOptionalReceiver = false };
                     rewritten = reached with { Callee = onValue };
                 }
@@ -762,12 +753,6 @@ public sealed partial class SemanticVerifier
             }
 
             Expression token = HoistFailable(call: take);
-            if (token is IdentifierExpression { Name: var tokenName } &&
-                LinkTaking.BeginUse(tokenName: tokenName, token: take.ResolvedType!, location: member.Location,
-                    registry: registry) is { } begin)
-            {
-                Hoisted.Add(item: LinkTaking.Local(name: $"{RecoveryTempPrefix}{_seq++}", value: begin));
-            }
 
             return member with { Object = token, TakesLink = false };
         }
