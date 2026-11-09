@@ -211,7 +211,7 @@ public partial class LlvmEmitter
     /// </summary>
     public IReadOnlyCollection<string> GetEmittedRoutineSymbols()
     {
-        return new HashSet<string>(collection: _generatedRoutineDefs,
+        return new HashSet<string>(collection: _generatedRoutineDefs.Concat(second: _definedStores),
             comparer: StringComparer.Ordinal);
     }
 

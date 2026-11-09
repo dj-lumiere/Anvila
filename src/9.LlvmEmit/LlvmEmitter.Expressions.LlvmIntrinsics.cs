@@ -178,6 +178,9 @@ public partial class LlvmEmitter
     /// <summary>The type stores made so far, by type.</summary>
     private readonly Dictionary<string, string> _typeStores = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>The stores a base build defines, handed to the delta builds with the base's routine symbols.</summary>
+    private readonly HashSet<string> _definedStores = new(comparer: StringComparer.Ordinal);
+
     /// <summary>
     /// Replaces each <c>{store T}</c> of a template line with the address of the zeroed 32-byte global that belongs to
     /// the type the instantiated routine binds <c>T</c> to: one per type in the program, the same one in every module
@@ -210,8 +213,22 @@ public partial class LlvmEmitter
             string typeName = arguments[index: i].FullName;
             if (!_typeStores.TryGetValue(key: typeName, value: out string? global))
             {
-                global = $"@\"rv.store.{typeName.Replace(oldValue: "\"", newValue: "")}\"";
-                EmitLine(sb: _globalDeclarations, line: $"{global} = linkonce_odr global [4 x i64] zeroinitializer, align 16");
+                string symbol = $"rv.store.{typeName.Replace(oldValue: "\"", newValue: "")}";
+                global = $"@\"{symbol}\"";
+                // The resident base defines its stores strongly and a delta refers to them. On Windows the JIT
+                // can't materialize a weak definition in the base object (COFF names its default after another
+                // symbol), and two definitions of one store would give a type two stores.
+                string definition = IsResident(mangledFuncName: symbol)
+                    ? "external global [4 x i64], align 16"
+                    : _baseMode
+                        ? "global [4 x i64] zeroinitializer, align 16"
+                        : "linkonce_odr global [4 x i64] zeroinitializer, align 16";
+                if (_baseMode)
+                {
+                    _definedStores.Add(item: symbol);
+                }
+
+                EmitLine(sb: _globalDeclarations, line: $"{global} = {definition}");
                 _typeStores[key: typeName] = global;
             }
 
