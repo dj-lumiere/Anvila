@@ -16,8 +16,7 @@ internal partial class Program
     /// Checks <paramref name="entryFile"/> like <c>check</c> and writes every diagnostic of the user's files as a JSON
     /// array: file, line, column, severity (<c>error</c>, <c>warning</c> or <c>note</c>), code, message, the last line
     /// when it covers several, the names a lambda is bound to (<c>boundTo</c>) when the error keeps or returns one, and the fix it proposes (a title and edits with 1-based lines and columns), so a tool
-    /// applies a fix without reading the message. The object is <c>{ "diagnostics": [...] }</c>. Returns 1 when there is an
-    /// error.
+    /// applies a fix without reading the message. Returns 1 when there is an error.
     /// </summary>
     private static int CheckJson(string entryFile, string? projectRoot, IReadOnlyList<string>? libraryRoots)
     {
@@ -47,8 +46,7 @@ internal partial class Program
             diagnostics.AddRange(collection: result.Notices.Select(selector: n => Entry(diagnostic: n)));
         }
 
-        var report = new Dictionary<string, object?> { [key: "diagnostics"] = diagnostics };
-        Console.WriteLine(value: Encoding.UTF8.GetString(bytes: JsonTreeWriter.ToUtf8(tree: report, indented: true)));
+        Console.WriteLine(value: Encoding.UTF8.GetString(bytes: JsonTreeWriter.ToUtf8(tree: diagnostics, indented: true)));
         return diagnostics.Any(predicate: d => (string?)d[key: "severity"] == "error") ? 1 : 0;
     }
 
