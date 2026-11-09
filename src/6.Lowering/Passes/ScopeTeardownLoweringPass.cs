@@ -1231,9 +1231,19 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // A bare-identifier RHS is a move of an existing binding — no spill needed.
         if (rhs is not IdentifierExpression)
         {
+            // A variant member variable whose case keeps the value as a link (`h.target = xs[0]` for a `@Node` case)
+            // spills the variant: the link is made where the spill is declared, from the element in place.
+            TypeSymbol? keptAs = ImplicitToken.LinkArm(target: fieldType, source: rhs.ResolvedType) != null
+                ? fieldType
+                : null;
             string tmp = $"{RuntimeContract.ReassignSpillPrefix}{_spillCounter++}";
             var decl = new VariableDeclaration(Name: tmp,
-                Type: null,
+                Type: keptAs == null
+                    ? null
+                    : new TypeExpression(Name: keptAs.Name, GenericArguments: null, Location: original.Location)
+                    {
+                        ResolvedType = keptAs
+                    },
                 Initializer: rhs,
                 Visibility: VisibilityModifier.Secret,
                 Location: original.Location);
@@ -1241,7 +1251,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 Location: original.Location));
             finalRhs = new IdentifierExpression(Name: tmp, Location: original.Location)
             {
-                ResolvedType = rhs.ResolvedType
+                ResolvedType = keptAs ?? rhs.ResolvedType
             };
         }
 

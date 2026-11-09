@@ -788,6 +788,13 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // In a program a reference written as a case is a link (or a reference to a record, reported where its type
+        // was resolved), so only a library variant still reaches this.
+        if (IsInlineOnlyTokenType(type: type) && IsProgramRevareSource(filePath: location.FileName))
+        {
+            return;
+        }
+
         if (IsInlineOnlyTokenType(type: type))
         {
             ReportError(code: SemanticDiagnosticCode.TokenVariantPayloadNotAllowed,

@@ -45,10 +45,6 @@ public sealed class MemberVariableInfo
     /// <summary>The type that owns this member variable.</summary>
     public TypeSymbol? Owner { get; init; }
 
-    /// <summary>True for a link written without <c>?</c> (<c>target: @Enemy</c>): it is laid out as the optional link
-    /// (<c>@Enemy?</c>), it never holds none, and a use of it after its entity ended fails.</summary>
-    public bool IsRequiredLink { get; init; }
-
     /// <summary>
     /// Initializes a new instance of the <see cref="MemberVariableInfo"/> class.
     /// </summary>
@@ -74,8 +70,7 @@ public sealed class MemberVariableInfo
             HasDefaultValue = HasDefaultValue,
             DefaultValue = DefaultValue,
             Location = Location,
-            Owner = Owner,
-            IsRequiredLink = IsRequiredLink
+            Owner = Owner
         };
     }
 }

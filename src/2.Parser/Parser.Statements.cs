@@ -1166,8 +1166,8 @@ public partial class Parser
             return ParseNoneTypePattern(location: location);
         }
 
-        // A tuple type: `is (S64, S64) as pair`.
-        if (Check(type: TokenType.LeftParen))
+        // A tuple type: `is (S64, S64) as pair`. A reference: `is @Node as n`, the case of a variant that keeps one.
+        if (Check(type: TokenType.LeftParen) || Check(type: TokenType.Percent) || Check(type: TokenType.At))
         {
             TypeExpression tupleType = ParseType();
             string? tupleName = ParsePatternBindingName(typeName: tupleType.Name);

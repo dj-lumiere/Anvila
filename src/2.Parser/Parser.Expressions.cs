@@ -612,7 +612,8 @@ public partial class Parser
                 "(or 'has_any', 'lacks').");
         }
 
-        if (Check(type: TokenType.None) || Check(type: TokenType.Identifier) || Check(type: TokenType.LeftParen))
+        if (Check(type: TokenType.None) || Check(type: TokenType.Identifier) || Check(type: TokenType.LeftParen) ||
+            Check(type: TokenType.Percent) || Check(type: TokenType.At))
         {
             pattern = ParseTypePattern();
         }

@@ -1651,6 +1651,12 @@ public sealed partial class TypeRegistry
         {
             GenericParameters = ["T"], Module = "System", CarrierKind = CarrierKind.Optional
         });
+        // A link written without `?` names the shell its instances are made under: each one is the `Optional` of its
+        // token under another name (RequiredLinkOf).
+        RegisterType(type: new RecordTypeSymbol(name: RuntimeContract.RequiredLink)
+        {
+            GenericParameters = ["T"], Module = "System"
+        });
         // Check is a variant (`T | Crashables`): its arms come from the stdlib
         // declarations the same way.
         RegisterType(type: new VariantTypeSymbol(name: "Check")
@@ -2419,6 +2425,73 @@ public sealed partial class TypeRegistry
         };
     }
 
+    /// <summary>The links written without <c>?</c> made so far, by the full name of the <c>Optional</c> each one is.</summary>
+    private readonly Dictionary<string, TypeSymbol> _requiredLinks = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The link written without <c>?</c> that <paramref name="optional"/> (a link, <c>Optional[Modifying[E]]</c>) is when it
+    /// never holds none: <c>Linked[Modifying[E]]</c>. It copies the optional's layout and members and keeps the
+    /// <c>Optional</c> definition, so the optional's routines serve it and the emitter lays it out the same way. Only its
+    /// name differs, which keeps a possibly empty value out of it. Anything other than a link is given back as it is.
+    /// </summary>
+    public TypeSymbol RequiredLinkOf(TypeSymbol optional)
+    {
+        if (optional is not RecordTypeSymbol { BareName: RuntimeContract.OptionalCarrier, TypeArguments: [{ } token] } link ||
+            token.BareName is not (RuntimeContract.Viewing or RuntimeContract.Modifying))
+        {
+            return optional;
+        }
+
+        if (_requiredLinks.TryGetValue(key: link.FullName, value: out TypeSymbol? known))
+        {
+            return known;
+        }
+
+        var required = new RecordTypeSymbol(name: $"{RuntimeContract.RequiredLink}[{token.InstanceArgumentName}]")
+        {
+            MemberVariables = link.MemberVariables,
+            ImplementedProtocols = link.ImplementedProtocols,
+            AssociatedTypeBindings = link.AssociatedTypeBindings,
+            TypeArguments = link.TypeArguments,
+            GenericDefinition = link.GenericDefinition,
+            CarrierKind = link.CarrierKind,
+            IsInPlaceEntity = link.IsInPlaceEntity,
+            BackendType = link.BackendType,
+            IsPacked = link.IsPacked,
+            NoneIsZero = link.NoneIsZero,
+            ForcedAlignment = link.ForcedAlignment,
+            Visibility = link.Visibility,
+            Location = link.Location,
+            Module = link.Module,
+            Realm = link.Realm
+        };
+        _requiredLinks[key: link.FullName] = required;
+        // Found by name like any instance: `Linked[System.Modifying[E]]`, with its module and with short arguments.
+        _resolutions[key: required.Name] = required;
+        _resolutions[key: required.FullName] = required;
+        _resolutions[key: $"{RuntimeContract.RequiredLink}[{token.Name}]"] = required;
+        _resolutions[key: $"System.{RuntimeContract.RequiredLink}[{token.FullName}]"] = required;
+        EnqueueDiscoveredResolution(resolved: required);
+        return required;
+    }
+
+    /// <summary>The optional a link written without <c>?</c> is laid out as (<c>Optional[Modifying[E]]</c> for
+    /// <c>Linked[Modifying[E]]</c>), whose routines it runs, or <paramref name="type"/> itself for any other type.</summary>
+    public TypeSymbol OptionalOfRequiredLink(TypeSymbol type)
+    {
+        return IsRequiredLink(type: type) && type.TypeArguments is [{ } token] &&
+               LookupType(name: RuntimeContract.OptionalCarrier) is { } optionalDef
+            ? GetOrCreateResolution(genericDef: optionalDef, typeArguments: [token])
+            : type;
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a link written without <c>?</c> (<see cref="RequiredLinkOf"/>).</summary>
+    public static bool IsRequiredLink(TypeSymbol? type)
+    {
+        return type is RecordTypeSymbol { BareName: RuntimeContract.RequiredLink, TypeArguments: [_] };
+    }
+
+
     /// <summary>
     /// Gets or creates a resolved generic type.
     /// </summary>
@@ -2431,6 +2504,13 @@ public sealed partial class TypeRegistry
         if (typeArguments.Any(predicate: t => t is ErrorTypeSymbol))
         {
             return genericDef;
+        }
+
+        // A link written without `?` is the `Optional` of its token under its own name.
+        if (genericDef is RecordTypeSymbol { Name: RuntimeContract.RequiredLink, Module: "System", IsGenericDefinition: true } &&
+            LookupType(name: RuntimeContract.OptionalCarrier) is { } optionalDef)
+        {
+            return RequiredLinkOf(optional: GetOrCreateResolution(genericDef: optionalDef, typeArguments: typeArguments));
         }
 
         // Primary key uses FullName for each type argument (e.g. "Hijacked[System.Byte]").

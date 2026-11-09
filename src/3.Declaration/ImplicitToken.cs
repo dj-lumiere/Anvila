@@ -74,11 +74,12 @@ internal static class ImplicitToken
     /// <summary>
     /// Whether <paramref name="type"/> is a link: an optional token on an entity (<c>Modifying[Node]?</c>,
     /// <c>Viewing[Node]?</c>). A member variable, a collection element, a global or a local may keep one, and it never
-    /// keeps its entity alive: once the entity ended, taking it gives none.
+    /// keeps its entity alive: once the entity ended, taking it gives none. A link written without <c>?</c>
+    /// (<c>Linked[Modifying[Node]]</c>) is one too.
     /// </summary>
     public static bool IsLink(TypeSymbol? type)
     {
-        return type is { BareName: RuntimeContract.OptionalCarrier, TypeArguments: [{ } token] } &&
+        return type is { BareName: RuntimeContract.OptionalCarrier or RuntimeContract.RequiredLink, TypeArguments: [{ } token] } &&
                LinkedEntity(token: token) != null;
     }
 
@@ -90,9 +91,32 @@ internal static class ImplicitToken
     public static bool IsLinkShape(TypeSymbol? type)
     {
         return IsLink(type: type) ||
-               type is { BareName: RuntimeContract.OptionalCarrier, TypeArguments: [{ } token] } &&
+               type is { BareName: RuntimeContract.OptionalCarrier or RuntimeContract.RequiredLink, TypeArguments: [{ } token] } &&
                token.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying &&
                token.TypeArguments is [GenericParameterTypeSymbol];
+    }
+
+    /// <summary>
+    /// The case of the variant <paramref name="target"/> that keeps a value of <paramref name="source"/> as a link: a case
+    /// written as a reference (<c>@Node</c> in <c>variant Target</c>) takes the entity, a token on it or such a link, as a
+    /// member variable of that type does, and a pattern <c>is @Node</c> names that case. Null when the variant has a case
+    /// of <paramref name="source"/>'s own type, or none that keeps it as a link.
+    /// </summary>
+    public static TypeSymbol? LinkArm(TypeSymbol? target, TypeSymbol? source)
+    {
+        if (target is not VariantTypeSymbol variant || source == null ||
+            variant.Members.Any(predicate: m => m.Type?.FullName == source.FullName))
+        {
+            return null;
+        }
+
+        return variant.Members
+                      .Select(selector: m => m.Type)
+                      .FirstOrDefault(predicate: arm => IsLink(type: arm) &&
+                                                        (LinkMade(source: source, target: arm!) != null ||
+                                                         source.FullName == arm!.TypeArguments![index: 0].FullName ||
+                                                         IsLink(type: source) && source.TypeArguments![index: 0].FullName ==
+                                                         arm.TypeArguments![index: 0].FullName));
     }
 
     /// <summary>Whether <paramref name="type"/> is a token on a retroactive entity type, so its optional is a link laid
@@ -121,6 +145,12 @@ internal static class ImplicitToken
     /// </summary>
     public static string? LinkMade(TypeSymbol source, TypeSymbol target)
     {
+        // A variant's case written as a reference keeps the entity as a member variable of that type does.
+        if (target is VariantTypeSymbol && LinkArm(target: target, source: source) is { } arm)
+        {
+            return LinkMade(source: source, target: arm);
+        }
+
         if (!IsLink(type: target))
         {
             // A link over a type parameter (`w.link = items[0]` with `link: Modifying[T]?`) takes a value of that
@@ -165,6 +195,14 @@ internal static class ImplicitToken
     public static bool Matches(TypeSymbol value, TypeSymbol target)
     {
         if (value.FullName == target.FullName || value.Name == target.Name)
+        {
+            return true;
+        }
+
+        // A link written without `?` is read through the optional it is laid out as (`%Optional[Modifying[E]]` of an
+        // optional's own routine reads a `Linked[Modifying[E]]`).
+        if (TypeRegistry.IsRequiredLink(type: value) && IsLink(type: target) &&
+            value.TypeArguments![index: 0].FullName == target.TypeArguments![index: 0].FullName)
         {
             return true;
         }

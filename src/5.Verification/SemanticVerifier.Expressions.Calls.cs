@@ -1785,18 +1785,6 @@ public sealed partial class SemanticVerifier
         }
 
         CheckCreatorArgumentNames(arguments: call.Arguments, creator: creator, type: callableType);
-        if (creator.IsSynthesized)
-        {
-            foreach (Expression argument in call.Arguments)
-            {
-                if (argument is NamedArgumentExpression named)
-                {
-                    ReportNoneIntoRequiredLink(value: named.Value,
-                        member: MemberVariableOf(type: callableType, name: named.Name));
-                }
-            }
-        }
-
         if (creator.IsSynthesized && callableType is not GenericParameterTypeSymbol)
         {
             ValidateMemberwiseConstructionAccess(type: callableType, arguments: call.Arguments, location: call.Location);

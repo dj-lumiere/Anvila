@@ -2114,8 +2114,6 @@ public sealed partial class SemanticVerifier
 
             TypeSymbol valueType = analyzed ??
                                    AnalyzeExpression(expression: value, expectedType: memberVariableType);
-            ReportNoneIntoRequiredLink(value: value, member: expectedMemberVariable);
-
             // Check type compatibility
             if (!IsAssignableTo(source: valueType, target: memberVariableType))
             {

@@ -1974,6 +1974,9 @@ public sealed partial class TypeRegistry
     public RoutineInfo? LookupMemberRoutine(TypeSymbol type, string memberRoutineName,
         bool? isFailable = null, TypeSymbol? forImplementer = null)
     {
+        // A link written without `?` runs the routines of the optional it is laid out as.
+        type = OptionalOfRequiredLink(type: type);
+
         // First check the type's own memberRoutines (O(1) by name via the nested store)
         if (LookupOwnMemberRoutine(type: type,
                 memberRoutineName: memberRoutineName,
@@ -2657,6 +2660,7 @@ public sealed partial class TypeRegistry
     public RoutineInfo? LookupMemberRoutineOverload(TypeSymbol type, string memberRoutineName,
         List<TypeSymbol> argTypes)
     {
+        type = OptionalOfRequiredLink(type: type);
         var candidates = new List<RoutineInfo>();
         CollectMemberRoutineCandidates(type: type,
             memberRoutineName: memberRoutineName,

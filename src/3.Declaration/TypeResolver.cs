@@ -248,8 +248,8 @@ internal sealed class TypeResolver
 
     /// <summary>
     /// Resolves the type of a place that keeps a value past the routine that wrote it (a member variable, a global): as
-    /// <see cref="ResolveStoredType"/>, and a reference written there is a link. <c>target: @Enemy</c> keeps the same
-    /// link as <c>target: @Enemy?</c> (see <see cref="IsRequiredLink"/>), and a reference to a record is reported.
+    /// <see cref="ResolveStoredType"/>, and a reference written there is a link. <c>target: @Enemy</c> keeps a link that
+    /// never holds none (<see cref="TypeRegistry.RequiredLinkOf"/>), and a reference to a record is reported.
     /// </summary>
     public TypeSymbol ResolveKeptType(TypeExpression? typeExpr)
     {
@@ -262,16 +262,8 @@ internal sealed class TypeResolver
         return kept;
     }
 
-    /// <summary>Whether <paramref name="typeExpr"/> is a reference written without <c>?</c> in a place that keeps it
-    /// (<c>target: @Enemy</c>): the place keeps a link that never holds none.</summary>
-    public static bool IsRequiredLink(TypeExpression? typeExpr)
-    {
-        return typeExpr is { Name: RuntimeContract.Viewing or RuntimeContract.Modifying, GenericArguments.Count: 1 } &&
-               ImplicitToken.IsLinkShape(type: typeExpr.ResolvedType);
-    }
-
     /// <summary>
-    /// The link a reference kept in a place is (<c>Modifying[Enemy]</c> kept is <c>Modifying[Enemy]?</c>), or
+    /// The link a reference kept in a place is (<c>Modifying[Enemy]</c> kept is <c>Linked[Modifying[Enemy]]</c>), or
     /// <paramref name="type"/> itself for anything else. A reference to a record kept there is reported: a record is a
     /// value with no identity, so nothing points at it from storage. Only in the program's own Revare files.
     /// </summary>
@@ -284,10 +276,12 @@ internal sealed class TypeResolver
             return type;
         }
 
+        // Written without `?`, the link never holds none: a type of its own, laid out as the optional.
         if (target is EntityTypeSymbol { IsGenericDefinition: false } or GenericParameterTypeSymbol)
         {
             return LookupTypeWithImports(name: MaybeTypeName) is { } optionalDef
-                ? _sa._registry.GetOrCreateResolution(genericDef: optionalDef, typeArguments: [type])
+                ? _sa._registry.RequiredLinkOf(
+                    optional: _sa._registry.GetOrCreateResolution(genericDef: optionalDef, typeArguments: [type]))
                 : type;
         }
 

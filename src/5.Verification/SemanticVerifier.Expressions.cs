@@ -2114,8 +2114,6 @@ public sealed partial class SemanticVerifier
         SourceLocation location)
     {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
-        ReportNoneIntoRequiredLink(value: value, member: MemberVariableOf(type: objectType, name: member.MemberName));
-
         ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: location);
         ReportWriteThroughReadOnlyPlace(member: member, objectType: objectType, location: location);
 

@@ -695,12 +695,6 @@ public sealed partial class SemanticVerifier
                     argument: argExpr,
                     receiver: callObjectType) ?? paramType);
             TakeDangerousCallableArgument(routine: routine, paramType: paramType, argument: argExpr);
-            if (routine.IsCreator)
-            {
-                ReportNoneIntoRequiredLink(value: UnwrapNamedArgument(argument: argExpr),
-                    member: MemberVariableOf(type: routine.OwnerType, name: param.Name));
-            }
-
             if (paramType is RoutineTypeSymbol)
             {
                 NoteCallableArgument(callee: routine, parameter: param.Name, argument: argExpr);
@@ -1330,6 +1324,25 @@ public sealed partial class SemanticVerifier
             return source.Realm == target.Realm || source.Category == TypeCategory.Error;
         }
 
+        // A link written without `?` takes only what surely names an entity: the entity, a token on it, another such
+        // link. Anything that may be empty (`none`, an optional, a link written with `?`) does not go in.
+        if (Declaration.TypeRegistry.IsRequiredLink(type: target))
+        {
+            string token = target.TypeArguments![index: 0].FullName;
+            return Declaration.ImplicitToken.LinkMade(source: source, target: target) != null || source.FullName == token ||
+                   // A token on such a link (a `for` element over a list of them) hands over the link.
+                   source is { BareName: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying, TypeArguments: [{ } onLink] } &&
+                   Declaration.TypeRegistry.IsRequiredLink(type: onLink) && onLink.TypeArguments![index: 0].FullName == token ||
+                   source.Category == TypeCategory.Error;
+        }
+
+        // A link written without `?` goes where a link that may be empty is kept, as the same link.
+        if (Declaration.TypeRegistry.IsRequiredLink(type: source) && Declaration.ImplicitToken.IsLink(type: target) &&
+            source.TypeArguments![index: 0].FullName == target.TypeArguments![index: 0].FullName)
+        {
+            return true;
+        }
+
         // A place that keeps a link takes the entity, a token on it, or a wider link (LinkConversionPass writes the
         // call that makes the link).
         if (Declaration.ImplicitToken.LinkMade(source: source, target: target) != null)
@@ -1474,7 +1487,8 @@ public sealed partial class SemanticVerifier
                    member.Type != null && (member.Type.Name == source.Name ||
                                            member.Type.FullName == source.FullName ||
                                            Unroamed(type: member.Type).FullName == held.FullName)) ||
-               source is VariantTypeSymbol smaller && VariantWidensTo(source: smaller, target: variant));
+               source is VariantTypeSymbol smaller && VariantWidensTo(source: smaller, target: variant) ||
+               Declaration.ImplicitToken.LinkArm(target: variant, source: source) != null);
     }
 
     /// <summary>Whether a value of <paramref name="source"/> is held as <paramref name="target"/> as it is: every type

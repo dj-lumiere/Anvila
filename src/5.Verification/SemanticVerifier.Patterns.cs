@@ -184,6 +184,13 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol patternType = ResolveType(typeExpr: typePat.Type);
 
+        // `is @Node` names the case of a variant that keeps a `@Node` link: the name it binds holds that link.
+        if (Declaration.ImplicitToken.LinkArm(target: matchedType, source: patternType) is { } linkArm)
+        {
+            patternType = linkArm;
+            typePat.Type.ResolvedType = linkArm;
+        }
+
         // A stored value of a protocol (or a token on one, an element a `for` hands out) holds a value of one of the
         // types that obey it.
         if (Declaration.TypeRegistry.DispatchedProtocol(type: ValueTokenTarget(type: matchedType) ?? matchedType) is

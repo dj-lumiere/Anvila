@@ -443,6 +443,17 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol AnalyzeNoneValueLiteral(LiteralExpression literal, TypeSymbol? expectedType)
     {
+        // A link written without `?` always names an entity.
+        if (Declaration.TypeRegistry.IsRequiredLink(type: expectedType))
+        {
+            string written = expectedType!.TypeArguments![index: 0].ShortTypeName;
+            ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
+                message: $"You give 'none' where a `{written}` link goes. It is written without `?`, so it always names " +
+                         $"an entity. Give it the entity it points at, or declare it `{written}?` to let it be empty.",
+                location: literal.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         if (expectedType != null && IsNoneCarrierSlot(type: expectedType))
         {
             return expectedType;

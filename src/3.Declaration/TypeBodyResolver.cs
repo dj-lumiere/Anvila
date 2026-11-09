@@ -291,8 +291,7 @@ internal sealed class TypeBodyResolver
                 HasDefaultValue = memberVariable.Initializer != null,
                 DefaultValue = memberVariable.Initializer,
                 Location = memberVariable.Location,
-                Owner = _sa._currentType,
-                IsRequiredLink = TypeResolver.IsRequiredLink(typeExpr: memberVariable.Type)
+                Owner = _sa._currentType
             };
     }
 
@@ -428,8 +427,7 @@ internal sealed class TypeBodyResolver
             HasDefaultValue = memberVariable.Initializer != null,
             DefaultValue = memberVariable.Initializer,
             Location = memberVariable.Location,
-            Owner = _sa._currentType,
-            IsRequiredLink = TypeResolver.IsRequiredLink(typeExpr: memberVariable.Type)
+            Owner = _sa._currentType
         };
     }
 
@@ -649,7 +647,8 @@ internal sealed class TypeBodyResolver
         _sa._currentType = previousType;
 
         // A variant has one way to be empty: a `T?` member already holds None, so it would overlap the `None` member.
-        if (hasNone && members.FirstOrDefault(predicate: m => m.Type is { } t && IsMaybeType(type: t)) is
+        if (hasNone && members.FirstOrDefault(predicate: m => m.Type is { } t && IsMaybeType(type: t) &&
+                                                         !TypeRegistry.IsRequiredLink(type: t)) is
                 { Type: { } maybe } maybeMember)
         {
             string held = maybe.TypeArguments?.FirstOrDefault()?.Name ?? "T";
@@ -727,7 +726,9 @@ internal sealed class TypeBodyResolver
             return;
         }
 
-        TypeSymbol memberType = _typeResolver.ResolveType(typeExpr: member.Type);
+        // A case is kept in the variant's value, which may be kept anywhere: a reference written as a case is a link,
+        // as it is in a record's member variable.
+        TypeSymbol memberType = _typeResolver.ResolveKeptType(typeExpr: member.Type);
 
         // Check for duplicate types
         string memberTypeName = memberType.Name;

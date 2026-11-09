@@ -1637,42 +1637,6 @@ public sealed partial class SemanticVerifier
         return target;
     }
 
-    /// <summary>The member variable <paramref name="name"/> of a value of <paramref name="type"/>, reached through a
-    /// reference too, or null.</summary>
-    private static MemberVariableInfo? MemberVariableOf(TypeSymbol? type, string name)
-    {
-        if (type is { BareName: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying, TypeArguments: [{ } reached] })
-        {
-            type = reached;
-        }
-
-        List<MemberVariableInfo>? members = type switch
-        {
-            EntityTypeSymbol entity => (entity.GenericDefinition ?? entity).MemberVariables,
-            RecordTypeSymbol record => (record.GenericDefinition ?? record).MemberVariables,
-            _ => null
-        };
-        return members?.FirstOrDefault(predicate: m => m.Name == name);
-    }
-
-    /// <summary>
-    /// Reports <c>none</c> given to a link written without <c>?</c> (<c>target: @Enemy</c>): such a link always names an
-    /// entity, and only a use after that entity ended fails.
-    /// </summary>
-    private void ReportNoneIntoRequiredLink(Expression value, MemberVariableInfo? member)
-    {
-        if (member is not { IsRequiredLink: true } || value is not LiteralExpression { LiteralType: Tokenizer.TokenType.NoneValue })
-        {
-            return;
-        }
-
-        string written = member.Type.TypeArguments is [{ } token] ? token.ShortTypeName : member.Type.ShortTypeName;
-        ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
-            message: $"You give 'none' to '{member.Name}', a `{written}` link written without `?`, which always names " +
-                     $"an entity. Give it the entity it points at, or declare it `{written}?` to let it be empty.",
-            location: value.Location);
-    }
-
     /// <summary>The read (<c>%T</c>) or write (<c>@T</c>) reference type over <paramref name="target"/>, or null when the
     /// library does not declare the reference types.</summary>
     private TypeSymbol? ReferenceTypeOver(TypeSymbol target, bool writes)
@@ -2269,8 +2233,6 @@ public sealed partial class SemanticVerifier
         MemberExpression member)
     {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
-        ReportNoneIntoRequiredLink(value: assign.Value, member: MemberVariableOf(type: objectType, name: member.MemberName));
-
         ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: assign.Location);
         ReportWriteThroughReadOnlyPlace(member: member, objectType: objectType, location: assign.Location);
 

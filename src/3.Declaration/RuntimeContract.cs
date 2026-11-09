@@ -339,6 +339,14 @@ public static class RuntimeContract
     /// <summary>The value carrier that says only whether a value is there (<c>T?</c>).</summary>
     public const string OptionalCarrier = "Optional";
 
+    /// <summary>
+    /// The builder's name of a link written without <c>?</c> (<c>target: @Enemy</c> in a member variable, a collection's
+    /// element, a global): <c>Linked[Modifying[Enemy]]</c>. It is laid out and read as the <c>Optional</c> of its token
+    /// (its routines are the <c>Optional</c> ones), and it is a type of its own so that a possibly empty value never goes
+    /// in (<c>List[@Enemy]</c> and <c>List[@Enemy?]</c> differ). A program spells it <c>@Enemy</c>.
+    /// </summary>
+    public const string RequiredLink = "Linked";
+
     /// <summary>The value carrier that gives one value or the reason it is absent (the error).</summary>
     public const string CheckCarrier = "Check";
 
@@ -416,6 +424,15 @@ public static class RuntimeContract
 
     /// <inheritdoc cref="RequireModifyingLive"/>
     public const string RequireViewingLive = "require_viewing_live";
+
+    /// <summary>Link.rvr: <c>live_modifying[T](token:)</c> and <c>live_viewing[T](token:)</c>, the same check as an
+    /// expression that gives the token back. It wraps a token used where no statement of its own can go before the use:
+    /// one a routine-value call gives, used in the same expression (<c>f().x</c>).</summary>
+    /// <remarks>Sites: RuntimeCheckPass.</remarks>
+    public const string LiveModifying = "live_modifying";
+
+    /// <inheritdoc cref="LiveModifying"/>
+    public const string LiveViewing = "live_viewing";
 
     /// <summary>Link.rvr: <c>take_modifying_link(link:)</c>, the token a link holds for a use that does not take the link
     /// by <c>when</c> (<c>node.parent.id</c>), failing with <c>StaleLinkError</c> once the entity ended.</summary>

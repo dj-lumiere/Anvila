@@ -38,7 +38,30 @@ internal sealed class LinkConversionPass : AstRewriter
     /// <summary>Runs over the program's routine bodies.</summary>
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(registry: _registry, program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: _registry, program: program, lower: r =>
+        {
+            _returnType = r.ResolvedInfo?.ReturnType;
+            Statement lowered = VisitStatement(stmt: r.Body);
+            _returnType = null;
+            return lowered;
+        });
+    }
+
+    /// <summary>The result type of the routine whose body is being lowered, when it is known.</summary>
+    private TypeSymbol? _returnType;
+
+    /// <inheritdoc/>
+    protected override Statement VisitReturn(ReturnStatement s)
+    {
+        // A result of a variant whose case is a reference keeps the entity it is given as a link.
+        Statement visited = base.VisitReturn(s: s);
+        if (visited is not ReturnStatement { Value: { } value } result || _returnType is not VariantTypeSymbol)
+        {
+            return visited;
+        }
+
+        Expression converted = Convert(value: value, target: _returnType);
+        return ReferenceEquals(objA: converted, objB: value) ? visited : result with { Value = converted };
     }
 
     /// <summary>
@@ -47,6 +70,14 @@ internal sealed class LinkConversionPass : AstRewriter
     /// </summary>
     private Expression Convert(Expression value, TypeSymbol? target, bool wrap = false)
     {
+        // A variant's case written as a reference keeps the entity (or a token on it) as a link.
+        if (target is VariantTypeSymbol && value is { ResolvedType: { } held } &&
+            ImplicitToken.LinkArm(target: target, source: held) is { } arm &&
+            !ImplicitToken.IsLink(type: held))
+        {
+            return Convert(value: value, target: arm, wrap: true);
+        }
+
         // A token on a link (a `for` element over a list of links) given where a link is kept hands over the link.
         if (target != null && ImplicitToken.IsLink(type: target) && LinkTaking.ReadTokenOnLink(value: value, registry: _registry) is { } read)
         {
@@ -257,6 +288,47 @@ internal sealed class LinkConversionPass : AstRewriter
         Expression value = Convert(value: assign.Right, target: assign.Left.ResolvedType,
             wrap: assign.Left is IndexExpression);
         return ReferenceEquals(objA: value, objB: assign.Right) ? assign : assign with { Right = value };
+    }
+
+    /// <inheritdoc/>
+    protected override Expression VisitListLiteral(ListLiteralExpression e)
+    {
+        // An element of a collection of links (`var xs: List[@Node] = [a]`) is kept as a link.
+        Expression visited = base.VisitListLiteral(e: e);
+        return visited is ListLiteralExpression { ResolvedType.TypeArguments: [{ } element] } list &&
+               ImplicitToken.IsLinkShape(type: element) &&
+               ConvertAll(values: list.Elements, target: element) is { } elements
+            ? list with { Elements = elements }
+            : visited;
+    }
+
+    /// <inheritdoc/>
+    protected override Expression VisitSetLiteral(SetLiteralExpression e)
+    {
+        Expression visited = base.VisitSetLiteral(e: e);
+        return visited is SetLiteralExpression { ResolvedType.TypeArguments: [{ } element] } set &&
+               ImplicitToken.IsLinkShape(type: element) &&
+               ConvertAll(values: set.Elements, target: element) is { } elements
+            ? set with { Elements = elements }
+            : visited;
+    }
+
+    /// <summary>Each of <paramref name="values"/> made into a link of <paramref name="target"/>'s type, or null when none
+    /// changed.</summary>
+    private List<Expression>? ConvertAll(List<Expression> values, TypeSymbol target)
+    {
+        List<Expression>? converted = null;
+        for (int i = 0; i < values.Count; i++)
+        {
+            Expression value = Convert(value: values[index: i], target: target, wrap: true);
+            if (!ReferenceEquals(objA: value, objB: values[index: i]))
+            {
+                converted ??= [.. values];
+                converted[index: i] = value;
+            }
+        }
+
+        return converted;
     }
 
     /// <inheritdoc/>

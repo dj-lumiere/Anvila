@@ -18,7 +18,11 @@ namespace Builder.Lowering.Passes;
 /// <c>token.require_live()</c> (Link.rvr), which fails with <c>EntityEndedError</c> once the entity's slot is marked
 /// ended. A token is unproven when it was taken from a link (the arm of a <c>when</c> over one, a link used directly)
 /// or given by a call of a routine value (a lambda may give one taken from what it captured), when a local was given one, or when it is a token parameter (or <c>me</c>) of a routine some call hands an
-/// unproven token to, found across the program's routines until nothing changes. Only tokens on retroactive entity
+/// unproven token to, found across the program's routines until nothing changes. The routines a <c>try</c> or
+/// <c>check</c> over an expression is made into count as the program's routines, so a use under the keyword is checked
+/// in there and the keyword receives the failure. A token a routine-value call gives, used in the same expression
+/// (<c>f().x</c>), has no statement of its own to be checked before: it is wrapped in <c>live_modifying[T](token:)</c>
+/// (or the <c>Viewing</c> one), which checks it and gives it back. Only tokens on retroactive entity
 /// types are checked: no other entity ends while a link to it is used. A token taken from a link keeps the slot from
 /// being reused while it is in use, so the check reads a header that is still the entity's. In a generic routine a token
 /// over a type parameter is checked by <c>require_modifying_live[T]</c> / <c>require_viewing_live[T]</c>, which do
@@ -31,8 +35,40 @@ namespace Builder.Lowering.Passes;
 /// </summary>
 internal sealed class RuntimeCheckPass(TypeRegistry registry)
 {
-    /// <summary>The routines of the program, by registry key.</summary>
-    private readonly Dictionary<string, RoutineDeclaration> _routines = new(comparer: StringComparer.Ordinal);
+    /// <summary>The routines of the program, by registry key, with their bodies. <c>Base</c> marks the routine a
+    /// <c>try</c> or <c>check</c> over an expression was made into: its body is analyzed later, so its checks go in
+    /// through <see cref="InsertInto"/>.</summary>
+    private readonly Dictionary<string, (RoutineInfo Info, Statement Body, bool Base)> _routines =
+        new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The files of the program's own routines.</summary>
+    private readonly HashSet<string> _files = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether the routine kept under <paramref name="key"/> is one of the program's. The routine a <c>try</c> or
+    /// <c>check</c> over an expression of the program was made into counts once it is made, which may be after the
+    /// walk over the program (a recovery variant's copy of a routine's body makes its own when it is analyzed): it
+    /// takes the names the expression reads as parameters, so a token handed there unproven is checked in its body.
+    /// </summary>
+    private bool Known(string key)
+    {
+        if (_routines.ContainsKey(key: key))
+        {
+            return true;
+        }
+
+        if (!registry.DeferredVariantBases.TryGetValue(key: key, value: out (RoutineInfo info, Statement body, bool) deferred) ||
+            !deferred.info.IsSynthesized || deferred.info.Location is not { FileName: var file } || !_files.Contains(item: file))
+        {
+            return false;
+        }
+
+        _routines[key: key] = (deferred.info, deferred.body, true);
+        return true;
+    }
+
+    /// <summary>The bodies checks already went into, so a body reached twice gets them once.</summary>
+    private readonly HashSet<Statement> _checkedBodies = new(comparer: ReferenceEqualityComparer.Instance);
 
     /// <summary>The parameters (and <c>me</c>) of each routine that may hold a token taken from a link.</summary>
     private readonly Dictionary<string, HashSet<string>> _unproven = new(comparer: StringComparer.Ordinal);
@@ -56,6 +92,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             return;
         }
 
+        HashSet<string> files = _files;
         foreach (Program program in programs)
         {
             AstWalker.Walk(root: program,
@@ -63,19 +100,27 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                 {
                     // A generic routine is checked in its definition: each instance is made from that body, and the
                     // check of a token over a type parameter does nothing in an instance whose type is not retroactive.
-                    if (node is RoutineDeclaration { Body: BlockStatement, ResolvedInfo: { } info } routine)
+                    if (node is RoutineDeclaration { Body: BlockStatement body, ResolvedInfo: { } info } routine)
                     {
-                        _routines.TryAdd(key: Key(routine: info), value: routine);
+                        _routines.TryAdd(key: Key(routine: info), value: (info, body, false));
+                        files.Add(item: routine.Location.FileName);
                     }
                 });
+        }
+
+        // The routine a `try` or `check` over an expression of the program was made into takes the names the
+        // expression reads as parameters: a token handed there unproven is checked in its body.
+        foreach (string key in registry.DeferredVariantBases.Keys)
+        {
+            Known(key: key);
         }
 
         while (_links)
         {
             _changed = false;
-            foreach ((string key, RoutineDeclaration routine) in _routines)
+            foreach ((string key, (RoutineInfo _, Statement body, bool _)) in _routines)
             {
-                Walk(stmt: routine.Body, names: [.. Unproven(key: key)], insert: false);
+                Walk(stmt: body, names: [.. Unproven(key: key)], insert: false);
             }
 
             if (!_changed)
@@ -84,12 +129,17 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             }
         }
 
-        foreach ((string key, RoutineDeclaration routine) in _routines)
+        foreach ((string key, (RoutineInfo info, Statement body, bool isBase)) in _routines)
         {
+            if (isBase || !_checkedBodies.Add(item: body))
+            {
+                continue;
+            }
+
             _inserted = false;
-            Walk(stmt: routine.Body, names: [.. Unproven(key: key)], insert: true);
+            Walk(stmt: body, names: [.. Unproven(key: key)], insert: true);
             // A routine that now checks a token can fail, so a `try` or `check` above a call of it receives the failure.
-            if (_inserted && routine.ResolvedInfo is { } info)
+            if (_inserted)
             {
                 info.HasThrow = true;
             }
@@ -102,7 +152,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
     /// </summary>
     public void InsertInto(RoutineInfo routine, Statement body)
     {
-        if (!_routines.ContainsKey(key: Key(routine: routine)))
+        if (!Known(key: Key(routine: routine)) || !_checkedBodies.Add(item: body))
         {
             return;
         }
@@ -110,7 +160,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
         HashSet<string> names = _unproven.TryGetValue(key: Key(routine: routine), value: out HashSet<string>? known)
             ? [.. known]
             : new HashSet<string>(comparer: StringComparer.Ordinal);
-        if (_shapes || names.Count > 0)
+        if (_shapes || _links)
         {
             Walk(stmt: body, names: names, insert: true);
         }
@@ -141,6 +191,11 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                 HashSet<string> scope = names;
                 for (int i = 0; i < block.Statements.Count; i++)
                 {
+                    if (insert && _links && WrapLiveUses(stmt: block.Statements[index: i]) is { } wrapped)
+                    {
+                        block.Statements[index: i] = wrapped;
+                    }
+
                     Statement inner = block.Statements[index: i];
                     Note(stmt: inner, names: scope);
                     if (insert)
@@ -278,6 +333,12 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                     if (e is RecoveryExpression recovery)
                     {
                         NoteIn(root: recovery.Inner, names: names);
+                        // The routine the keyword's expression was made into is handed the names it reads.
+                        if (recovery.LoweredCall is { } lowered)
+                        {
+                            NoteIn(root: lowered, names: names);
+                        }
+
                         return;
                     }
 
@@ -302,7 +363,7 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                         routine = inner;
                     }
 
-                    if (!_routines.ContainsKey(key: Key(routine: routine)))
+                    if (!Known(key: Key(routine: routine)))
                     {
                         return;
                     }
@@ -357,12 +418,139 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
             IdentifierExpression id => names.Contains(item: id.Name),
             MemberExpression member => member.TakesLink || IsUnproven(expr: member.Object, names: names),
             IndexExpression element => IsUnproven(expr: element.Object, names: names),
-            // A routine value may be a lambda that gives a reference taken from what it captured, whose entity may
-            // have ended before the call.
-            CallExpression call => call.Callee.ResolvedType is RoutineTypeSymbol &&
-                                   call.ResolvedType?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying,
+            // A link used where a reference is expected (`hit(e: h.target)`) is taken first: the token it gives names
+            // an entity that may end while it is used.
+            CallExpression { ResolvedRoutine: { } taken } when IsLinkTake(routine: taken) => true,
+            CallExpression call => GivesUnprovenToken(call: call),
             _ => false
         };
+    }
+
+    /// <summary>Whether <paramref name="routine"/> takes the token a link holds (<c>take_modifying_link</c>).</summary>
+    private static bool IsLinkTake(RoutineInfo routine)
+    {
+        return (routine.GenericDefinition ?? routine).Name is RuntimeContract.TakeModifyingLink or
+            RuntimeContract.TakeViewingLink;
+    }
+
+    /// <summary>Whether <paramref name="call"/> calls a routine value and gives a token: the value may be a lambda that
+    /// gives a reference taken from what it captured, whose entity may have ended before the call.</summary>
+    private static bool GivesUnprovenToken(CallExpression call)
+    {
+        return call.Callee.ResolvedType is RoutineTypeSymbol &&
+               call.ResolvedType?.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying;
+    }
+
+    /// <summary>
+    /// <paramref name="stmt"/> with each token a routine-value call gives, used in the same expression (<c>f().x</c>,
+    /// <c>f()[0]</c>, <c>f().rename()</c>), wrapped in the check that gives it back, or null when it has none. Only the
+    /// statement's own expressions are rewritten: a nested statement is reached by its own block.
+    /// </summary>
+    private Statement? WrapLiveUses(Statement stmt)
+    {
+        var wrapper = new LiveUseWrapper(pass: this);
+        Statement rewritten = stmt switch
+        {
+            ExpressionStatement e => wrapper.VisitExpression(expr: e.Expression) is var x && !ReferenceEquals(objA: x, objB: e.Expression)
+                ? e with { Expression = x }
+                : e,
+            AssignmentStatement a when (wrapper.VisitExpression(expr: a.Target), wrapper.VisitExpression(expr: a.Value)) is var (t, v) &&
+                                       (!ReferenceEquals(objA: t, objB: a.Target) || !ReferenceEquals(objA: v, objB: a.Value)) =>
+                a with { Target = t, Value = v },
+            DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } init } local } d =>
+                wrapper.VisitExpression(expr: init) is var i && !ReferenceEquals(objA: i, objB: init)
+                    ? d with { Declaration = local with { Initializer = i } }
+                    : d,
+            ReturnStatement { Value: { } value } r => wrapper.VisitExpression(expr: value) is var rv && !ReferenceEquals(objA: rv, objB: value)
+                ? r with { Value = rv }
+                : r,
+            DropStatement d => wrapper.VisitExpression(expr: d.Expression) is var de && !ReferenceEquals(objA: de, objB: d.Expression)
+                ? d with { Expression = de }
+                : d,
+            IfStatement f => wrapper.VisitExpression(expr: f.Condition) is var c && !ReferenceEquals(objA: c, objB: f.Condition)
+                ? f with { Condition = c }
+                : f,
+            WhenStatement w => wrapper.VisitExpression(expr: w.Expression) is var we && !ReferenceEquals(objA: we, objB: w.Expression)
+                ? w with { Expression = we }
+                : w,
+            _ => stmt
+        };
+        if (ReferenceEquals(objA: rewritten, objB: stmt))
+        {
+            return null;
+        }
+
+        _inserted = true;
+        return rewritten;
+    }
+
+    /// <summary><c>live_modifying[T](token: value)</c> (or the <c>Viewing</c> one) over a token a routine-value call
+    /// gives, when the token reaches a retroactive entity or a type parameter, else null.</summary>
+    private CallExpression? LiveCheck(Expression value)
+    {
+        if (value.ResolvedType is not { BareName: var wrapper, TypeArguments: [{ } over] } tokenType ||
+            wrapper is not (RuntimeContract.Modifying or RuntimeContract.Viewing) || RetroactiveEntity(type: tokenType) == null)
+        {
+            return null;
+        }
+
+        string name = wrapper == RuntimeContract.Modifying
+            ? RuntimeContract.LiveModifying
+            : RuntimeContract.LiveViewing;
+        if (registry.LookupGenericOverload(name: name, module: "System") is not { } definition)
+        {
+            return null;
+        }
+
+        RoutineInfo instance = registry.GetOrCreateRoutineResolution(genericDef: definition, typeArguments: [over]);
+        return new CallExpression(
+            Callee: new IdentifierExpression(Name: name, Location: value.Location) { ResolvedRoutine = instance },
+            Arguments:
+            [
+                new NamedArgumentExpression(Name: "token", Value: value, Location: value.Location)
+                {
+                    ResolvedType = tokenType
+                }
+            ],
+            Location: value.Location)
+        {
+            ResolvedRoutine = instance,
+            ResolvedType = tokenType,
+            LoweringKind = CallLoweringKind.DirectRoutine,
+            IsSynthesizedLowering = true,
+            // Over a type parameter each instance of the routine binds its own instance of the check.
+            TypeArguments = over is GenericParameterTypeSymbol
+                ? [new TypeExpression(Name: over.Name, GenericArguments: null, Location: value.Location)]
+                : null
+        };
+    }
+
+    /// <summary>Wraps each token a routine-value call gives where a member or an element is reached through it. A
+    /// <c>try</c> / <c>check</c> is left as it is: its expression is checked in the routine it was made into.</summary>
+    private sealed class LiveUseWrapper(RuntimeCheckPass pass) : AstRewriter
+    {
+        protected override Expression VisitRecovery(RecoveryExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitMember(MemberExpression e)
+        {
+            Expression visited = base.VisitMember(e: e);
+            return visited is MemberExpression { TakesLink: false, Object: CallExpression call } member &&
+                   GivesUnprovenToken(call: call) && pass.LiveCheck(value: call) is { } live
+                ? member with { Object = live }
+                : visited;
+        }
+
+        protected override Expression VisitIndex(IndexExpression e)
+        {
+            Expression visited = base.VisitIndex(e: e);
+            return visited is IndexExpression { Object: CallExpression call } element &&
+                   GivesUnprovenToken(call: call) && pass.LiveCheck(value: call) is { } live
+                ? element with { Object = live }
+                : visited;
+        }
     }
 
     /// <summary>The key a routine's checks are kept under: a generic routine's definition for each of its instances.</summary>
