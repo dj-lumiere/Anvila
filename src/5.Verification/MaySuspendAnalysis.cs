@@ -129,7 +129,15 @@ public static class SuspendPrimitives
         "rf_signal_wait",
         "rf_signal_wait_deadline",
         // A call of a foreign routine marked @blocking: the calling coroutine parks while an I/O thread runs it.
-        "rf_blocking_call"
+        "rf_blocking_call",
+        // The scheduler's parks: `waitfor` parks on a timer, an await of another job parks until it wakes the
+        // coroutine (with or without a deadline), and `retrieve` and a race drive the scheduler until a job ends.
+        "rf_sched_park_timer",
+        "rf_sched_park_deadline",
+        "rf_sched_park_external",
+        "rf_task_await_coro_deadline",
+        "rf_sched_run_until_default",
+        "rf_race_wait"
     };
 
     /// <summary>

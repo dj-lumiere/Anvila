@@ -27,9 +27,11 @@ namespace Builder.Lowering.Passes;
 /// reference in it is also checked where it is used: it is wrapped in <c>live_modifying[T](token:)</c> (or the
 /// <c>Viewing</c> one), which checks it and gives it back. So is a reference a routine-value call gives, used in the same
 /// expression (<c>f().x</c>). A reference handed to another routine carries its generation, and that routine checks it
-/// before each use. What remains unchecked is a call's receiver: an unproven reference (or a member path read from one)
-/// is checked when the receiver is evaluated, before the call's arguments, so an argument that ends the entity
-/// (<c>n.attach(world.remove(n))</c>) is not seen.</item>
+/// before each use. A call's receiver (or an argument before a later one) is evaluated before the arguments after it, so
+/// when one of those calls a routine and the receiver reaches an entity through an unproven reference
+/// (<c>n.attach(world.remove(n))</c>, <c>n.kids.add_last(value: world.remove(n))</c>), the statement's calls up to the
+/// last one in those arguments go into locals first, in the order they ran, and the reference is checked again after
+/// them, right before the call.</item>
 /// <item>A container a running loop may walk. When the shape check left a loop to check its container at run time
 /// (RuntimeShapeUseLoweringPass opens the use), every call of an <c>@reshaping</c> routine and every subscript write
 /// that may add a key first checks its receiver (<c>xs.require_shape_free()</c>, ShapeUse.rvr), which fails with
@@ -216,6 +218,12 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
                         if (_links && WrapLiveUses(stmt: inner, names: scope) is { } wrapped)
                         {
                             block.Statements[index: i] = wrapped;
+                        }
+
+                        if (_links && SpillArguments(stmt: block.Statements[index: i], names: scope) is var (before, residual))
+                        {
+                            block.Statements[index: i] = residual;
+                            checks.AddRange(collection: before);
                         }
 
                         if (checks.Count > 0)
@@ -501,6 +509,305 @@ internal sealed class RuntimeCheckPass(TypeRegistry registry)
 
         _inserted = true;
         return rewritten;
+    }
+
+    /// <summary>
+    /// Splits a statement holding a call whose receiver (or an argument before a later one) reaches an entity through an
+    /// unproven reference while a later argument calls a routine, which may end that entity. What the statement evaluates
+    /// up to the last call in those arguments goes into locals first, in the order it ran: each call, and each number,
+    /// choice or flags value read out of an entity (a copy taken while the entity was there). The references the rest of
+    /// the statement still reaches an entity through are then checked again, right before the statement runs with the
+    /// locals. Null when the statement has no such call. Only eagerly evaluated positions count: the right side of
+    /// <c>and</c>/<c>or</c>/<c>??</c>, the arms of a <c>when</c> and the expression under a <c>try</c>/<c>check</c> run on
+    /// their own.
+    /// </summary>
+    private (List<Statement> Before, Statement Residual)? SpillArguments(Statement stmt, HashSet<string> names)
+    {
+        Expression? root = stmt switch
+        {
+            ExpressionStatement e => e.Expression,
+            DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } init } } => init,
+            ReturnStatement { Value: { } value } => value,
+            DropStatement d => d.Expression,
+            AssignmentStatement a => a.Value,
+            IfStatement f => f.Condition,
+            WhenStatement w => w.Expression,
+            _ => null
+        };
+        if (root == null)
+        {
+            return null;
+        }
+
+        var scan = new ArgumentSpiller(names: names, limit: -1, stealsEntities: false);
+        scan.VisitExpression(expr: root);
+        if (scan.Limit < 0)
+        {
+            return null;
+        }
+
+        var spiller = new ArgumentSpiller(names: names, limit: scan.Limit,
+            stealsEntities: !registry.EntitiesAreSharedIn(filePath: stmt.Location.FileName));
+        Expression rewritten = spiller.VisitExpression(expr: root);
+        if (spiller.Unhoistable || spiller.Hoisted.Count == 0)
+        {
+            return null;
+        }
+
+        var before = new List<Statement>(collection: spiller.Hoisted);
+        foreach (IdentifierExpression name in UncheckedUses(expr: rewritten, names: names))
+        {
+            if (Check(name: name, location: stmt.Location) is { } check)
+            {
+                before.Add(item: new ExpressionStatement(Expression: check, Location: stmt.Location));
+            }
+        }
+
+        _inserted = true;
+        Statement residual = stmt switch
+        {
+            ExpressionStatement e => e with { Expression = rewritten },
+            DeclarationStatement { Declaration: VariableDeclaration local } d =>
+                d with { Declaration = local with { Initializer = rewritten } },
+            ReturnStatement r => r with { Value = rewritten },
+            DropStatement d => d with { Expression = rewritten },
+            AssignmentStatement a => a with { Value = rewritten },
+            IfStatement f => f with { Condition = rewritten },
+            WhenStatement w => w with { Expression = rewritten },
+            _ => stmt
+        };
+        return (before, residual);
+    }
+
+    /// <summary>The unproven names <paramref name="expr"/> reaches a member or an element through without a check of its
+    /// own (<c>me.attach(...)</c>): a use wrapped in <c>live_modifying</c> checks itself where it is evaluated, and a name
+    /// handed to a routine carries its generation there. One each.</summary>
+    private static List<IdentifierExpression> UncheckedUses(Expression expr, HashSet<string> names)
+    {
+        var found = new List<IdentifierExpression>();
+        AstWalker.WalkExpressions(root: expr,
+            visit: e =>
+            {
+                Expression? reached = e switch
+                {
+                    MemberExpression { TakesLink: false } member => member.Object,
+                    IndexExpression element => element.Object,
+                    _ => null
+                };
+                if (reached is IdentifierExpression id && names.Contains(item: id.Name) &&
+                    CheckedEntity(type: id.ResolvedType) != null && found.All(predicate: seen => seen.Name != id.Name))
+                {
+                    found.Add(item: id);
+                }
+            });
+        return found;
+    }
+
+    /// <summary>Whether <paramref name="call"/> is a check this pass put in (<c>live_modifying</c>) or the take of a
+    /// link's token: neither ends an entity, and each stays where it is evaluated.</summary>
+    private static bool IsUseMarker(Expression call)
+    {
+        return call is CallExpression { IsSynthesizedLowering: true, ResolvedRoutine: { } routine } &&
+               (IsLinkTake(routine: routine) ||
+                (routine.GenericDefinition ?? routine).Name is RuntimeContract.LiveModifying or RuntimeContract.LiveViewing);
+    }
+
+    private static int _spillTemp;
+
+    /// <summary>
+    /// Walks one expression in evaluation order, numbering the calls it reaches (post-order), the checks of
+    /// <see cref="IsUseMarker"/> aside. The scan (<c>limit</c> -1) finds each call whose receiver or earlier argument
+    /// reaches an entity through an unproven name while a later argument calls a routine, and sets <see cref="Limit"/> to
+    /// the number of the last call in its arguments. The spill moves into a fresh <c>var __rc_arg_N</c> in
+    /// <see cref="Hoisted"/> each call numbered up to <c>limit</c>, and each number, choice or flags read out of a member
+    /// or an element before that call. An entity a temp holds is handed on with <c>steal</c>, unless only a routine of it
+    /// is called.
+    /// </summary>
+    private sealed class ArgumentSpiller(HashSet<string> names, int limit, bool stealsEntities) : AstRewriter
+    {
+        private int _index;
+
+        /// <summary>The number of the last call the spill moves, or -1 when no call needs it.</summary>
+        public int Limit { get; private set; } = -1;
+
+        /// <summary>A value the spill would move is untyped or none, so the statement is left as it is.</summary>
+        public bool Unhoistable { get; private set; }
+
+        /// <summary>The moved values' locals, in evaluation order.</summary>
+        public List<Statement> Hoisted { get; } = [];
+
+        /// <summary>The calls whose value is the receiver of another call of the statement, with that other call.</summary>
+        private readonly Dictionary<Expression, Expression> _receiverOf = new(comparer: ReferenceEqualityComparer.Instance);
+
+        /// <summary>The member expressions that name a called routine (<c>n.attach</c> of <c>n.attach(...)</c>): no read.</summary>
+        private readonly HashSet<Expression> _callees = new(comparer: ReferenceEqualityComparer.Instance);
+
+        public override Expression VisitExpression(Expression expr)
+        {
+            // A number read out of a member or an element before the last moved call is a copy taken where it was
+            // evaluated: it moves too, so it is not read after a call that may end its entity.
+            if (limit < 0 || _index > limit || expr is not (MemberExpression { TakesLink: false } or IndexExpression) ||
+                _callees.Contains(item: expr) || !IsCopiedOut(type: expr.ResolvedType))
+            {
+                return base.VisitExpression(expr: expr);
+            }
+
+            return Hoist(value: base.VisitExpression(expr: expr), original: expr);
+        }
+
+        protected override Expression VisitCall(CallExpression e)
+        {
+            _callees.Add(item: e.Callee);
+            Expression? receiver = (e.Callee as MemberExpression)?.Object;
+            return Spill(original: e, receiver: receiver, arguments: e.Arguments, rewrite: () => base.VisitCall(e: e));
+        }
+
+        protected override Expression VisitGenericMemberRoutineCall(GenericMemberRoutineCallExpression e)
+        {
+            Expression? receiver = e.IsFree ? null : e.Object;
+            return Spill(original: e, receiver: receiver, arguments: e.Arguments,
+                rewrite: () => base.VisitGenericMemberRoutineCall(e: e));
+        }
+
+        private Expression Spill(Expression original, Expression? receiver, List<Expression> arguments,
+            Func<Expression> rewrite)
+        {
+            if (receiver is CallExpression or GenericMemberRoutineCallExpression)
+            {
+                _receiverOf[key: receiver] = original;
+            }
+
+            if (IsUseMarker(call: original))
+            {
+                return rewrite();
+            }
+
+            Expression rewritten = rewrite();
+            int index = _index++;
+            if (limit < 0)
+            {
+                NoteHazard(receiver: receiver, arguments: arguments, index: index);
+                return rewritten;
+            }
+
+            return index > limit
+                ? rewritten
+                : Hoist(value: rewritten, original: original);
+        }
+
+        /// <summary>Moves <paramref name="value"/> into a fresh local and gives what reads it there.</summary>
+        private Expression Hoist(Expression value, Expression original)
+        {
+            if (value.ResolvedType is not { IsNone: false } type)
+            {
+                Unhoistable = true;
+                return value;
+            }
+
+            string tempName = $"__rc_arg_{Interlocked.Increment(location: ref _spillTemp)}";
+            Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(
+                    Name: tempName,
+                    Type: null,
+                    Initializer: value,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: original.Location),
+                Location: original.Location));
+            var reference = new IdentifierExpression(Name: tempName, Location: original.Location) { ResolvedType = type };
+            // An entity whose routine the statement only calls stays the temp's own, which the scope tears down. One that
+            // is handed on is stolen from the temp.
+            return stealsEntities && type.Category == TypeCategory.Entity && !_receiverOf.ContainsKey(key: original)
+                ? new StealExpression(Operand: reference, Location: original.Location) { ResolvedType = type }
+                : reference;
+        }
+
+        /// <summary>In the scan: when a later argument of the call numbered <paramref name="index"/> calls a routine while
+        /// its receiver or an earlier argument reaches an entity through an unproven name, every call up to the one before
+        /// it moves.</summary>
+        private void NoteHazard(Expression? receiver, List<Expression> arguments, int index)
+        {
+            int last = arguments.FindLastIndex(match: CallsRoutine);
+            if (last < 0)
+            {
+                return;
+            }
+
+            var earlier = new List<Expression>();
+            if (receiver != null)
+            {
+                earlier.Add(item: receiver);
+            }
+
+            earlier.AddRange(collection: arguments.Take(count: last));
+            bool found = false;
+            foreach (Expression part in earlier)
+            {
+                AstWalker.WalkExpressions(root: part,
+                    visit: x => found |= x is IdentifierExpression id && names.Contains(item: id.Name) &&
+                                         CheckedEntity(type: id.ResolvedType) != null);
+            }
+
+            if (found)
+            {
+                Limit = Math.Max(val1: Limit, val2: index - 1);
+            }
+        }
+
+        /// <summary>Whether a value of <paramref name="type"/> is a number, a choice or flags: one register, not a
+        /// reference or a link.</summary>
+        private static bool IsCopiedOut(TypeSymbol? type)
+        {
+            return CheckedEntity(type: type) == null && !ImplicitToken.IsLink(type: type) &&
+                   type is RecordTypeSymbol { BackendType: not null, MemberVariables.Count: 0 } or ChoiceTypeSymbol or
+                       FlagsTypeSymbol;
+        }
+
+        /// <summary>Whether <paramref name="expr"/> calls a routine, the checks of <see cref="IsUseMarker"/> aside.</summary>
+        private static bool CallsRoutine(Expression expr)
+        {
+            bool found = false;
+            AstWalker.WalkExpressions(root: expr,
+                visit: x => found |= x is CallExpression or GenericMemberRoutineCallExpression && !IsUseMarker(call: x));
+            return found;
+        }
+
+        protected override Expression VisitBinary(BinaryExpression e)
+        {
+            if (e.Operator is not (BinaryOperator.And or BinaryOperator.Or or BinaryOperator.NoneCoalesce))
+            {
+                return base.VisitBinary(e: e);
+            }
+
+            // The right side runs only when the left side lets it: it is left where it is.
+            Expression left = VisitExpression(expr: e.Left);
+            return ReferenceEquals(objA: left, objB: e.Left)
+                ? e
+                : e with { Left = left };
+        }
+
+        protected override Expression VisitConditional(ConditionalExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitWhenExpression(WhenExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitRecovery(RecoveryExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitBlockExpression(BlockExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitWork(WorkExpression e)
+        {
+            return e;
+        }
     }
 
     /// <summary><c>live_modifying[T](token: value)</c> (or the <c>Viewing</c> one) over a token a routine-value call

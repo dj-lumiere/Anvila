@@ -453,7 +453,7 @@ public partial class LlvmEmitter
     /// </summary>
     private void EmitCancellationPush(StringBuilder sb, CancellationPushStatement push)
     {
-        string unique = _localVarLlvmNames[key: push.Local];
+        string unique = _localVarLlvmNames.GetValueOrDefault(key: push.Local, defaultValue: push.Local);
         GenerateRoutineDeclaration(routine: push.Destroy);
         string destroy = MangleRoutineName(routine: push.Destroy);
         string value = $"%{unique}.addr";
@@ -474,7 +474,7 @@ public partial class LlvmEmitter
     /// <summary>Emits a <see cref="CancellationPopStatement"/>: <c>rf_coro_cf_pop</c> of the local's node.</summary>
     private void EmitCancellationPop(StringBuilder sb, CancellationPopStatement pop)
     {
-        string unique = _localVarLlvmNames[key: pop.Local];
+        string unique = _localVarLlvmNames.GetValueOrDefault(key: pop.Local, defaultValue: pop.Local);
         _rfRoutineDeclarations[key: Declaration.RuntimeContract.Runtime.CoroCfPop] =
             $"declare void @{Declaration.RuntimeContract.Runtime.CoroCfPop}(ptr)";
         EmitLine(sb: sb, line: $"  call void @{Declaration.RuntimeContract.Runtime.CoroCfPop}(ptr %{unique}.cfnode)");

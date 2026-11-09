@@ -2190,6 +2190,11 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             case StealExpression { Operand: IdentifierExpression id } steal when !_lentSteals.Contains(item: steal):
                 _movedNames.Add(item: id.Name);
                 break;
+            // `drop x` tears the binding down where it stands, so no scope exit does it again. A routine's own body
+            // has this from semantic analysis too, a variant body (`drop f()` whose value went into a temp) only here.
+            case DropStatement { EndsBinding: true, Expression: IdentifierExpression dropped }:
+                _movedNames.Add(item: dropped.Name);
+                break;
             // `var (a, b) = pair()` spelled out (`var t = pair()`, `var a = t.item0`): an entity read out of a value
             // that holds entities (a tuple of entities) is the binding's now, so the value is not torn down again
             // on top of its parts. A name a pattern binds (`else as p` reading `subject.value`) only reads it.

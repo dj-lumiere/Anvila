@@ -1326,13 +1326,31 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             DeclarationStatement { Declaration: VariableDeclaration vd } d =>
                 d with { Declaration = vd with { Initializer = newRoot } },
             ExpressionStatement es => es with { Expression = newRoot },
-            DropStatement ds => ds with { Expression = newRoot },
+            DropStatement ds => DropHoisted(dropped: ds, newRoot: newRoot, hoisted: hoisted),
             AssignmentStatement a => a with { Value = newRoot },
             IfStatement ifs => ifs with { Condition = newRoot },
             WhenStatement ws => ws with { Expression = newRoot },
             _ => stmt
         };
         return true;
+    }
+
+    /// <summary>
+    /// The <c>drop</c> left after its value was hoisted. When the dropped call itself went into a temp
+    /// (<c>drop xs.remove_last()</c> became <c>var __rf_hoist_N = xs.remove_last()</c>), the drop ends that temp's
+    /// binding: the value ends at the drop, as it does in the routine's plain version, not when the scope ends.
+    /// </summary>
+    private static DropStatement DropHoisted(DropStatement dropped, Expression newRoot, List<Statement> hoisted)
+    {
+        if ((newRoot is StealExpression { Operand: IdentifierExpression stolen } ? stolen : newRoot) is
+            IdentifierExpression temp &&
+            hoisted.Any(predicate: h => h is DeclarationStatement { Declaration: VariableDeclaration v } &&
+                                        v.Name == temp.Name))
+        {
+            return dropped with { Expression = temp, EndsBinding = true };
+        }
+
+        return dropped with { Expression = newRoot };
     }
 
     /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>), an element of
