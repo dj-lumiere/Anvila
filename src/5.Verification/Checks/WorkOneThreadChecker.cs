@@ -131,7 +131,7 @@ internal sealed class WorkOneThreadChecker(DiagnosticReporter report)
     }
 
     /// <summary>
-    /// A routine marked <c>@moves_block</c> (<c>PoolManager.add</c>) moves the entity handed to it into another block
+    /// A routine marked <c>@moves_block</c> (<c>StampManager.add</c>) moves the entity handed to it into another block
     /// and gives the old one back. A Work of this routine whose arguments reach that entity (a token of it, or a member
     /// a Work changes where it lies, an <c>Unbroken</c>) and that is not collected yet would then work on the given-back
     /// block, so handing the entity over before the Work is collected is RV-S632. A Work handed a copied member value
@@ -196,10 +196,10 @@ internal sealed class WorkOneThreadChecker(DiagnosticReporter report)
                     }
 
                     report(code: SemanticDiagnosticCode.ThreadArgNotShareable,
-                        message: $"'{moved.Name}' goes into the pool here, which moves it, while the Work " +
+                        message: $"'{moved.Name}' goes into the StampManager here, which moves it, while the Work " +
                                  $"'{work}' (line {made.Line}) was handed '{moved.Name}' or part of it and hasn't " +
                                  $"finished: what it holds would no longer reach '{moved.Name}'. Collect the Work first " +
-                                 $"('{work}.retrieve()'), then hand '{moved.Name}' to the pool. A member value the Work " +
+                                 $"('{work}.retrieve()'), then hand '{moved.Name}' to the StampManager. A member value the Work " +
                                  "only needs a copy of can be put in a name first and that name handed to the Work.",
                         location: call.Location);
                 }

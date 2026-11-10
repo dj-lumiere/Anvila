@@ -331,9 +331,10 @@ public sealed class CancellationInstrumentationPass
         var rewritten = new List<Statement>(capacity: block.Statements.Count);
         var inScope = new List<string>(collection: scope);
 
-        foreach (Statement stmt in block.Statements)
+        foreach (Statement written in block.Statements)
         {
-            RecurseInto(stmt: stmt, locals: locals, scope: inScope);
+            // A branch that is no block (a bare `return` or `throw`) becomes one when it needs the pops.
+            Statement stmt = RecurseInto(stmt: written, locals: locals, scope: inScope);
 
             if (IsDestroyCall(stmt: stmt, local: out string? destroyed) &&
                 locals.ContainsKey(key: destroyed!))
@@ -456,57 +457,77 @@ public sealed class CancellationInstrumentationPass
         return handedOn;
     }
 
-    /// <summary>Descends into a statement's nested blocks so they are instrumented too.</summary>
-    private void RecurseInto(Statement stmt, Dictionary<string, Teardown> locals, List<string> scope)
+    /// <summary>Descends into a statement's nested blocks so they are instrumented too. Gives the statement back, with
+    /// a branch that is a bare <c>return</c> or <c>throw</c> made a block of the pops and the exit.</summary>
+    private Statement RecurseInto(Statement stmt, Dictionary<string, Teardown> locals, List<string> scope)
     {
         switch (stmt)
         {
             case BlockStatement b:
                 InstrumentBlock(block: b, locals: locals, scope: scope);
-                break;
+                return b;
             case IfStatement i:
-                RecurseStmt(stmt: i.ThenStatement, locals: locals, scope: scope);
-                if (i.ElseStatement != null)
-                {
-                    RecurseStmt(stmt: i.ElseStatement, locals: locals, scope: scope);
-                }
-
-                break;
+            {
+                Statement then = RecurseStmt(stmt: i.ThenStatement, locals: locals, scope: scope);
+                Statement? otherwise = i.ElseStatement != null
+                    ? RecurseStmt(stmt: i.ElseStatement, locals: locals, scope: scope)
+                    : null;
+                return ReferenceEquals(objA: then, objB: i.ThenStatement) &&
+                       ReferenceEquals(objA: otherwise, objB: i.ElseStatement)
+                    ? i
+                    : i with { ThenStatement = then, ElseStatement = otherwise };
+            }
             case WhileStatement w:
-                RecurseStmt(stmt: w.Body, locals: locals, scope: scope);
-                break;
+            {
+                Statement body = RecurseStmt(stmt: w.Body, locals: locals, scope: scope);
+                return ReferenceEquals(objA: body, objB: w.Body) ? w : w with { Body = body };
+            }
             case LoopStatement l:
-                RecurseStmt(stmt: l.Body, locals: locals, scope: scope);
-                break;
+            {
+                Statement body = RecurseStmt(stmt: l.Body, locals: locals, scope: scope);
+                return ReferenceEquals(objA: body, objB: l.Body) ? l : l with { Body = body };
+            }
             case ForStatement f:
-                RecurseStmt(stmt: f.Body, locals: locals, scope: scope);
-                break;
+            {
+                Statement body = RecurseStmt(stmt: f.Body, locals: locals, scope: scope);
+                return ReferenceEquals(objA: body, objB: f.Body) ? f : f with { Body = body };
+            }
             case DangerStatement d:
                 InstrumentBlock(block: d.Body, locals: locals, scope: scope);
-                break;
+                return d;
             case UsingStatement u:
-                RecurseStmt(stmt: u.Body, locals: locals, scope: scope);
-                break;
+            {
+                Statement body = RecurseStmt(stmt: u.Body, locals: locals, scope: scope);
+                return ReferenceEquals(objA: body, objB: u.Body) ? u : u with { Body = body };
+            }
             case WhenStatement whenStmt:
+            {
+                var clauses = new List<WhenClause>(capacity: whenStmt.Clauses.Count);
+                bool changed = false;
                 foreach (WhenClause clause in whenStmt.Clauses)
                 {
-                    RecurseStmt(stmt: clause.Body, locals: locals, scope: scope);
+                    Statement body = RecurseStmt(stmt: clause.Body, locals: locals, scope: scope);
+                    changed |= !ReferenceEquals(objA: body, objB: clause.Body);
+                    clauses.Add(item: ReferenceEquals(objA: body, objB: clause.Body) ? clause : clause with { Body = body });
                 }
 
-                break;
+                return changed ? whenStmt with { Clauses = clauses } : whenStmt;
+            }
+            default:
+                return stmt;
         }
     }
 
-    private void RecurseStmt(Statement stmt, Dictionary<string, Teardown> locals, List<string> scope)
+    private Statement RecurseStmt(Statement stmt, Dictionary<string, Teardown> locals, List<string> scope)
     {
-        if (stmt is BlockStatement b)
+        if (stmt is ReturnStatement or VariantReturnStatement or ThrowStatement)
         {
-            InstrumentBlock(block: b, locals: locals, scope: scope);
+            var wrapped = new BlockStatement(Statements: [stmt], Location: stmt.Location);
+            InstrumentBlock(block: wrapped, locals: locals, scope: scope);
+            return wrapped.Statements.Count > 1 ? wrapped : stmt;
         }
-        else
-        {
-            RecurseInto(stmt: stmt, locals: locals, scope: scope);
-        }
+
+        return RecurseInto(stmt: stmt, locals: locals, scope: scope);
     }
 
     private static bool IsDestroyCall(Statement stmt, out string? local)

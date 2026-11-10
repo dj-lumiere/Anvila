@@ -258,7 +258,7 @@ internal sealed class GlobalThreadChecker(DiagnosticReporter report)
             ? $"'{current.Name}' uses"
             : $"'{current.Name}', which '{called.Name}' calls, uses";
         report(code: SemanticDiagnosticCode.GlobalChangedAcrossThreads,
-            message: $"This Work runs '{called.Name}' on another thread, and {who} the PoolManager ({where}). The pool belongs to " +
+            message: $"This Work runs '{called.Name}' on another thread, and {who} the StampManager ({where}). A StampManager belongs to " +
                      "one thread, like a global the program changes, so a routine another thread runs can't set it up, add to it, " +
                      "fetch from it, remove from it, sweep it or end it. Keep the entities on one thread, or put a graph that " +
                      "threads share behind a manager such as Guarded.",

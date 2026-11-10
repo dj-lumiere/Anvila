@@ -196,7 +196,10 @@ public sealed partial class SemanticVerifier
         // A call written with explicit type arguments (`f[T](x)`, `o.m[T](x)`) is still its generic-call node
         // here (it becomes a plain call in a later lowering): take it as the plain call it is bound to.
         Expression inner = AsPlainCall(expr: innerExpression);
-        var hoister = new RecoveryFailableHoister(seed: 0, registry: _registry);
+        // A first walk finds the number reads a later hoisted call would otherwise run before, the second hoists them too.
+        var scan = new RecoveryFailableHoister(seed: 0, registry: _registry, readsToHoist: null);
+        scan.VisitExpression(expr: inner);
+        var hoister = new RecoveryFailableHoister(seed: 0, registry: _registry, readsToHoist: scan.ReadsLeftBehind());
         Expression residual = hoister.VisitExpression(expr: inner);
 
         // A keyword over an expression that reaches nothing that can fail still gives its carrier: the routine built
@@ -583,9 +586,54 @@ public sealed partial class SemanticVerifier
     /// tree by a reference to that temp. All identifier names encountered are recorded in
     /// <see cref="ReferencedNames"/> so the caller can capture the outer locals the body reads as parameters.
     /// </summary>
-    private sealed class RecoveryFailableHoister(int seed, TypeRegistry registry) : AstRewriter
+    private sealed class RecoveryFailableHoister(int seed, TypeRegistry registry, HashSet<int>? readsToHoist) : AstRewriter
     {
         private int _seq = seed;
+
+        // Evaluation order of the number reads and the hoisted calls, which both walks number the same way.
+        private int _order;
+        private int _frameSeq;
+        private readonly List<int> _frames = [];
+        private readonly List<(int Order, HashSet<int> Enclosing)> _reads = [];
+        private readonly List<(int Order, int Frame)> _hoists = [];
+        private readonly HashSet<Expression> _callees = new(comparer: ReferenceEqualityComparer.Instance);
+
+        /// <summary>The orders of the number, choice or flags reads (<c>n.id</c> of <c>n.id.add(world.remove(n))</c>) that a
+        /// call hoisted after them, other than the call they belong to, would run before: the plain call reads them first,
+        /// so the hoist moves them too, as copies taken where they were evaluated.</summary>
+        public HashSet<int> ReadsLeftBehind()
+        {
+            var result = new HashSet<int>();
+            foreach ((int order, HashSet<int> enclosing) in _reads)
+            {
+                if (_hoists.Any(predicate: h => h.Order > order && !enclosing.Contains(item: h.Frame)))
+                {
+                    result.Add(item: order);
+                }
+            }
+
+            return result;
+        }
+
+        private T InFrame<T>(Func<T> walk)
+        {
+            _frames.Add(item: _frameSeq++);
+            try
+            {
+                return walk();
+            }
+            finally
+            {
+                _frames.RemoveAt(index: _frames.Count - 1);
+            }
+        }
+
+        private static bool IsCopiedOut(TypeSymbol? type)
+        {
+            return type is RecordTypeSymbol { BackendType: not null, MemberVariables.Count: 0 } or ChoiceTypeSymbol or
+                       FlagsTypeSymbol &&
+                   !ImplicitToken.IsLink(type: type);
+        }
 
         /// <summary>The hoisted `var __rc_tN = &lt;failable call&gt;` declarations, in evaluation order.</summary>
         public List<Statement> Hoisted { get; } = [];
@@ -629,6 +677,12 @@ public sealed partial class SemanticVerifier
         }
 
         protected override Expression VisitCall(CallExpression e)
+        {
+            _callees.Add(item: e.Callee);
+            return InFrame(walk: () => VisitCallInFrame(e: e));
+        }
+
+        private Expression VisitCallInFrame(CallExpression e)
         {
             // Rewrite children first (post-order) so any inner failable calls are already hoisted + replaced.
             Expression rewritten = base.VisitCall(e: e);
@@ -691,6 +745,11 @@ public sealed partial class SemanticVerifier
         /// <summary>A construction bound to a failable creator is a failable call, hoisted as one.</summary>
         protected override Expression VisitCreator(CreatorExpression e)
         {
+            return InFrame(walk: () => VisitCreatorInFrame(e: e));
+        }
+
+        private Expression VisitCreatorInFrame(CreatorExpression e)
+        {
             Expression rewritten = base.VisitCreator(e: e);
             return rewritten is CreatorExpression { ResolvedCreatorRoutine: { } bound } creator &&
                    (bound.IsFailable || bound.HasThrow) && AsPlainCall(expr: creator) is CallExpression call
@@ -709,6 +768,11 @@ public sealed partial class SemanticVerifier
         /// </summary>
         protected override Expression VisitBinary(BinaryExpression e)
         {
+            return InFrame(walk: () => VisitBinaryInFrame(e: e));
+        }
+
+        private Expression VisitBinaryInFrame(BinaryExpression e)
+        {
             // Rewrite operands first (post-order = left→right eval order) so any inner failable calls hoist.
             Expression rewritten = base.VisitBinary(e: e);
             return rewritten is BinaryExpression bin && FailurePointCalls.ForBinary(bin: bin, registry: registry) is
@@ -720,6 +784,11 @@ public sealed partial class SemanticVerifier
         /// <summary>A checked negation (<c>-x</c> of the type's minimum) is a failable call, as above.</summary>
         protected override Expression VisitUnary(UnaryExpression e)
         {
+            return InFrame(walk: () => VisitUnaryInFrame(e: e));
+        }
+
+        private Expression VisitUnaryInFrame(UnaryExpression e)
+        {
             Expression rewritten = base.VisitUnary(e: e);
             return rewritten is UnaryExpression unary &&
                    FailurePointCalls.ForUnary(unary: unary, registry: registry) is { } call
@@ -729,6 +798,11 @@ public sealed partial class SemanticVerifier
 
         /// <summary>An element read (<c>xs[i]</c>) is a failable <c>getitem</c> call, as above.</summary>
         protected override Expression VisitIndex(IndexExpression e)
+        {
+            return InFrame(walk: () => VisitIndexInFrame(e: e));
+        }
+
+        private Expression VisitIndexInFrame(IndexExpression e)
         {
             Expression rewritten = base.VisitIndex(e: e);
             return rewritten is IndexExpression idx && FailurePointCalls.ForIndex(idx: idx, registry: registry) is { } call
@@ -746,19 +820,43 @@ public sealed partial class SemanticVerifier
         protected override Expression VisitMember(MemberExpression e)
         {
             Expression rewritten = base.VisitMember(e: e);
-            if (rewritten is not MemberExpression { TakesLink: true } member ||
-                LinkTaking.Take(link: member.Object, registry: registry) is not { } take)
+            if (rewritten is MemberExpression { TakesLink: true } member &&
+                LinkTaking.Take(link: member.Object, registry: registry) is { } take)
+            {
+                Expression token = HoistFailable(call: take);
+                rewritten = member with { Object = token, TakesLink = false };
+            }
+
+            // A number read out of an entity is a copy taken where it is evaluated, so a call hoisted after it
+            // (an argument that changes or ends that entity) must not run before it.
+            if (rewritten is not MemberExpression { TakesLink: false } read || _callees.Contains(item: e) ||
+                !IsCopiedOut(type: read.ResolvedType) || read.Object is IdentifierExpression { Name: "None" })
             {
                 return rewritten;
             }
 
-            Expression token = HoistFailable(call: take);
+            int order = _order++;
+            _reads.Add(item: (order, [.. _frames]));
+            return readsToHoist != null && readsToHoist.Contains(item: order)
+                ? HoistValue(value: rewritten)
+                : rewritten;
+        }
 
-            return member with { Object = token, TakesLink = false };
+        private Expression HoistValue(Expression value)
+        {
+            string tempName = $"{RecoveryTempPrefix}{_seq++}";
+            Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
+                    Type: null,
+                    Initializer: value,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: value.Location),
+                Location: value.Location));
+            return new IdentifierExpression(Name: tempName, Location: value.Location) { ResolvedType = value.ResolvedType };
         }
 
         private Expression HoistFailable(CallExpression call)
         {
+            _hoists.Add(item: (_order++, _frames.Count > 0 ? _frames[^1] : -1));
             // A call that returns nothing runs as a statement of its own, and `None` stands where it was. Its recovery
             // variant gives only whether it succeeded, which a statement passes on and a local of type None could not.
             if (call.ResolvedType is { IsNone: true } nothing)
