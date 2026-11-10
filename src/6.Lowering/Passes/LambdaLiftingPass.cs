@@ -1279,6 +1279,11 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             case UnaryExpression u:
                 yield return u.Operand;
                 break;
+            // A lambda whose body changes a value (`() => c.n += 1`) reads the names on both sides.
+            case CompoundAssignmentExpression compound:
+                yield return compound.Target;
+                yield return compound.Value;
+                break;
             case CallExpression c:
                 yield return c.Callee;
                 foreach (Expression arg in c.Arguments)
