@@ -43,7 +43,8 @@ namespace Builder.Desugaring.Passes;
 /// <c>RangeExpression</c> iterable is converted to <c>Range[T](...)</c> by
 /// <see cref="Builder.Lowering.Passes.ExpressionLoweringPass"/> (which runs after this pass). Such a loop is marked
 /// (<see cref="LoopStatement.RangeWalk"/>), and analysis replaces the walk with <see cref="RangeCounterLoop"/> when
-/// the range's element type is an integer.</para>
+/// the range's element type is an integer. A loop this pass lowers after analysis (a library body, a recovery
+/// variant, a made-concrete body) counts right away (<see cref="TypedRangeCounterLoop"/>).</para>
 /// </summary>
 internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 {
@@ -692,6 +693,12 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     private BlockStatement LowerFor(ForStatement forStmt, string walkRoutine = Declaration.RuntimeContract.Iter,
         RangeExpression? rangeLiteral = null)
     {
+        // Lowered after analysis, a loop over an integer range literal counts right away (nothing analyzes it later).
+        if (TypedRangeCounterLoop(forStmt: forStmt) is { } counted)
+        {
+            return counted;
+        }
+
         // A loop over a value nothing holds (`for w in make()`, `for w in text.words()`) walks a temporary
         // the iterator only borrows: name it in a block around the loop, so it lives until the loop is done
         // and is released when the block ends. (Before analysis only: afterwards the name would carry no type.)
@@ -880,7 +887,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                     Location: loc),
                 loc: loc));
             round.Add(item: BreakUnless(more: more, loc: loc));
-            AddBinding(round: round, arm: arm, at: at, loc: loc);
+            AddBinding(round: round, variable: arm.VariableName, at: at, types: null, loc: loc);
             round.Add(item: new AssignmentStatement(Target: Name(name: more, loc: loc),
                 Value: SourceCall(range: range, routine: "continues_after", arguments: StepArguments(at: at, by: by, loc: loc), loc: loc),
                 Location: loc));
@@ -899,34 +906,13 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         {
             statements.Add(item: Local(name: end, value: SourceMember(range: range, member: "end", loc: loc), loc: loc));
             statements.Add(item: Local(name: at, value: SourceMember(range: range, member: "start", loc: loc), loc: loc));
-            Statement stepOne = new AssignmentStatement(Target: Name(name: at, loc: loc),
-                Value: new BinaryExpression(Left: Name(name: at, loc: loc),
-                    Operator: BinaryOperator.Add,
-                    Right: new LiteralExpression(Value: "1", LiteralType: TokenType.UndecidedInteger, Location: loc),
-                    Location: loc),
-                Location: loc);
-            if (range.Inclusive)
-            {
-                statements.Add(item: Local(name: more, value: Compare(left: at, op: BinaryOperator.LessEqual, right: end, loc: loc), loc: loc));
-                round.Add(item: BreakUnless(more: more, loc: loc));
-                AddBinding(round: round, arm: arm, at: at, loc: loc);
-                round.Add(item: new AssignmentStatement(Target: Name(name: more, loc: loc),
-                    Value: Compare(left: at, op: BinaryOperator.Less, right: end, loc: loc),
-                    Location: loc));
-                round.Add(item: new IfStatement(Condition: Name(name: more, loc: loc),
-                    ThenStatement: new BlockStatement(Statements: [stepOne], Location: loc),
-                    ElseStatement: null,
-                    Location: loc));
-            }
-            else
-            {
-                round.Add(item: new IfStatement(Condition: Compare(left: at, op: BinaryOperator.GreaterEqual, right: end, loc: loc),
-                    ThenStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
-                    ElseStatement: null,
-                    Location: loc));
-                AddBinding(round: round, arm: arm, at: at, loc: loc);
-                round.Add(item: stepOne);
-            }
+            AddCountingRound(statements: statements,
+                round: round,
+                counter: new CounterNames(At: at, End: end, More: more),
+                inclusive: range.Inclusive,
+                variable: arm.VariableName,
+                types: null,
+                loc: loc);
         }
 
         if (last.Body is BlockStatement body)
@@ -942,45 +928,174 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         return statements;
     }
 
-    /// <summary><c>var name = value</c>, a local of the counter loop.</summary>
-    private static DeclarationStatement Local(string name, Expression value, SourceLocation loc)
+    /// <summary>The names of a counter loop's own locals: the value of this round, the range's end, and (for a
+    /// <c>to</c> loop) whether another round follows.</summary>
+    private sealed record CounterNames(string At, string End, string More);
+
+    /// <summary>The types a counter loop's own expressions carry when it is built after analysis, which nothing
+    /// analyzes afterwards: the range's integer element type and <c>Bool</c>. Null before analysis.</summary>
+    private sealed record CounterTypes(TypeSymbol Element, TypeSymbol Bool);
+
+    /// <summary>
+    /// The rounds of a counter loop without <c>by</c>: the statements in front of the loop that it needs besides
+    /// the start and the end (<paramref name="statements"/>), then the round's own head (<paramref name="round"/>)
+    /// before the body. <c>til</c> stops before the end, and <c>to</c> compares with the end before it steps, so an
+    /// end at the type's largest value never steps past it.
+    /// </summary>
+    private static void AddCountingRound(List<Statement> statements, List<Statement> round, CounterNames counter,
+        bool inclusive, string? variable, CounterTypes? types, SourceLocation loc)
+    {
+        Statement stepOne = new AssignmentStatement(Target: Name(name: counter.At, loc: loc, type: types?.Element),
+            Value: new BinaryExpression(Left: Name(name: counter.At, loc: loc, type: types?.Element),
+                Operator: BinaryOperator.Add,
+                Right: new LiteralExpression(Value: "1", LiteralType: TokenType.UndecidedInteger, Location: loc)
+                {
+                    ResolvedType = types?.Element
+                },
+                Location: loc) { ResolvedType = types?.Element },
+            Location: loc);
+        if (inclusive)
+        {
+            statements.Add(item: Local(name: counter.More,
+                value: Compare(left: counter.At, op: BinaryOperator.LessEqual, right: counter.End, types: types, loc: loc),
+                loc: loc,
+                declared: types?.Bool));
+            round.Add(item: BreakUnless(more: counter.More, types: types, loc: loc));
+            AddBinding(round: round, variable: variable, at: counter.At, types: types, loc: loc);
+            round.Add(item: new AssignmentStatement(Target: Name(name: counter.More, loc: loc, type: types?.Bool),
+                Value: Compare(left: counter.At, op: BinaryOperator.Less, right: counter.End, types: types, loc: loc),
+                Location: loc));
+            round.Add(item: new IfStatement(Condition: Name(name: counter.More, loc: loc, type: types?.Bool),
+                ThenStatement: new BlockStatement(Statements: [stepOne], Location: loc),
+                ElseStatement: null,
+                Location: loc));
+        }
+        else
+        {
+            round.Add(item: new IfStatement(
+                Condition: Compare(left: counter.At, op: BinaryOperator.GreaterEqual, right: counter.End, types: types, loc: loc),
+                ThenStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
+                ElseStatement: null,
+                Location: loc));
+            AddBinding(round: round, variable: variable, at: counter.At, types: types, loc: loc);
+            round.Add(item: stepOne);
+        }
+    }
+
+    /// <summary>
+    /// The counter loop a <c>for</c> over an integer range literal runs when the loop is lowered after analysis (a
+    /// library body, a recovery variant, a made-concrete body). It is the loop <see cref="RangeCounterLoop"/> gives a
+    /// loop lowered before analysis, built with the types analysis gave the range, since nothing analyzes it
+    /// afterwards. The start and the end are evaluated once, in the order written. Null when the loop is not over an
+    /// integer range literal without <c>by</c>, and the loop then walks the range's emitter.
+    /// </summary>
+    private BlockStatement? TypedRangeCounterLoop(ForStatement forStmt)
+    {
+        if (forStmt is not
+            {
+                VariablePattern: null,
+                StepFailureKind: null,
+                Iterable: RangeExpression { Step: null, IsDescending: false } range
+            } ||
+            range.ResolvedType is not RecordTypeSymbol
+            {
+                GenericDefinition.Name: "Range", TypeArguments: [RecordTypeSymbol element]
+            } ||
+            !IsCountingInteger(type: element) ||
+            range.Start.ResolvedType?.Name != element.Name ||
+            range.End.ResolvedType?.Name != element.Name ||
+            ctx.Registry.LookupType(name: "Bool") is not { } boolType)
+        {
+            return null;
+        }
+
+        SourceLocation loc = forStmt.Location;
+        int n = _iterCount++;
+        var counter = new CounterNames(At: $"_lf_at_{n}", End: $"_lf_end_{n}", More: $"_lf_more_{n}");
+        var types = new CounterTypes(Element: element, Bool: boolType);
+        var statements = new List<Statement>
+        {
+            Local(name: counter.At, value: range.Start, loc: loc, declared: element),
+            Local(name: counter.End, value: range.End, loc: loc, declared: element)
+        };
+        var round = new List<Statement>();
+        AddCountingRound(statements: statements,
+            round: round,
+            counter: counter,
+            inclusive: !range.IsExclusive,
+            variable: forStmt.Variable == "_" ? null : forStmt.Variable,
+            types: types,
+            loc: loc);
+        Statement body = LowerStatement(stmt: forStmt.Body);
+        if (body is BlockStatement block)
+        {
+            round.AddRange(collection: block.Statements);
+        }
+        else
+        {
+            round.Add(item: body);
+        }
+
+        statements.Add(item: new LoopStatement(Body: new BlockStatement(Statements: round, Location: loc), Location: loc));
+        return new BlockStatement(Statements: statements, Location: loc);
+    }
+
+    /// <summary>Whether a range over <paramref name="type"/> can count: a fixed-width integer (<c>S8</c> to
+    /// <c>U256</c>) or <c>Int</c>.</summary>
+    private static bool IsCountingInteger(TypeSymbol type)
+    {
+        return type.Name == "Int" ||
+               type.Name.Length >= 2 && type.Name[index: 0] is 'S' or 'U' && type.Name[1..].All(predicate: char.IsDigit);
+    }
+
+    /// <summary><c>var name = value</c>, a local of the counter loop, or <c>var name: T = value</c> when
+    /// <paramref name="declared"/> gives the type. A loop built after analysis states its types: a body analyzed
+    /// again later (a recovery variant) would otherwise give a bare literal start its own default type.</summary>
+    private static DeclarationStatement Local(string name, Expression value, SourceLocation loc,
+        TypeSymbol? declared = null)
     {
         return new DeclarationStatement(Declaration: new VariableDeclaration(Name: name,
-                Type: null,
+                Type: declared == null
+                    ? null
+                    : new TypeExpression(Name: declared.Name, GenericArguments: null, Location: loc) { ResolvedType = declared },
                 Initializer: value,
                 Visibility: VisibilityModifier.Secret,
                 Location: loc),
             Location: loc);
     }
 
-    private static IdentifierExpression Name(string name, SourceLocation loc)
+    private static IdentifierExpression Name(string name, SourceLocation loc, TypeSymbol? type = null)
     {
-        return new IdentifierExpression(Name: name, Location: loc);
+        return new IdentifierExpression(Name: name, Location: loc) { ResolvedType = type };
     }
 
-    private static BinaryExpression Compare(string left, BinaryOperator op, string right, SourceLocation loc)
+    private static BinaryExpression Compare(string left, BinaryOperator op, string right, SourceLocation loc,
+        CounterTypes? types = null)
     {
-        return new BinaryExpression(Left: Name(name: left, loc: loc), Operator: op, Right: Name(name: right, loc: loc),
-            Location: loc);
+        return new BinaryExpression(Left: Name(name: left, loc: loc, type: types?.Element),
+            Operator: op,
+            Right: Name(name: right, loc: loc, type: types?.Element),
+            Location: loc) { ResolvedType = types?.Bool };
     }
 
     /// <summary><c>if not more</c> <c>break</c>.</summary>
-    private static IfStatement BreakUnless(string more, SourceLocation loc)
+    private static IfStatement BreakUnless(string more, SourceLocation loc, CounterTypes? types = null)
     {
         return new IfStatement(Condition: new UnaryExpression(Operator: UnaryOperator.Not,
-                Operand: Name(name: more, loc: loc),
-                Location: loc),
+                Operand: Name(name: more, loc: loc, type: types?.Bool),
+                Location: loc) { ResolvedType = types?.Bool },
             ThenStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
             ElseStatement: null,
             Location: loc);
     }
 
     /// <summary>The loop's own name for the value of this round (<c>var i = _lf_at_N</c>), unless it is <c>_</c>.</summary>
-    private static void AddBinding(List<Statement> round, ElsePattern arm, string at, SourceLocation loc)
+    private static void AddBinding(List<Statement> round, string? variable, string at, CounterTypes? types,
+        SourceLocation loc)
     {
-        if (arm.VariableName is { } variable)
+        if (variable is { } name)
         {
-            DeclarationStatement binding = Local(name: variable, value: Name(name: at, loc: loc), loc: loc);
+            DeclarationStatement binding = Local(name: name, value: Name(name: at, loc: loc, type: types?.Element), loc: loc);
             round.Add(item: binding with
             {
                 Declaration = ((VariableDeclaration)binding.Declaration) with { IsLoopVariable = true }
