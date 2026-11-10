@@ -1827,7 +1827,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 {
                     OwesTeardown = bound?.OwesTeardown ?? false,
                     OwnsItsValue = bound?.OwnsItsValue ?? false,
-                    OwnsWhenHandedOver = bound?.OwnsWhenHandedOver ?? false
+                    OwnsWhenHandedOver = bound?.OwnsWhenHandedOver ?? false,
+                    ReadsHeldValue = bound?.ReadsHeldValue ?? false
                 },
                 Location: loc);
 

@@ -866,11 +866,16 @@ public sealed partial class SemanticVerifier
             }
 
             string tempName = $"{RecoveryTempPrefix}{_seq++}";
+            // An element read where it is (`xs.view_at(index: i).read_in_place()`, for an element that holds an
+            // entity) is still held by the container, so the temp is a view and is never torn down.
             var decl = new VariableDeclaration(Name: tempName,
                 Type: null,
                 Initializer: call,
                 Visibility: VisibilityModifier.Secret,
-                Location: call.Location);
+                Location: call.Location)
+            {
+                ReadsHeldValue = call.Callee is MemberExpression { MemberName: RuntimeContract.ReadInPlace }
+            };
             Hoisted.Add(item: new DeclarationStatement(Declaration: decl, Location: call.Location));
 
             return new IdentifierExpression(Name: tempName, Location: call.Location)

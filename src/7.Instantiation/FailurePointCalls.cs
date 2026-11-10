@@ -94,6 +94,11 @@ internal static class FailurePointCalls
             return token;
         }
 
+        if (ForElementReadInPlace(idx: idx, registry: registry) is { } inPlace)
+        {
+            return inPlace;
+        }
+
         if (idx.ResolvedGetItem is not { } getItem || !CanFail(routine: getItem) || idx.ReadsElementToken ||
             idx.ResolvedType is null or EntityTypeSymbol || idx.Object.ResolvedType is null ||
             idx.Index is RangeExpression or BackIndexExpression ||
@@ -152,8 +157,63 @@ internal static class FailurePointCalls
         string accessor = idx.ReadsElementToken && idx.ResolvedType?.BareName is RuntimeContract.Viewing
             ? "view_at"
             : "modify_at";
+        return AccessorCall(idx: idx, containerType: containerType, indexType: indexType, accessor: accessor,
+            registry: registry, entityElementOnly: false);
+    }
+
+    /// <summary>
+    /// <c>xs.view_at(index: i).read_in_place()</c> for an element that holds an entity without being one (an
+    /// <c>Optional</c> of an entity, a stored protocol value): <c>=</c> never copies such a value, so <c>getitem</c> has
+    /// nothing to give, and the element is read where it is, the same read OperatorLoweringPass makes of it outside a
+    /// recovery. Null for any other subscript, or a container with no accessor for any element.
+    /// </summary>
+    private static CallExpression? ForElementReadInPlace(IndexExpression idx, TypeRegistry registry)
+    {
+        if (idx.ReadsElementToken || idx.ResolvedType is not RecordTypeSymbol held || held is VariantTypeSymbol ||
+            !registry.IsEntityKind(type: held) || idx.Object.ResolvedType is not { } containerType ||
+            idx.Index is RangeExpression or BackIndexExpression || idx.Index.ResolvedType is not { } indexType ||
+            indexType is RecordTypeSymbol { GenericDefinition.Name: "Range" })
+        {
+            return null;
+        }
+
+        if (containerType.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying &&
+            containerType.TypeArguments is [{ } tokenInner])
+        {
+            containerType = tokenInner;
+        }
+
+        if (AccessorCall(idx: idx, containerType: containerType, indexType: indexType, accessor: "view_at",
+                registry: registry, entityElementOnly: true) is not { ResolvedRoutine.ReturnType: { } tokenType } token ||
+            registry.LookupMemberRoutineOverload(type: tokenType,
+                memberRoutineName: RuntimeContract.ReadInPlace,
+                argTypes: []) is not { } read)
+        {
+            return null;
+        }
+
+        var callee = new MemberExpression(Object: token, MemberName: RuntimeContract.ReadInPlace, Location: idx.Location);
+        return new CallExpression(Callee: callee, Arguments: [], Location: idx.Location)
+        {
+            ResolvedType = idx.ResolvedType,
+            ResolvedRoutine = read,
+            LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: read)
+        };
+    }
+
+    /// <summary>
+    /// <c>container.accessor(index: i)</c> (<c>view_at</c> or <c>modify_at</c>) for the element <paramref name="idx"/>
+    /// reads, resolved by the index type. With <paramref name="entityElementOnly"/> the accessor that reads the slot as
+    /// an entity's address (<c>needs EntityType T</c>) is refused. Null when the container has no such failable
+    /// accessor.
+    /// </summary>
+    private static CallExpression? AccessorCall(IndexExpression idx, TypeSymbol containerType, TypeSymbol indexType,
+        string accessor, TypeRegistry registry, bool entityElementOnly)
+    {
         if (registry.LookupMemberRoutineOverload(type: containerType, memberRoutineName: accessor, argTypes: [indexType])
-            is not { } routine || !CanFail(routine: routine) || routine.Parameters.Count != 1)
+            is not { } routine || !CanFail(routine: routine) || routine.Parameters.Count != 1 ||
+            (entityElementOnly &&
+             routine.GenericConstraints?.Any(predicate: c => c.ConstraintType == ConstraintKind.EntityType) == true))
         {
             return null;
         }
