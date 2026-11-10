@@ -310,6 +310,14 @@ public sealed partial class SemanticVerifier
             : type;
     }
 
+    /// <summary>Whether <paramref name="routine"/> of the value or entity <paramref name="held"/> may be called through
+    /// <paramref name="token"/>: any routine of a value, and of an entity one that only reads or a write token.</summary>
+    private static bool ReachableThroughToken(TypeSymbol held, RoutineInfo routine, TypeSymbol token)
+    {
+        return held is not EntityTypeSymbol || routine.IsReadOnly ||
+               (token as RecordTypeSymbol)?.GenericDefinition?.BareName == Declaration.RuntimeContract.Modifying;
+    }
+
     private TypeSymbol AnalyzeGenericMemberRoutineCallExpressionCore(
         GenericMemberRoutineCallExpression generic)
     {
@@ -362,18 +370,22 @@ public sealed partial class SemanticVerifier
         // the value's, and the lowering reads the value through the token (TokenReadLoweringPass).
         // An entity's token (`rng: Modifying[Random]`, `rng.next[U64]()`) calls the entity's own member: the lowering
         // reaches the entity through the token's `control()` (`access()` for a `Viewing`, whose member must only read).
+        // A member written for the arguments' kind (`routine ErasedCallable.to[T]()` with `needs RoutineType T`) is
+        // reached through the token the same way.
         if (typeArgs.Count > 0 && (ValueTokenTarget(type: objectType) ?? EntityTokenTarget(type: objectType)) is { } held &&
             FamilyOfReceiver(receiver: held, name: generic.MemberRoutineName) is { Count: > 0 } heldFamily &&
             heldFamily.Any(predicate: r => r.TypeArguments is { } args && args.Count == typeArgs.Count &&
-                                           (held is not EntityTypeSymbol || r.IsReadOnly ||
-                                            (objectType as RecordTypeSymbol)?.GenericDefinition?.BareName ==
-                                            Declaration.RuntimeContract.Modifying) &&
+                                           ReachableThroughToken(held: held, routine: r, token: objectType) &&
                                            typeArgs.Select(selector: (t, i) =>
                                                         SameTypeInRealm(a: FamilyTarget(routine: r, index: i),
                                                             b: Unroamed(type: t)))
-                                                    .All(predicate: same => same)))
+                                                    .All(predicate: same => same)) ||
+            typeArgs.Count > 0 && (ValueTokenTarget(type: objectType) ?? EntityTokenTarget(type: objectType)) is { } kindHeld &&
+            _registry.LookupKindGatedMemberRoutine(owner: kindHeld, name: generic.MemberRoutineName,
+                typeArguments: typeArgs) is { } forKindHeld &&
+            ReachableThroughToken(held: kindHeld, routine: forKindHeld, token: objectType))
         {
-            objectType = held;
+            objectType = (ValueTokenTarget(type: objectType) ?? EntityTokenTarget(type: objectType))!;
         }
 
         // A `Viewing` only reads, so a member that changes the entity is not reached through it.

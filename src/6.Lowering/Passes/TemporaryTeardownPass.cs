@@ -795,7 +795,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
             case CallExpression call:
             {
-                Expression newCallee = VisitIn(e: call.Callee, objectPos: false, spills: spills, kept: false);
+                // A routine value made only to be called (`make()(x)`, `e.to[Callable[(), S64]]()()`) is not kept by
+                // the call: it is a fresh value like a receiver, released once the statement is done.
+                Expression newCallee = VisitIn(e: call.Callee,
+                    objectPos: call.Callee is CallExpression { ResolvedType: RoutineTypeSymbol },
+                    spills: spills,
+                    kept: false);
                 // See the member-call case: owning-position args (torn down at the caller) unless this is
                 // a store primitive.
                 bool argsOwned = !RuntimeContract.IsMemberwiseConstruction(

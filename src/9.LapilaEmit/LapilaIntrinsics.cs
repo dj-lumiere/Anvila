@@ -152,6 +152,8 @@ internal sealed class LapilaIntrinsics
             "ptr_same" => $"({Argument(index: 0)} === {Argument(index: 1)})",
             // A routine value is the record RoutineValueRecord names, and its payload is the field `bound`.
             "routine_bound" => $"{Argument(index: 0)}.bound",
+            // Every routine type is that one record, so a routine value seen as another routine type is itself.
+            "routine_as" => Argument(index: 0),
             // The crash trace the routines keep (LapilaTrace), read by System's crash_report.
             "trace_depth" => "RV_TRACE_DEPTH.load()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]

@@ -72,6 +72,27 @@ public sealed class RoutineTypeSymbol : TypeSymbol
         return $"Callable[{paramList}, {returnName}]";
     }
 
+    /// <summary>
+    /// The routine type written with each type's full name (<c>Callable[(Game.Hero, System.S64), System.S64]</c>): the
+    /// canonical form its type id (the signature hash of an <c>ErasedCallable</c>) is computed from, so two types of the
+    /// same short name in different modules give different signatures.
+    /// </summary>
+    public string SignatureName
+    {
+        get
+        {
+            string paramList = ParameterTypes.Count switch
+            {
+                0 => "()",
+                1 => "(" + ParameterTypes[index: 0].InstanceArgumentName + ",)",
+                _ => "(" + string.Join(separator: ", ",
+                    values: ParameterTypes.Select(selector: p => p.InstanceArgumentName)) + ")"
+            };
+
+            return $"Callable[{paramList}, {ReturnType?.InstanceArgumentName ?? "None"}]";
+        }
+    }
+
     /// <summary>The routine type written with each type's short name (<c>Callable[(Hero, S64), S64]</c>), the way a
     /// message names it.</summary>
     internal static string ShortName(List<TypeSymbol> parameterTypes, TypeSymbol? returnType)

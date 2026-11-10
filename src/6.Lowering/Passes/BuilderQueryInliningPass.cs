@@ -572,7 +572,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                     loc: loc);
 
             case "type_id" when _u64Type != null:
-                return MakeLiteralU64(value: TypeIdHelper.ComputeTypeId(fullName: type.FullName),
+                return MakeLiteralU64(value: TypeIdHelper.ComputeTypeId(type: type),
                     type: _u64Type,
                     loc: loc);
 
