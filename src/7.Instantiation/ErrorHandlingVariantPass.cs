@@ -1216,7 +1216,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                         InnerCanError: innerCanError),
                     remainder: remainder,
                     registry: registry!,
-                    loc: s.Location));
+                    loc: s.Location,
+                    readsHeldValue: s is DeclarationStatement { Declaration: VariableDeclaration { ReadsHeldValue: true } }));
                 return result; // remainder consumed into the when's success arm
             }
 
@@ -2021,7 +2022,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     private static Statement BuildCarrierPropagationWhen(Expression subject, string? bindName,
-        CarrierCapabilities caps, List<Statement> remainder, TypeRegistry registry, SourceLocation loc)
+        CarrierCapabilities caps, List<Statement> remainder, TypeRegistry registry, SourceLocation loc,
+        bool readsHeldValue = false)
     {
         ErrorHandlingVariantKind kind = caps.Kind;
         bool innerCanNone = caps.InnerCanNone;
@@ -2141,7 +2143,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                                        TakesEmittedItem(movesOut: movesOut, subject: subject),
                         // An item an emit gave is the binding's own when that emitter hands its items over, which
                         // the scope teardown decides once the emitter's type is known.
-                        OwnsWhenHandedOver = TakesEmittedItem(movesOut: movesOut, subject: subject)
+                        OwnsWhenHandedOver = TakesEmittedItem(movesOut: movesOut, subject: subject),
+                        // A value read where another place keeps it (an element read in place) stays that place's.
+                        ReadsHeldValue = readsHeldValue
                     },
                     Location: loc),
                 .. remainder

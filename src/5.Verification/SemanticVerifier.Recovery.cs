@@ -39,6 +39,13 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol? OptionalReceiverPayloadUnderRecovery(TypeSymbol objectType, string name)
     {
+        // A token on a `T?` (a `for` element over a `List[T?]`) is used as the optional it points at.
+        if (objectType is { BareName: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying,
+                TypeArguments: [RecordTypeSymbol { GenericDefinition.Name: "Optional" } held] })
+        {
+            objectType = held;
+        }
+
         if (_recoveryDepth == 0 ||
             objectType is not RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [{ } payload] } ||
             _registry.GetOwnMemberRoutinesResolved(type: objectType).Any(predicate: r => r.Name == name))
@@ -688,6 +695,31 @@ public sealed partial class SemanticVerifier
             Expression rewritten = base.VisitCall(e: e);
             // A call on a `T?` receiver reaches the `T` through its `reach()`, which fails with AbsentValueError
             // when the receiver is none: hoisted first, so the keyword receives it like any other failure.
+            // A token on a `T?` receiver is read where it points first: the container keeps the optional, so the
+            // temp that holds it is a view and is never torn down.
+            if (rewritten is CallExpression { Callee: MemberExpression { UnwrapsOptionalReceiver: true } viaToken } tokenCall &&
+                viaToken.Object.ResolvedType is
+                {
+                    BareName: RuntimeContract.Viewing or RuntimeContract.Modifying, TypeArguments: [{ } pointedAt]
+                } tokenType &&
+                registry.LookupMemberRoutineOverload(type: tokenType, memberRoutineName: RuntimeContract.ReadInPlace,
+                    argTypes: []) is { } readInPlace)
+            {
+                var read = new CallExpression(
+                    Callee: new MemberExpression(Object: viaToken.Object,
+                        MemberName: RuntimeContract.ReadInPlace,
+                        Location: viaToken.Location),
+                    Arguments: [],
+                    Location: viaToken.Location)
+                {
+                    ResolvedType = pointedAt,
+                    ResolvedRoutine = readInPlace,
+                    LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: readInPlace)
+                };
+                Expression optional = HoistValue(value: read, readsHeldValue: true);
+                rewritten = tokenCall with { Callee = viaToken with { Object = optional } };
+            }
+
             if (rewritten is CallExpression { Callee: MemberExpression { UnwrapsOptionalReceiver: true } viaOptional } reached &&
                 viaOptional.Object.ResolvedType is { TypeArguments: [{ } held] } optionalType)
             {
@@ -842,14 +874,14 @@ public sealed partial class SemanticVerifier
                 : rewritten;
         }
 
-        private Expression HoistValue(Expression value)
+        private Expression HoistValue(Expression value, bool readsHeldValue = false)
         {
             string tempName = $"{RecoveryTempPrefix}{_seq++}";
             Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
                     Type: null,
                     Initializer: value,
                     Visibility: VisibilityModifier.Secret,
-                    Location: value.Location),
+                    Location: value.Location) { ReadsHeldValue = readsHeldValue },
                 Location: value.Location));
             return new IdentifierExpression(Name: tempName, Location: value.Location) { ResolvedType = value.ResolvedType };
         }
