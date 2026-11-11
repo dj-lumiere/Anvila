@@ -3257,10 +3257,17 @@ public static class LspServer
             }
         }
 
-        // A field read or written through its holder (`p.x`).
+        // A field read or written through its holder (`p.x`). A member that is called as a routine (`t.count()`)
+        // is a routine even when the holder also has a field of that name.
+        var calledMembers = new HashSet<Expression>(comparer: ReferenceEqualityComparer.Instance);
+        foreach (CallExpression call in nodes.OfType<CallExpression>().Where(predicate: c => c.ResolvedRoutine != null))
+        {
+            calledMembers.Add(item: call.Callee);
+        }
+
         foreach (MemberExpression member in nodes.OfType<MemberExpression>())
         {
-            if (member.Object.ResolvedType is { } receiver && FieldsOf(type: receiver).Contains(value: member.MemberName) &&
+            if (!calledMembers.Contains(item: member) && member.Object.ResolvedType is { } receiver && FieldsOf(type: receiver).Contains(value: member.MemberName) &&
                 MemberNameToken(tokens: tokens, member: member) is { } name &&
                 !roles.Constant.Contains(item: (name.Line, name.Column)))
             {
@@ -3603,7 +3610,12 @@ public static class LspServer
         var acc = new List<ISyntaxTreeNode>();
         CollectAllNodes(node: declaration, acc: acc,
             seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
+        // A script's synthesized `start` has no written result: its `None` sits on the first statement.
+        TypeExpression? synthesized = declaration is RoutineDeclaration { IsScriptEntry: true } entry
+            ? entry.ReturnType
+            : null;
         return acc.OfType<TypeExpression>()
+                  .Where(predicate: t => !ReferenceEquals(objA: t, objB: synthesized))
                   .ToList();
     }
 
@@ -3675,7 +3687,11 @@ public static class LspServer
                     roles: roles);
             }
 
-            PairWrittenType(written: routineDecl.ReturnType, resolved: routine.ReturnType, roles: roles);
+            // A script's synthesized `start` has no written result: its `None` sits on the first statement.
+            if (!routineDecl.IsScriptEntry)
+            {
+                PairWrittenType(written: routineDecl.ReturnType, resolved: routine.ReturnType, roles: roles);
+            }
 
             // `routine List[T].add_last`: the owner's own parameters, written in the header.
             TypeSymbol? owner = routine.OwnerType;
@@ -4644,6 +4660,17 @@ public static class LspServer
                     break;
                 }
 
+                // A generic routine whose type arguments the analysis inferred: `show[Bool]` after the name.
+                case CallExpression call when !call.IsSynthesizedLowering:
+                    AddInferredCallHints(call: call, tokens: doc.Tokens, addHint: AddHint);
+                    break;
+
+                // A generic type written without its arguments and given them by the analysis: `List[S64]()`.
+                case CreatorExpression { TypeArguments: null or { Count: 0 } } creator:
+                    AddInferredTypeHint(at: creator.Location, type: creator.ConstructedType ?? creator.ResolvedType,
+                        tokens: doc.Tokens, addHint: AddHint);
+                    break;
+
                 // `steal x` → a "moved" marker after the stolen variable, so the ownership hand-off is
                 // visible at the point the source binding dies.
                 case StealExpression { Operand: IdentifierExpression sid }:
@@ -4657,6 +4684,131 @@ public static class LspServer
         }
 
         WriteResult(stdout: stdout, id: id, result: hints);
+    }
+
+    private delegate void HintAdder(int line1, int col1, string labelText, int kind, bool padLeft);
+
+    /// <summary>The identifier token written at <paramref name="at"/>, or null.</summary>
+    private static int NameTokenIndexAt(List<Token> tokens, SourceLocation at)
+    {
+        return tokens.FindIndex(match: t => t.Line == at.Line && t.Column == at.Column &&
+                                            t.Type == TokenType.Identifier);
+    }
+
+    /// <summary>The bracket text of type arguments, as the language spells them: <c>[Text, S64]</c>.</summary>
+    private static string ArgumentsText(IEnumerable<TypeSymbol> arguments)
+    {
+        return $"[{string.Join(separator: ", ", values: arguments.Select(selector: TypeText))}]";
+    }
+
+    /// <summary>Hints the type arguments of a generic type the analysis inferred, right after the type name written
+    /// at <paramref name="at"/> (<c>List()</c> is <c>List[S64]()</c>). Nothing when a bracket follows the name.</summary>
+    private static void AddInferredTypeHint(SourceLocation at, TypeSymbol? type, List<Token> tokens, HintAdder addHint)
+    {
+        if (type != null && Rules.SurfaceType(type: type) is { TypeArguments: { Count: > 0 } args } shown &&
+            !shown.IsGenericDefinition)
+        {
+            AddArgumentsHint(at: at, args: args, tokens: tokens, addHint: addHint);
+        }
+    }
+
+    /// <summary>Hints <paramref name="args"/> after the name written at <paramref name="at"/>. Nothing when a bracket
+    /// already follows the name, or an argument is still a parameter of the generic body being read.</summary>
+    private static void AddArgumentsHint(SourceLocation at, IReadOnlyList<TypeSymbol> args, List<Token> tokens,
+        HintAdder addHint)
+    {
+        int index = NameTokenIndexAt(tokens: tokens, at: at);
+        if (index < 0 || index + 1 < tokens.Count && tokens[index: index + 1].Type == TokenType.LeftBracket ||
+            args.Any(predicate: a => a.Name.StartsWith(value: '<') || MentionsParameter(type: a)))
+        {
+            return;
+        }
+
+        Token name = tokens[index: index];
+        addHint(name.Line, name.Column + name.Text.Length, ArgumentsText(arguments: args), 1, false);
+    }
+
+    private static bool MentionsParameter(TypeSymbol type)
+    {
+        TypeSymbol shown = Rules.SurfaceType(type: type);
+        return shown is GenericParameterTypeSymbol or ProtocolSelfTypeSymbol or AssociatedProjectionTypeSymbol ||
+               shown.TypeArguments?.Any(predicate: MentionsParameter) == true;
+    }
+
+    private static List<string> OwnerParameters(TypeSymbol owner)
+    {
+        return (owner switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters,
+            EntityTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters,
+            _ => owner.GenericParameters
+        }) ?? [];
+    }
+
+    /// <summary>Hints what a call leaves for the analysis to infer: the type arguments of a generic routine
+    /// (<c>show[Bool](x)</c>) after the routine name, and those of a generic type named bare in front of a
+    /// <c>common</c> routine (<c>Pair.of(...)</c>) after the type name.</summary>
+    private static void AddInferredCallHints(CallExpression call, List<Token> tokens, HintAdder addHint)
+    {
+        Token? name = null;
+        switch (call.Callee)
+        {
+            case IdentifierExpression id:
+                // A type called to make a value: its arguments are the type's, not a routine's.
+                TypeSymbol? made = call.ResolvedRoutine switch
+                {
+                    { Kind: RoutineKind.Creator } creator => call.ResolvedType ?? creator.OwnerType,
+                    null => call.ResolvedType,
+                    { OwnerType: { } owner } => owner,
+                    _ => null
+                };
+                if (made != null && ShortName(name: Rules.SurfaceType(type: made).BareName) == id.Name)
+                {
+                    AddInferredTypeHint(at: id.Location, type: made, tokens: tokens, addHint: addHint);
+                    return;
+                }
+
+                int at = NameTokenIndexAt(tokens: tokens, at: id.Location);
+                name = at >= 0 ? tokens[index: at] : null;
+                break;
+            case MemberExpression member:
+                name = MemberNameToken(tokens: tokens, member: member);
+                // `Pair.of(...)`: a generic type named bare in front of its `common` routine. The routine's
+                // type arguments are then the type's, bound by the call.
+                if (member.Object is IdentifierExpression { ResolvedVariable: null } typed &&
+                    call.ResolvedRoutine is { OwnerType: { } receiver, TypeArguments: { Count: > 0 } bound } &&
+                    ShortName(name: Rules.SurfaceType(type: receiver).BareName) == typed.Name)
+                {
+                    if (OwnerParameters(owner: receiver).Count == bound.Count)
+                    {
+                        AddArgumentsHint(at: typed.Location, args: bound, tokens: tokens, addHint: addHint);
+                        return;
+                    }
+
+                    AddInferredTypeHint(at: typed.Location, type: receiver, tokens: tokens, addHint: addHint);
+                }
+
+                break;
+        }
+
+        // A generic owner's own parameters are not the routine's: they were hinted on the type name.
+        if (name == null || call.ResolvedRoutine is not { GenericDefinition.GenericParameters: { Count: > 0 } parameters,
+                TypeArguments: { Count: > 0 } args } routine || args.Count != parameters.Count ||
+            call.TypeArguments is { Count: > 0 } || args.Any(predicate: a => a.Name.StartsWith(value: '<')) ||
+            routine.OwnerType is { } declaring && Rules.SurfaceType(type: declaring).TypeArguments is { Count: > 0 } &&
+            parameters.All(predicate: pr => OwnerParameters(owner: declaring).Contains(item: pr)) ||
+            args.Any(predicate: MentionsParameter))
+        {
+            return;
+        }
+
+        int next = tokens.IndexOf(item: name) + 1;
+        if (next < tokens.Count && tokens[index: next].Type == TokenType.LeftBracket)
+        {
+            return;
+        }
+
+        addHint(name.Line, name.Column + name.Text.Length, ArgumentsText(arguments: args), 1, false);
     }
 
     /// <summary>The closing parenthesis of <paramref name="call"/>'s arguments, found from the first <c>(</c> after where
