@@ -779,6 +779,20 @@ public sealed partial class SemanticVerifier
                 AnalyzeWhileStatement(whileStmt: whileStmt);
                 break;
 
+            // The S64 version of an Int counter loop holds a copy of the general version's body: it is checked, and
+            // its diagnostics (the general version reports the same ones) are dropped.
+            case LoopStatement { IsQuietCopy: true } quietCopy:
+            {
+                int errorsBefore = _errors.Count;
+                int warningsBefore = _warnings.Count;
+                quietCopy.IsQuietCopy = false;
+                AnalyzeStatement(statement: quietCopy);
+                quietCopy.IsQuietCopy = true;
+                _errors.RemoveRange(index: errorsBefore, count: _errors.Count - errorsBefore);
+                _warnings.RemoveRange(index: warningsBefore, count: _warnings.Count - warningsBefore);
+                break;
+            }
+
             case LoopStatement loopStmt:
             {
                 if (loopStmt.WrittenWhile is { } written)
@@ -1119,6 +1133,16 @@ public sealed partial class SemanticVerifier
         } && IsIntegerType(type: element);
     }
 
+    /// <summary>Whether the range a <c>for</c> loop walks is over <c>Int</c>, whose innermost loops count in two
+    /// versions (<see cref="Desugaring.Passes.ControlFlowLoweringPass.IntRangeCounterLoops"/>).</summary>
+    private bool WalksIntRange(RangeWalk rangeWalk)
+    {
+        return _registry.LookupVariable(name: rangeWalk.SourceName)?.Type is RecordTypeSymbol
+        {
+            GenericDefinition.Name: "Range", TypeArguments: [RecordTypeSymbol { Name: "Int" }]
+        };
+    }
+
     private void AnalyzeBlockStatement(BlockStatement block)
     {
         if (block.Statements.Count == 0)
@@ -1142,7 +1166,9 @@ public sealed partial class SemanticVerifier
         // range's local has its type. A range of any other element type keeps the walk.
         if (block.Statements is [_, LoopStatement { RangeWalk: { } rangeWalk }] &&
             WalksIntegerRange(rangeWalk: rangeWalk) &&
-            Desugaring.Passes.ControlFlowLoweringPass.RangeCounterLoop(walk: block.Statements) is { } counter)
+            (WalksIntRange(rangeWalk: rangeWalk)
+                ? Desugaring.Passes.ControlFlowLoweringPass.IntRangeCounterLoops(walk: block.Statements)
+                : Desugaring.Passes.ControlFlowLoweringPass.RangeCounterLoop(walk: block.Statements)) is { } counter)
         {
             block.Statements.Clear();
             block.Statements.AddRange(collection: counter);

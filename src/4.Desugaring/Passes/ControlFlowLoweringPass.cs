@@ -851,7 +851,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     ///                                                body
     /// </code>
     /// </summary>
-    internal static List<Statement>? RangeCounterLoop(List<Statement> walk)
+    internal static List<Statement>? RangeCounterLoop(List<Statement> walk, Func<Expression, Expression>? bindValue = null)
     {
         if (walk is not
             [
@@ -887,7 +887,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                     Location: loc),
                 loc: loc));
             round.Add(item: BreakUnless(more: more, loc: loc));
-            AddBinding(round: round, variable: arm.VariableName, at: at, types: null, loc: loc);
+            AddBinding(round: round, variable: arm.VariableName, at: at, types: null, loc: loc, bindValue: bindValue);
             round.Add(item: new AssignmentStatement(Target: Name(name: more, loc: loc),
                 Value: SourceCall(range: range, routine: "continues_after", arguments: StepArguments(at: at, by: by, loc: loc), loc: loc),
                 Location: loc));
@@ -912,7 +912,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 inclusive: range.Inclusive,
                 variable: arm.VariableName,
                 types: null,
-                loc: loc);
+                loc: loc,
+                bindValue: bindValue);
         }
 
         if (last.Body is BlockStatement body)
@@ -926,6 +927,132 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 
         statements.Add(item: new LoopStatement(Body: new BlockStatement(Statements: round, Location: loc), Location: loc));
         return statements;
+    }
+
+    /// <summary>The routines on <c>Int</c> (and <c>S64</c>) an <c>Int</c> counter loop's two versions call.</summary>
+    private const string CountsInS64 = "counts_in_s64";
+    private const string S64Range = "s64_range";
+    private const string CountingBits = "counting_bits";
+    private const string CountedInteger = "counted_integer";
+
+    /// <summary>Whether <paramref name="body"/> holds a loop of its own (a lambda's loop counts too).</summary>
+    private static bool HoldsLoop(Statement body)
+    {
+        bool found = false;
+        AstWalker.Walk(root: body,
+            visit: node =>
+            {
+                if (node is LoopStatement or WhileStatement or ForStatement)
+                {
+                    found = true;
+                }
+            });
+        return found;
+    }
+
+    /// <summary>
+    /// The counter loop a <c>for</c> over an <c>Int</c> range literal runs, lowered before analysis: like
+    /// <see cref="RangeCounterLoop"/>, but a loop whose body holds no loop of its own comes in two versions, chosen
+    /// once before the first round. When the start, the end and the step all lie in the <c>S64</c> range (and the
+    /// step is not <c>S64_MIN</c>, whose size has no <c>S64</c>), the loop counts a <c>Range[S64]</c> with the same
+    /// values and hands its body each value as an <c>Int</c> made from the bits, so the body's arithmetic on it never
+    /// takes the big-number path. Any other range runs the general version. Both give the same values, in the same
+    /// order, and an empty range runs neither body. An outer loop stays one version, so the code grows by one copy of
+    /// the innermost bodies only. The second copy is analyzed quietly (<see cref="LoopStatement.IsQuietCopy"/>), so a
+    /// mistake in the body is reported once.
+    /// <code>
+    /// var _lf_small_N = src.start.counts_in_s64(end: src.end, step: src.step)
+    /// if _lf_small_N
+    ///     var _lf_src_Ns = src.start.s64_range(end: src.end, step: src.step, inclusive: src.inclusive,
+    ///         descending: src.descending)
+    ///     (the counter loop over _lf_src_Ns, with var i = _lf_at_Ns.counted_integer())
+    /// else
+    ///     (the counter loop over src)
+    /// </code>
+    /// </summary>
+    internal static List<Statement>? IntRangeCounterLoops(List<Statement> walk)
+    {
+        List<Statement>? general = RangeCounterLoop(walk: walk);
+        if (general == null ||
+            walk is not
+            [
+                DeclarationStatement iterDecl,
+                LoopStatement
+                {
+                    RangeWalk: { } range,
+                    Body: BlockStatement { Statements: [WhenStatement { Clauses: [.., { Body: var armBody }] }] }
+                } loop
+            ] ||
+            HoldsLoop(body: armBody))
+        {
+            return general;
+        }
+
+        SourceLocation loc = loop.Location;
+        string suffix = loop.IteratorName is { } iterator && iterator.StartsWith(value: "_lf_iter_", comparisonType: StringComparison.Ordinal)
+            ? iterator["_lf_iter_".Length..]
+            : range.SourceName;
+        string small = $"_lf_small_{suffix}";
+        string smallSource = $"_lf_src_{suffix}s";
+        var copy = (LoopStatement)Instantiation.GenericAstRewriter.RewriteStatement(stmt: loop,
+            subs: new Dictionary<string, string>(comparer: StringComparer.Ordinal));
+        copy = copy with
+        {
+            RangeWalk = range with { SourceName = smallSource },
+            IteratorName = $"_lf_iter_{suffix}s"
+        };
+        List<Statement> fast = RangeCounterLoop(walk: [iterDecl, copy],
+            bindValue: counted => SynthesizedCall(receiver: counted, routine: CountedInteger, arguments: [], loc: loc))!;
+        if (fast[^1] is LoopStatement fastLoop)
+        {
+            fastLoop.IsQuietCopy = true;
+        }
+
+        fast.Insert(index: 0,
+            item: Local(name: smallSource,
+                value: SynthesizedCall(receiver: SourceMember(range: range, member: "start", loc: loc),
+                    routine: S64Range,
+                    arguments:
+                    [
+                        Argument(name: "end", value: SourceMember(range: range, member: "end", loc: loc), loc: loc),
+                        Argument(name: "step", value: SourceMember(range: range, member: "step", loc: loc), loc: loc),
+                        Argument(name: "inclusive", value: SourceMember(range: range, member: "inclusive", loc: loc), loc: loc),
+                        Argument(name: "descending", value: SourceMember(range: range, member: "descending", loc: loc), loc: loc)
+                    ],
+                    loc: loc),
+                loc: loc));
+        return
+        [
+            Local(name: small,
+                value: SynthesizedCall(receiver: SourceMember(range: range, member: "start", loc: loc),
+                    routine: CountsInS64,
+                    arguments:
+                    [
+                        Argument(name: "end", value: SourceMember(range: range, member: "end", loc: loc), loc: loc),
+                        Argument(name: "step", value: SourceMember(range: range, member: "step", loc: loc), loc: loc)
+                    ],
+                    loc: loc),
+                loc: loc),
+            new IfStatement(Condition: Name(name: small, loc: loc),
+                ThenStatement: new BlockStatement(Statements: fast, Location: loc),
+                ElseStatement: new BlockStatement(Statements: general, Location: loc),
+                Location: loc)
+        ];
+    }
+
+    /// <summary><c>receiver.routine(arguments)</c>, a call the builder writes (so a secret routine of the library may be
+    /// its target).</summary>
+    private static CallExpression SynthesizedCall(Expression receiver, string routine, List<Expression> arguments,
+        SourceLocation loc)
+    {
+        return new CallExpression(Callee: new MemberExpression(Object: receiver, MemberName: routine, Location: loc),
+            Arguments: arguments,
+            Location: loc) { IsSynthesizedLowering = true };
+    }
+
+    private static NamedArgumentExpression Argument(string name, Expression value, SourceLocation loc)
+    {
+        return new NamedArgumentExpression(Name: name, Value: value, Location: loc) { ResolvedType = value.ResolvedType };
     }
 
     /// <summary>The names of a counter loop's own locals: the value of this round, the range's end, and (for a
@@ -943,7 +1070,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     /// end at the type's largest value never steps past it.
     /// </summary>
     private static void AddCountingRound(List<Statement> statements, List<Statement> round, CounterNames counter,
-        bool inclusive, string? variable, CounterTypes? types, SourceLocation loc)
+        bool inclusive, string? variable, CounterTypes? types, SourceLocation loc,
+        Func<Expression, Expression>? bindValue = null)
     {
         Statement stepOne = new AssignmentStatement(Target: Name(name: counter.At, loc: loc, type: types?.Element),
             Value: new BinaryExpression(Left: Name(name: counter.At, loc: loc, type: types?.Element),
@@ -961,7 +1089,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 loc: loc,
                 declared: types?.Bool));
             round.Add(item: BreakUnless(more: counter.More, types: types, loc: loc));
-            AddBinding(round: round, variable: variable, at: counter.At, types: types, loc: loc);
+            AddBinding(round: round, variable: variable, at: counter.At, types: types, loc: loc, bindValue: bindValue);
             round.Add(item: new AssignmentStatement(Target: Name(name: counter.More, loc: loc, type: types?.Bool),
                 Value: Compare(left: counter.At, op: BinaryOperator.Less, right: counter.End, types: types, loc: loc),
                 Location: loc));
@@ -977,7 +1105,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 ThenStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
                 ElseStatement: null,
                 Location: loc));
-            AddBinding(round: round, variable: variable, at: counter.At, types: types, loc: loc);
+            AddBinding(round: round, variable: variable, at: counter.At, types: types, loc: loc, bindValue: bindValue);
             round.Add(item: stepOne);
         }
     }
@@ -1018,15 +1146,57 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Local(name: counter.At, value: range.Start, loc: loc, declared: element),
             Local(name: counter.End, value: range.End, loc: loc, declared: element)
         };
+        string? variable = forStmt.Variable == "_" ? null : forStmt.Variable;
+        Statement body = LowerStatement(stmt: forStmt.Body);
+        var general = new List<Statement>();
+        LoopStatement generalLoop = CountingLoop(statements: general, counter: counter, inclusive: !range.IsExclusive,
+            variable: variable, types: types, body: body, bindValue: null, loc: loc);
+
+        // An `Int` loop whose body holds no loop of its own also gets the version that counts in `S64`
+        // (IntRangeCounterLoops says why).
+        if (element.Name == "Int" && !HoldsLoop(body: body) &&
+            TypedIntCounting(counter: counter, boolType: boolType, loc: loc) is var (check, smallStart, smallEnd, smallTypes) &&
+            check != null)
+        {
+            var small = new CounterNames(At: $"_lf_at_{n}s", End: $"_lf_end_{n}s", More: $"_lf_more_{n}s");
+            var fast = new List<Statement>
+            {
+                Local(name: small.At, value: smallStart!, loc: loc, declared: smallTypes!.Element),
+                Local(name: small.End, value: smallEnd!, loc: loc, declared: smallTypes.Element)
+            };
+            Statement copy = Instantiation.GenericAstRewriter.RewriteStatement(stmt: body,
+                subs: new Dictionary<string, string>(comparer: StringComparer.Ordinal));
+            LoopStatement fastLoop = CountingLoop(statements: fast, counter: small, inclusive: !range.IsExclusive,
+                variable: variable, types: smallTypes, body: copy,
+                bindValue: counted => TypedCall(receiver: counted, routine: CountedInteger, arguments: [], loc: loc)!,
+                loc: loc);
+            fastLoop.IsQuietCopy = true;
+            statements.Add(item: new IfStatement(Condition: check,
+                ThenStatement: new BlockStatement(Statements: fast, Location: loc),
+                ElseStatement: new BlockStatement(Statements: general, Location: loc),
+                Location: loc));
+            return new BlockStatement(Statements: statements, Location: loc);
+        }
+
+        statements.AddRange(collection: general);
+        return new BlockStatement(Statements: statements, Location: loc);
+    }
+
+    /// <summary>A counter loop without <c>by</c> over the locals <paramref name="counter"/> names: the statements in
+    /// front of it and the loop itself go into <paramref name="statements"/>, and the loop is returned.</summary>
+    private static LoopStatement CountingLoop(List<Statement> statements, CounterNames counter, bool inclusive,
+        string? variable, CounterTypes types, Statement body, Func<Expression, Expression>? bindValue,
+        SourceLocation loc)
+    {
         var round = new List<Statement>();
         AddCountingRound(statements: statements,
             round: round,
             counter: counter,
-            inclusive: !range.IsExclusive,
-            variable: forStmt.Variable == "_" ? null : forStmt.Variable,
+            inclusive: inclusive,
+            variable: variable,
             types: types,
-            loc: loc);
-        Statement body = LowerStatement(stmt: forStmt.Body);
+            loc: loc,
+            bindValue: bindValue);
         if (body is BlockStatement block)
         {
             round.AddRange(collection: block.Statements);
@@ -1036,8 +1206,61 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             round.Add(item: body);
         }
 
-        statements.Add(item: new LoopStatement(Body: new BlockStatement(Statements: round, Location: loc), Location: loc));
-        return new BlockStatement(Statements: statements, Location: loc);
+        var loop = new LoopStatement(Body: new BlockStatement(Statements: round, Location: loc), Location: loc);
+        statements.Add(item: loop);
+        return loop;
+    }
+
+    /// <summary>
+    /// The typed pieces of the <c>S64</c> version of an <c>Int</c> counter loop without <c>by</c>: the check
+    /// <c>_lf_at_N.counts_in_s64(end: _lf_end_N)</c>, the <c>S64</c> start and end (<c>counting_bits()</c>), and the
+    /// counter types over <c>S64</c>. All null when the library routines are not there.
+    /// </summary>
+    private (Expression? Check, Expression? Start, Expression? End, CounterTypes? Types) TypedIntCounting(
+        CounterNames counter, TypeSymbol boolType, SourceLocation loc)
+    {
+        if (ctx.Registry.LookupType(name: "Int") is not { } intType ||
+            ctx.Registry.LookupType(name: "S64") is not { } s64Type ||
+            ctx.Registry.LookupMemberRoutineOverload(type: s64Type, memberRoutineName: CountedInteger, argTypes: []) == null)
+        {
+            return (null, null, null, null);
+        }
+
+        Expression? check = TypedCall(receiver: Name(name: counter.At, loc: loc, type: intType),
+            routine: CountsInS64,
+            arguments: [Argument(name: "end", value: Name(name: counter.End, loc: loc, type: intType), loc: loc)],
+            loc: loc);
+        Expression? start = TypedCall(receiver: Name(name: counter.At, loc: loc, type: intType), routine: CountingBits,
+            arguments: [], loc: loc);
+        Expression? end = TypedCall(receiver: Name(name: counter.End, loc: loc, type: intType), routine: CountingBits,
+            arguments: [], loc: loc);
+        return check == null || start == null || end == null
+            ? (null, null, null, null)
+            : (check, start, end, new CounterTypes(Element: s64Type, Bool: boolType));
+    }
+
+    /// <summary><c>receiver.routine(arguments)</c> bound to the routine of the receiver's type that takes the
+    /// arguments' types, as analysis would bind it. Null when there is none.</summary>
+    private CallExpression? TypedCall(Expression receiver, string routine, List<Expression> arguments, SourceLocation loc)
+    {
+        if (receiver.ResolvedType is not { } owner ||
+            ctx.Registry.LookupMemberRoutineOverload(type: owner,
+                memberRoutineName: routine,
+                argTypes: arguments.Select(selector: a => a.ResolvedType!).ToList()) is not { ReturnType: { } returned } resolved)
+        {
+            return null;
+        }
+
+        return new CallExpression(Callee: new MemberExpression(Object: receiver, MemberName: routine, Location: loc),
+            Arguments: arguments,
+            Location: loc)
+        {
+            ResolvedRoutine = resolved,
+            ResolvedType = returned,
+            LoweringKind = CallLoweringKind.DirectMemberRoutine,
+            IsPreAnalyzed = true,
+            IsSynthesizedLowering = true
+        };
     }
 
     /// <summary>Whether a range over <paramref name="type"/> can count: a fixed-width integer (<c>S8</c> to
@@ -1091,11 +1314,12 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 
     /// <summary>The loop's own name for the value of this round (<c>var i = _lf_at_N</c>), unless it is <c>_</c>.</summary>
     private static void AddBinding(List<Statement> round, string? variable, string at, CounterTypes? types,
-        SourceLocation loc)
+        SourceLocation loc, Func<Expression, Expression>? bindValue = null)
     {
         if (variable is { } name)
         {
-            DeclarationStatement binding = Local(name: name, value: Name(name: at, loc: loc, type: types?.Element), loc: loc);
+            Expression counted = Name(name: at, loc: loc, type: types?.Element);
+            DeclarationStatement binding = Local(name: name, value: bindValue?.Invoke(arg: counted) ?? counted, loc: loc);
             round.Add(item: binding with
             {
                 Declaration = ((VariableDeclaration)binding.Declaration) with { IsLoopVariable = true }

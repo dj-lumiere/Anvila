@@ -590,6 +590,13 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// <c>ReshapingWhileInUseError</c> when it is the same container.
     /// </summary>
     public bool ChecksShapeAtRunTime { get; set; }
+
+    /// <summary>
+    /// Set on the second version of an <c>Int</c> counter loop (the one that counts in <c>S64</c>), whose body is a
+    /// copy of the general version's: analysis checks it like any loop but keeps none of its diagnostics, so a
+    /// mistake in the body is reported once.
+    /// </summary>
+    public bool IsQuietCopy { get; set; }
 }
 
 /// <summary>
