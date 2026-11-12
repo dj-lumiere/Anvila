@@ -83,7 +83,8 @@ internal static unsafe class OrcJitExecutor
                 if (!NativeLibrary.TryLoad(libraryName: llvmSrc,
                         assembly: typeof(OrcJitExecutor).Assembly,
                         searchPath: null,
-                        handle: out nint llvmHandle))
+                        handle: out nint llvmHandle) &&
+                    !TryLoadSystemLlvm(handle: out llvmHandle))
                 {
                     error = $"{llvmSrc} could not be loaded from next to the builder (the libLLVM.runtime package " +
                             $"for this platform){LoadFailureDetail(libraryName: llvmSrc)}.";
@@ -129,6 +130,36 @@ internal static unsafe class OrcJitExecutor
                 return false;
             }
         }
+    }
+
+    /// <summary>
+    /// On Linux, the system's libLLVM of the version the bindings are for (<c>libLLVM.so.22.1</c>, from LLVM's own
+    /// packages), loaded when the packaged one can't be: the packaged library is linked against the shared libraries of
+    /// one distribution release (<c>libxml2.so.2</c>), which a later release no longer ships. The bindings then resolve
+    /// to the same library.
+    /// </summary>
+    private static bool TryLoadSystemLlvm(out nint handle)
+    {
+        handle = 0;
+        if (!OperatingSystem.IsLinux())
+        {
+            return false;
+        }
+
+        Version version = typeof(LLVM).Assembly.GetName().Version ?? new Version(major: 22, minor: 1);
+        string soname = $"libLLVM.so.{version.Major}.{version.Minor}";
+        foreach (string candidate in new[] { soname, $"/usr/lib/llvm-{version.Major}/lib/{soname}" })
+        {
+            if (NativeLibrary.TryLoad(libraryPath: candidate, handle: out handle))
+            {
+                nint found = handle;
+                System.Runtime.Loader.AssemblyLoadContext.Default.ResolvingUnmanagedDll += (_, name) =>
+                    name.StartsWith(value: "libLLVM", comparisonType: StringComparison.Ordinal) ? found : 0;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The loader's own reason a library failed to load (on macOS and Linux the dlopen message, which names a
