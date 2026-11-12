@@ -188,6 +188,46 @@ public sealed partial class TypeRegistry
         return holds;
     }
 
+    /// <summary>
+    /// The types a place of <paramref name="protocol"/> may hold in this build, for the reader: the ones the program
+    /// puts into such a place when the lowering has run, else every concrete type of the program that obeys the
+    /// protocol (by <c>obeys</c> or by having its routines). Sorted by name.
+    /// </summary>
+    public List<TypeSymbol> StorableTypes(ProtocolTypeSymbol protocol)
+    {
+        var result = new List<TypeSymbol>();
+        foreach (RecordTypeSymbol dispatched in _dispatchedTypes)
+        {
+            if (DispatchedProtocol(type: dispatched) is { } held && held.FullName == protocol.FullName)
+            {
+                result.AddRange(collection: DispatchArms(dispatched: dispatched)
+                   .Select(selector: arm => (TypeSymbol?)DispatchArmEntity(type: arm) ?? arm));
+            }
+        }
+
+        if (result.Count == 0)
+        {
+            ProtocolTypeSymbol canonical = CanonicalProtocol(protocol: protocol);
+            foreach (TypeCategory category in new[] { TypeCategory.Record, TypeCategory.Entity })
+            {
+                foreach (TypeSymbol type in GetTypesByCategory(category: category).ToList())
+                {
+                    if (!type.IsGenericDefinition && DispatchedProtocol(type: type) == null &&
+                        !IsStdlibSourcePath(path: type.Location?.FileName) &&
+                        (TypeObeysProtocol(type: type, protocolName: canonical.Name, resolvedProtocol: canonical) ||
+                         HasProtocolRoutines(type: type, protocol: canonical)))
+                    {
+                        result.Add(item: type);
+                    }
+                }
+            }
+        }
+
+        return result.DistinctBy(keySelector: t => t.FullName)
+                     .OrderBy(keySelector: t => t.Name, comparer: StringComparer.Ordinal)
+                     .ToList();
+    }
+
     /// <summary>Whether <paramref name="type"/> has a routine of every name <paramref name="protocol"/> and its
     /// parents ask for (a type obeys a protocol by having its routines).</summary>
     private bool HasProtocolRoutines(TypeSymbol type, ProtocolTypeSymbol protocol)

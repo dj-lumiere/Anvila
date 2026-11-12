@@ -4668,6 +4668,11 @@ public static class LspServer
                 // A generic routine whose type arguments the analysis inferred: `show[Bool]` after the name.
                 case CallExpression call when !call.IsSynthesizedLowering:
                     AddInferredCallHints(call: call, tokens: doc.Tokens, addHint: AddHint);
+                    if (DispatchHint(call: call, doc: doc) is { } dispatch)
+                    {
+                        hints.Add(item: dispatch);
+                    }
+
                     break;
 
                 // A generic type written without its arguments and given them by the analysis: `List[S64]()`.
@@ -4689,6 +4694,69 @@ public static class LspServer
         }
 
         WriteResult(stdout: stdout, id: id, result: hints);
+    }
+
+    /// <summary>
+    /// The protocol of the stored value <paramref name="call"/> is made on, when the routine it runs is chosen by the
+    /// value's type while the program runs (a variable, member variable, element, optional or result of a protocol type),
+    /// or null. A parameter of a protocol type is a type parameter, chosen at buildtime, and gives null.
+    /// </summary>
+    private static ProtocolTypeSymbol? StoredProtocolOf(CallExpression call)
+    {
+        if (TypeRegistry.DispatchedProtocol(type: call.ResolvedRoutine?.OwnerType) is { } owner)
+        {
+            return owner;
+        }
+
+        TypeSymbol? receiver = call.Callee is MemberExpression member ? member.Object.ResolvedType : null;
+        for (int depth = 0; depth < 4 && receiver != null; depth++)
+        {
+            if (TypeRegistry.DispatchedProtocol(type: receiver) is { } held)
+            {
+                return held;
+            }
+
+            receiver = WrapperShape.InnerOf(type: receiver) ?? (receiver is RecordTypeSymbol
+            {
+                GenericDefinition.Name: RuntimeContract.OptionalCarrier, TypeArguments: [var optional]
+            }
+                ? optional
+                : null);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// A <c>dispatch</c> hint after the routine name of a call on a stored value of a protocol: the routine that runs
+    /// is the one of the value's own type, chosen while the program runs. Its tooltip lists the types that can be
+    /// stored in a place of that protocol in this build.
+    /// </summary>
+    private static Dictionary<string, object?>? DispatchHint(CallExpression call, DocState doc)
+    {
+        if (call.Callee is not MemberExpression member || StoredProtocolOf(call: call) is not { } protocol ||
+            MemberNameToken(tokens: doc.Tokens, member: member) is not { } name)
+        {
+            return null;
+        }
+
+        List<string> types = doc.Registry.StorableTypes(protocol: protocol)
+                                .Select(selector: TypeText)
+                                .ToList();
+        string list = types.Count > 0
+            ? $"Types a place of {protocol.Name} holds in this build: {string.Join(separator: ", ", values: types)}."
+            : $"No type that obeys {protocol.Name} is in this build.";
+        string tooltip = $"Calls the {member.MemberName} of the stored value's own type, chosen while the program runs. {list}";
+        return new Dictionary<string, object?>
+        {
+            [key: "position"] = new Dictionary<string, object?>
+            {
+                [key: "line"] = name.Line - 1, [key: PropCharacter] = name.Column - 1 + name.Text.Length
+            },
+            [key: PropLabel] = "dispatch",
+            [key: "tooltip"] = Surface(text: tooltip),
+            [key: "paddingLeft"] = true
+        };
     }
 
     private delegate void HintAdder(int line1, int col1, string labelText, int kind, bool padLeft);
