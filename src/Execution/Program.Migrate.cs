@@ -21,7 +21,7 @@ internal partial class Program
     private static int RunMigrateCommand(string[] args)
     {
         // The analysis child of `--step suffix` (see RunSuffixProbe): not for people to run.
-        if (args.Length == 4 && args[1] is "--suffix-probe" or "--until-probe" or "--numbers-probe")
+        if (args.Length == 4 && args[1] is "--suffix-probe" or "--until-probe" or "--numbers-probe" or "--flags-none-probe")
         {
             return RunSuffixProbe(list: args[2], output: args[3], mode: args[1]);
         }
@@ -182,6 +182,12 @@ internal partial class Program
 
         // `--step numbers`: a number is not built from another value's bits with `T(x)`: a value conversion is
         // `x.to[T]()`, and a literal goes in a declaration of the type, with analysis deciding each one.
+        // `--step flags-none`: the flags value with no member on is `empty`, and `none` is the None value only.
+        if (step == "flags-none")
+        {
+            return RunFlagsNoneStep(paths: paths, check: check);
+        }
+
         if (step == "numbers")
         {
             return RunNumbersStep(paths: paths, check: check);
@@ -569,7 +575,7 @@ internal partial class Program
     [
         "indent", "have", "suffix", "failable", "names", "modules", "access", "cpu-events", "addr", "files", "until",
         "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random", "for",
-        "emitter-tools", "extensions", "byte-literals", "references"
+        "emitter-tools", "extensions", "byte-literals", "references", "flags-none"
     ];
 
     /// <summary>The named steps as a list for a message: <c>indent, have, ... or random</c>.</summary>

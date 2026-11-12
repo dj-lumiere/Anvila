@@ -39,11 +39,21 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>The contextual keyword for the flags value with no member on.</summary>
+    internal const string FlagsEmptyKeyword = "empty";
+
     private TypeSymbol AnalyzeExpressionCore(Expression expression, TypeSymbol? expectedType)
     {
         if (expression is { IsPreAnalyzed: true, ResolvedType: { } preAnalyzed })
         {
             return preAnalyzed;
+        }
+
+        // `empty` where a `CellMarks?` goes is the flags value with no member on, which the Optional then holds.
+        if (expression is IdentifierExpression { Name: FlagsEmptyKeyword } && expectedType is { TypeArguments: [FlagsTypeSymbol optionalFlags] } &&
+            GetCarrierBaseName(type: expectedType) is MaybeTypeName && LookupVariableWithModulePrefix(name: FlagsEmptyKeyword) == null)
+        {
+            return AnalyzeExpression(expression: expression, expectedType: optionalFlags);
         }
 
         // Where a flags value is expected (a parameter of that flags type, `perms.without(WRITE)`), its members are
@@ -435,6 +445,16 @@ public sealed partial class SemanticVerifier
         if (flagsCtx is not FlagsTypeSymbol flagsTypeCtx)
         {
             return false;
+        }
+
+        // `empty` is the flags value with no member on, a keyword only where a flags value goes: a visible value of
+        // that name keeps its own meaning.
+        if (id.Name == FlagsEmptyKeyword && flagsTypeCtx.Members.All(predicate: m => m.Name != FlagsEmptyKeyword) &&
+            LookupVariableWithModulePrefix(name: id.Name) == null)
+        {
+            id.ResolvedFlagsEmpty = true;
+            result = flagsTypeCtx;
+            return true;
         }
 
         FlagsMemberInfo? memberInfo =
@@ -905,7 +925,15 @@ public sealed partial class SemanticVerifier
                              or BinaryOperator.PowerWrap or BinaryOperator.PowerClamp or BinaryOperator.PowerUnchecked);
         TypeSymbol leftType;
         TypeSymbol rightType;
-        if (peerTyped && (LeadingNumber(expression: binary.Left) != null || IsPlainTextLiteral(expression: binary.Left)) &&
+        // `empty == marks`: the keyword takes the flags type of the other side.
+        if (binary is { Operator: BinaryOperator.Equal or BinaryOperator.NotEqual, Left: IdentifierExpression { Name: FlagsEmptyKeyword } } &&
+            LookupVariableWithModulePrefix(name: FlagsEmptyKeyword) == null)
+        {
+            rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
+            leftType = AnalyzeExpression(expression: binary.Left,
+                expectedType: (ValueTokenTarget(type: rightType) ?? rightType) is FlagsTypeSymbol rightFlags ? rightFlags : literalCtx);
+        }
+        else if (peerTyped && (LeadingNumber(expression: binary.Left) != null || IsPlainTextLiteral(expression: binary.Left)) &&
             LeadingNumber(expression: binary.Right) == null && !IsPlainTextLiteral(expression: binary.Right))
         {
             rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
@@ -936,7 +964,7 @@ public sealed partial class SemanticVerifier
             // `marks == none` compares with the flags value that has no member on: the flags side gives `none` its type.
             rightType = binary.Operator == BinaryOperator.Assign ||
                         binary is { Operator: BinaryOperator.Equal or BinaryOperator.NotEqual,
-                            Right: LiteralExpression { LiteralType: TokenType.NoneValue } } &&
+                            Right: LiteralExpression { LiteralType: TokenType.NoneValue } or IdentifierExpression { Name: FlagsEmptyKeyword } } &&
                         ((ValueTokenTarget(type: leftType) ?? leftType) is FlagsTypeSymbol ||
                          IsNoneCarrierSlot(type: ValueTokenTarget(type: leftType) ?? leftType))
                 ? AnalyzeExpression(expression: binary.Right,

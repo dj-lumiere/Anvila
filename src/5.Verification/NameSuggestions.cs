@@ -300,7 +300,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return $" It is 'next[{drawn}]()' now: 'next[T]()' gives any integer type over its full range, or a " +
                        "'B32' / 'B64' in [0, 1) (migrate --step random rewrites it).";
             case "all_off" when type is FlagsTypeSymbol:
-                return $" The flags value with no member on is written 'none' now ('var empty: {type.Name} = none').";
+                return $" The flags value with no member on is written 'empty' ('var marks: {type.Name} = empty').";
             case "codepoint" when type.BareName is "Byte":
                 return " A byte is no character: its value is 'b.value()', a 'U8'.";
             case "byte_value" when type.BareName is "Char":

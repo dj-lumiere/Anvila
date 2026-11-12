@@ -646,6 +646,11 @@ internal partial class Program
                 }
             };
         }
+        else if (mode == "--flags-none-probe")
+        {
+            SemanticVerifier.FlagsNoneSeen = literal =>
+                observedNow.Add(item: (literal.Location, literal.Location.Position, () => "flags"));
+        }
         else if (mode == "--numbers-probe")
         {
             SemanticVerifier.NumberBitReadSeen = (call, target, source) =>

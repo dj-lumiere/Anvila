@@ -3152,6 +3152,11 @@ public static class LspServer
             {
                 AddCase(roles: roles, key: key, owner: caseOwner, name: ide.Name);
             }
+            else if (ide.ResolvedFlagsEmpty)
+            {
+                // The contextual keyword `empty` where a flags value goes, colored as a constant there only.
+                roles.Constant.Add(item: key);
+            }
             else if (ide.IsModuleGlobal || ide.ResolvedVariable is { IsPreset: true } or { IsGlobal: true })
             {
                 roles.Constant.Add(item: key);

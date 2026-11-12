@@ -1336,6 +1336,15 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // Fold bare flag-context identifiers (e.g. a bare `READ` in a flags test)
         // -> bitmask literal. SA stamps ResolvedFlagsBit when it resolves a bare
         // identifier against a flag context.
+        // `empty` where a flags value goes: the zero bitmask.
+        if (id.ResolvedFlagsEmpty && id.ResolvedType is FlagsTypeSymbol)
+        {
+            return ([],
+                new LiteralExpression(Value: 0UL,
+                    LiteralType: TokenType.U64Literal,
+                    Location: id.Location) { ResolvedType = id.ResolvedType });
+        }
+
         if (id.ResolvedFlagsBit is int bit && id.ResolvedType is FlagsTypeSymbol)
         {
             return ([],

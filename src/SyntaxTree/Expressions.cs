@@ -289,6 +289,12 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
     public int? ResolvedFlagsBit { get; set; }
 
     /// <summary>
+    /// When set, this identifier is the contextual keyword `empty` where a flags value goes: the flags value with no
+    /// member on. ExpressionLoweringPass emits the zero bitmask.
+    /// </summary>
+    public bool ResolvedFlagsEmpty { get; set; }
+
+    /// <summary>
     /// When set, this identifier is a routine-VALUE reference whose routine is already resolved —
     /// codegen materializes it as a closure directly, skipping name-based lookup. Used for
     /// references a lowering pass constructs (e.g. an unbound member-routine reference for a cycle-

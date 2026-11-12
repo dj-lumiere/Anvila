@@ -441,6 +441,9 @@ public sealed partial class SemanticVerifier
     /// (Optional[T] / variant-with-None, or a Mielia <c>Roamed[E]</c> optional entity slot).
     /// Reports RV-S if no valid carrier context is present.
     /// </summary>
+    /// <summary>Called for each <c>none</c> written where a flags value goes (<c>migrate --step flags-none</c>).</summary>
+    internal static Action<LiteralExpression>? FlagsNoneSeen;
+
     private TypeSymbol AnalyzeNoneValueLiteral(LiteralExpression literal, TypeSymbol? expectedType)
     {
         // A link written without `?` always names an entity.
@@ -459,20 +462,16 @@ public sealed partial class SemanticVerifier
             return expectedType;
         }
 
-        // A flags slot: `none` is the flags value with no member on (`marks: CellMarks = none`), lowered to the
-        // zero bitmask. A `Optional[CellMarks]` slot is a carrier and took the branch above, so the expected type
-        // decides which `none` it is.
-        if (expectedType is FlagsTypeSymbol)
+        // A flags slot: `none` is the None value only, and the flags value with no member on is `empty`.
+        if (expectedType is FlagsTypeSymbol flagsSlot)
         {
+            FlagsNoneSeen?.Invoke(obj: literal);
+            ReportError(code: SemanticDiagnosticCode.NoneOutsideCarrierSlot,
+                message: $"You write 'none' where a '{flagsSlot.Name}' value goes, and 'none' is the None value. The " +
+                         $"'{flagsSlot.Name}' value with no member on is written 'empty' ('var marks: {flagsSlot.Name} = " +
+                         "empty'). migrate --step flags-none rewrites it.",
+                location: literal.Location);
             return expectedType;
-        }
-
-        // A flags preset's `none` inlined where the preset is used keeps the preset's flags type
-        // (`show(EMPTY)` gives no flags slot of its own).
-        if (literal.ResolvedType is FlagsTypeSymbol presetFlags &&
-            (expectedType == null || !IsNoneCarrierSlot(type: expectedType)))
-        {
-            return presetFlags;
         }
 
         // Mielia: `none` against an entity slot that is not optional (`x: E`, not `x: E?`).
