@@ -788,6 +788,17 @@ public sealed partial class SemanticVerifier
                 quietCopy.IsQuietCopy = false;
                 AnalyzeStatement(statement: quietCopy);
                 quietCopy.IsQuietCopy = true;
+                // Each dropped one is forgotten too, so the general version reports it when it meets it.
+                foreach (var dropped in _errors.Skip(count: errorsBefore))
+                {
+                    _seenErrors.Remove(item: dropped);
+                }
+
+                foreach (var dropped in _warnings.Skip(count: warningsBefore))
+                {
+                    _seenWarnings.Remove(item: dropped);
+                }
+
                 _errors.RemoveRange(index: errorsBefore, count: _errors.Count - errorsBefore);
                 _warnings.RemoveRange(index: warningsBefore, count: _warnings.Count - warningsBefore);
                 break;
