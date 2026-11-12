@@ -215,17 +215,32 @@ public partial class LlvmEmitter
             {
                 string symbol = $"rv.store.{typeName.Replace(oldValue: "\"", newValue: "")}";
                 global = $"@\"{symbol}\"";
-                // The resident base defines its stores strongly and a delta refers to them. On Windows the JIT
-                // can't materialize a weak definition in the base object (COFF names its default after another
-                // symbol), and two definitions of one store would give a type two stores.
-                string definition = IsResident(mangledFuncName: symbol)
+                // The resident base defines its stores strongly and a delta refers to them. Two definitions of one
+                // store would give a type two stores. Any other module (a whole-module JIT, a delta's new type, a
+                // native build) defines it once per program through linkonce_odr. On Windows that store goes in a
+                // COMDAT of its own: without one, COFF makes a linkonce_odr global a weak external whose
+                // definition is an extra external symbol, `.weak.<store>.default.<first external symbol>`
+                // (`__emutls_v._rf_trace_depth` here). The JIT's object layer lists that symbol although the IR
+                // module never declared it, and ORC then reads it from outside its symbol table, so the run fails
+                // now and then with "Failed to materialize symbols" (the constant pools of OrcCoffConstantPools
+                // went wrong the same way).
+                bool resident = IsResident(mangledFuncName: symbol);
+                bool ownComdat = !resident && !_baseMode && _target.TargetOS == "windows";
+                string definition = resident
                     ? "external global [4 x i64], align 16"
                     : _baseMode
                         ? "global [4 x i64] zeroinitializer, align 16"
-                        : "linkonce_odr global [4 x i64] zeroinitializer, align 16";
+                        : ownComdat
+                            ? "linkonce_odr global [4 x i64] zeroinitializer, comdat, align 16"
+                            : "linkonce_odr global [4 x i64] zeroinitializer, align 16";
                 if (_baseMode)
                 {
                     _definedStores.Add(item: symbol);
+                }
+
+                if (ownComdat)
+                {
+                    EmitLine(sb: _globalDeclarations, line: $"$\"{symbol}\" = comdat any");
                 }
 
                 EmitLine(sb: _globalDeclarations, line: $"{global} = {definition}");
