@@ -24,7 +24,7 @@ env:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     # A hang fails the job here instead of holding the runner for GitHub's six hours.
     timeout-minutes: 120
 
