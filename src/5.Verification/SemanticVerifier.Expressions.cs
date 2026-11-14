@@ -926,12 +926,12 @@ public sealed partial class SemanticVerifier
 
         // The type the result goes to reaches an operand that may need it (`i.to() * x` where a B128 goes), when the
         // operator routine of that type takes and gives it. A literal operand keeps the literal rules above.
-        TypeSymbol? operandCtx = literalCtx == null ? OperandExpectationFromResult(binary: binary, expectedType: expectedType) : null;
+        (TypeSymbol? Left, TypeSymbol? Right) operandCtx = literalCtx == null
+            ? OperandExpectationFromResult(binary: binary, expectedType: expectedType)
+            : (null, null);
         TypeSymbol? leftCtx = literalCtx ??
-                              (operandCtx != null && TakesTypeFromWhereItGoes(expression: binary.Left) ? operandCtx : null);
-        TypeSymbol? rightOperandCtx = operandCtx != null && TakesTypeFromWhereItGoes(expression: binary.Right)
-            ? operandCtx
-            : null;
+                              (TakesTypeFromWhereItGoes(expression: binary.Left) ? operandCtx.Left : null);
+        TypeSymbol? rightOperandCtx = TakesTypeFromWhereItGoes(expression: binary.Right) ? operandCtx.Right : null;
         TypeSymbol leftType;
         TypeSymbol rightType;
         // `empty == marks`: the keyword takes the flags type of the other side.
@@ -958,17 +958,18 @@ public sealed partial class SemanticVerifier
                         ? peer
                         : literalCtx);
         }
-        else if (ComparisonRoutine(op: binary.Operator) is { } comparison && operandCtx == null &&
+        else if (binary.Operator != BinaryOperator.Assign && literalCtx == null && operandCtx.Left == null &&
+                 !IsShiftOperator(op: binary.Operator) && binary.Operator is not (BinaryOperator.Power
+                     or BinaryOperator.PowerWrap or BinaryOperator.PowerClamp or BinaryOperator.PowerUnchecked) &&
                  TakesTypeFromWhereItGoes(expression: binary.Left) && !TakesTypeFromWhereItGoes(expression: binary.Right) &&
                  LeadingNumber(expression: binary.Right) == null && !IsPlainTextLiteral(expression: binary.Right))
         {
-            // A comparison whose left side may need a type and whose right side has one (`x.to() < limit`): the right
-            // side is read first, and the left side expects its type when the comparison routine takes it.
+            // A left side that may need a type beside a right side that has one (`x.to() < limit`, `x.to() * y`): the
+            // right side is read first, and the left side expects its type when the operator routine takes it.
             rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
             TypeSymbol known = ValueTokenTarget(type: rightType) ?? rightType;
-            leftType = IsUsableExpectation(type: known) &&
-                       OperatorTakesOwnType(type: known, operatorName: comparison, givesMe: false)
-                ? AnalyzeWithDerivedExpectation(expression: binary.Left, expected: known)
+            leftType = LeftExpectationFromRight(binary: binary, rightType: known) is { } fromRight
+                ? AnalyzeWithDerivedExpectation(expression: binary.Left, expected: fromRight)
                 : AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
         }
         else
@@ -1483,6 +1484,12 @@ public sealed partial class SemanticVerifier
             // user code the protocol gate reports this first, but that gate is off for stdlib bodies, and
             // returning the operand type here let the call reach the LLVM emitter with nothing to call. (Other
             // scalar types can get operators synthesized later, e.g. ByteSize's `*%`, so they are not judged.)
+            // A side that already failed was reported where it failed.
+            if (memberRoutine == null && rightType.Category == TypeCategory.Error)
+            {
+                return ErrorTypeSymbol.Instance;
+            }
+
             if (memberRoutine == null &&
                 (IsFixedWidthNumericType(type: leftType) || leftType.Name is IntegerTypeName or "Decimal"))
             {

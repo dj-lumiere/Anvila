@@ -877,9 +877,30 @@ public sealed partial class SemanticVerifier
         TypeSymbol? numberPeer = null;
         for (int i = 0; i < chain.Operands.Count; i++)
         {
-            if (LeadingNumber(expression: chain.Operands[index: i]) == null)
+            if (LeadingNumber(expression: chain.Operands[index: i]) == null &&
+                !TakesTypeFromWhereItGoes(expression: chain.Operands[index: i]))
             {
                 operandTypes[index: i] = AnalyzeExpression(expression: chain.Operands[index: i]);
+                numberPeer ??= ConstGenericValueType(type: operandTypes[index: i]) ?? operandTypes[index: i];
+            }
+        }
+
+        // An operand that may need a type (`0 <= x.to() <= limit`) takes the one the chain's other operands have,
+        // when their comparison routine takes it. A bare number has none to give.
+        TypeSymbol? chainKnown = numberPeer == null ? null : ValueTokenTarget(type: numberPeer) ?? numberPeer;
+        if (chainKnown != null && (!IsUsableExpectation(type: chainKnown) ||
+                                   !OperatorTakesOwnType(type: chainKnown, operatorName: "compare", givesMe: false)))
+        {
+            chainKnown = null;
+        }
+
+        for (int i = 0; i < chain.Operands.Count; i++)
+        {
+            if (LeadingNumber(expression: chain.Operands[index: i]) == null &&
+                TakesTypeFromWhereItGoes(expression: chain.Operands[index: i]))
+            {
+                operandTypes[index: i] = AnalyzeWithDerivedExpectation(expression: chain.Operands[index: i],
+                    expected: chainKnown);
                 numberPeer ??= ConstGenericValueType(type: operandTypes[index: i]) ?? operandTypes[index: i];
             }
         }

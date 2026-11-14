@@ -215,37 +215,117 @@ public sealed partial class SemanticVerifier
         };
     }
 
-    /// <summary>What an operand of <paramref name="binary"/> expects from the type its result goes to: that type,
-    /// when its operator routine takes and gives it.</summary>
-    private TypeSymbol? OperandExpectationFromResult(BinaryExpression binary, TypeSymbol? expectedType)
+    /// <summary>The operands of an operator or a comparison whose routine fits more than one way, with the routines
+    /// that fit. Read by the RV-S645 message.</summary>
+    private readonly Dictionary<Expression, string> _expectationNotes = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>The one-argument operator routines of <paramref name="type"/> named <paramref name="operatorName"/>,
+    /// only those that give <paramref name="gives"/> back when it is given.</summary>
+    private List<RoutineInfo> OperatorRoutines(TypeSymbol type, string operatorName, TypeSymbol? gives)
+    {
+        return MemberRoutinesTaking(type: type, name: operatorName, argumentCount: 1)
+              .Where(predicate: routine => routine.Parameters.Count >= 1 &&
+                                           (gives == null || routine.ReturnType is { } given &&
+                                               IsOwnType(given: given, type: gives, routine: routine)))
+              .ToList();
+    }
+
+    /// <summary>The one type the parameter of <paramref name="routines"/> takes (`Me` read as
+    /// <paramref name="owner"/>), or null when they take none or several.</summary>
+    private static TypeSymbol? OneParameterType(List<RoutineInfo> routines, TypeSymbol owner)
+    {
+        List<TypeSymbol> taken = routines.Select(selector: routine =>
+                                             IsOwnType(given: routine.Parameters[index: 0].Type, type: owner, routine: routine)
+                                                 ? owner
+                                                 : routine.Parameters[index: 0].Type)
+                                         .DistinctBy(keySelector: t => t.FullName)
+                                         .ToList();
+        return taken is [var only] && IsUsableExpectation(type: only) ? only : null;
+    }
+
+    /// <summary>Notes on each operand of <paramref name="binary"/> that may need a type that the operator routine
+    /// <paramref name="routines"/> fits more than one way, so it gives no type.</summary>
+    private void NoteSeveralOperatorRoutines(BinaryExpression binary, TypeSymbol owner, List<RoutineInfo> routines)
+    {
+        if (routines.Count < 2)
+        {
+            return;
+        }
+
+        string listed = string.Join(separator: ", ", values: routines.Select(selector: routine =>
+            $"{routine.Name}({routine.Parameters[index: 0].Name}: {routine.Parameters[index: 0].Type.Name}) -> " +
+            $"{routine.ReturnType?.Name ?? "None"}"));
+        string note = $" '{owner.Name}.{routines[index: 0].Name}' fits more than one way here ({listed}), so it doesn't " +
+                      "say one type.";
+        foreach (Expression operand in new[] { binary.Left, binary.Right })
+        {
+            if (operand is CallExpression && TakesTypeFromWhereItGoes(expression: operand))
+            {
+                _expectationNotes[key: operand] = note;
+            }
+        }
+    }
+
+    /// <summary>What the operands of <paramref name="binary"/> expect from the type its result goes to. The left
+    /// operand is that type when the operator routines of that type that give it back take one parameter type, and
+    /// the right operand is that parameter type (`B128.mul(you: B128) -> B128` gives both B128).</summary>
+    private (TypeSymbol? Left, TypeSymbol? Right) OperandExpectationFromResult(BinaryExpression binary,
+        TypeSymbol? expectedType)
     {
         if (!IsUsableExpectation(type: expectedType) || binary.Operator == BinaryOperator.Assign ||
             ComparisonRoutine(op: binary.Operator) != null ||
             binary.Operator.GetMemberRoutineName() is not { } operatorName ||
             !TakesTypeFromWhereItGoes(expression: binary.Left) && !TakesTypeFromWhereItGoes(expression: binary.Right))
         {
-            return null;
+            return (null, null);
         }
 
-        return OperatorTakesOwnType(type: expectedType!, operatorName: operatorName, givesMe: true)
-            ? expectedType
-            : null;
+        List<RoutineInfo> giving = OperatorRoutines(type: expectedType!, operatorName: operatorName, gives: expectedType);
+        if (OneParameterType(routines: giving, owner: expectedType!) is { } parameter)
+        {
+            return (expectedType, parameter);
+        }
+
+        NoteSeveralOperatorRoutines(binary: binary, owner: expectedType!, routines: giving);
+        return (null, null);
     }
 
-    /// <summary>What the right side of <paramref name="binary"/> expects from the left side's type: the type the
-    /// left side's operator routine takes, when that is the left side's own type (an argument expects its
-    /// parameter's type).</summary>
+    /// <summary>What the right side of <paramref name="binary"/> expects from the left side's type: the one type the
+    /// left side's operator routine takes (an argument expects its parameter's type).</summary>
     private TypeSymbol? RightExpectationFromLeft(BinaryExpression binary, TypeSymbol leftType)
     {
         if (binary.Operator == BinaryOperator.Assign || !IsUsableExpectation(type: leftType) ||
-            !TakesTypeFromWhereItGoes(expression: binary.Right))
+            !TakesTypeFromWhereItGoes(expression: binary.Right) ||
+            (ComparisonRoutine(op: binary.Operator) ?? binary.Operator.GetMemberRoutineName()) is not { } routineName)
         {
             return null;
         }
 
-        string? routine = ComparisonRoutine(op: binary.Operator) ?? binary.Operator.GetMemberRoutineName();
-        return routine != null && OperatorTakesOwnType(type: leftType, operatorName: routine, givesMe: false)
-            ? leftType
+        List<RoutineInfo> routines = OperatorRoutines(type: leftType, operatorName: routineName, gives: null);
+        if (OneParameterType(routines: routines, owner: leftType) is { } parameter)
+        {
+            return parameter;
+        }
+
+        NoteSeveralOperatorRoutines(binary: binary, owner: leftType, routines: routines);
+        return null;
+    }
+
+    /// <summary>What the left side of <paramref name="binary"/> expects from the right side's type when nothing is
+    /// expected of the whole: the right side's type, when its operator routine takes that type (`x.to() * y` with a
+    /// B128 `y`: `B128.mul(you: B128)`).</summary>
+    private TypeSymbol? LeftExpectationFromRight(BinaryExpression binary, TypeSymbol rightType)
+    {
+        if (!IsUsableExpectation(type: rightType) ||
+            (ComparisonRoutine(op: binary.Operator) ?? binary.Operator.GetMemberRoutineName()) is not { } routineName)
+        {
+            return null;
+        }
+
+        return OperatorRoutines(type: rightType, operatorName: routineName, gives: null)
+              .Any(predicate: routine => IsOwnType(given: routine.Parameters[index: 0].Type, type: rightType,
+                   routine: routine))
+            ? rightType
             : null;
     }
 
@@ -259,10 +339,11 @@ public sealed partial class SemanticVerifier
             ? $" '.{next}()' on its result doesn't give back the type it is called on, so the type that call goes " +
               "to doesn't reach this one."
             : "";
+        dropped += _expectationNotes.GetValueOrDefault(key: call) ?? "";
         return $"You called '{name}()', which takes {what} from where the result goes, and nothing here gives " +
                "one. The builder looks at a written variable type, an assignment target, a parameter, a return " +
-               "type, the result of an operator the call is an operand of, the other side of a comparison, and a " +
-               $"call on the result that gives back its own type.{dropped} Write the type in the call " +
+               "type, the result of an operator the call is an operand of, the other operand of an operator or a " +
+               $"comparison, and a call on the result that gives back its own type.{dropped} Write the type in the call " +
                $"('{(isMember ? "." : "")}{name}[S64]()'), or give the variable a type.";
     }
 }
