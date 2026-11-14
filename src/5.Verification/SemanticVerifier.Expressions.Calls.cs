@@ -182,7 +182,17 @@ public sealed partial class SemanticVerifier
             return call.ResolvedType;
         }
 
-        TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
+        bool heldDerived = HoldDerivedExpectation(call: call);
+        TypeSymbol result;
+        try
+        {
+            result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
+        }
+        finally
+        {
+            ReleaseDerivedExpectation(call: call, held: heldDerived);
+        }
+
         // Nothing that changes comes out of a `Viewing`: a write token a routine hands out on a viewed place
         // (`links[0].target.fetch()`, a stamp read where it is in a view) is a read token of the same value.
         if (result is { BareName: Declaration.RuntimeContract.Modifying, TypeArguments: [var reached] } &&
@@ -887,7 +897,9 @@ public sealed partial class SemanticVerifier
             return resultAnalyzeImportedModuleCall;
         }
 
-        TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
+        // The type expected of this call reaches its receiver when the receiver is a call too (`i.to().sqrt()`
+        // where a B128 goes): it holds once the receiver's type is known and gives this routine back that type.
+        TypeSymbol objectType = AnalyzeChainReceiver(call: call, member: member, expectedType: expectedType);
 
         // A call through a link is made on its token, taken first.
         if (LinkTokenOfReceiver(objectType: objectType, name: member.MemberName, location: member.Location) is { } linkToken)
@@ -911,7 +923,7 @@ public sealed partial class SemanticVerifier
                 { Count: > 0 } family)
         {
             return AnalyzeInferredSpecialization(call: call, member: member, objectType: objectType, family: family,
-                expectedType: expectedType);
+                expectedType: ResultOnlyExpectation(call: call, expectedType: expectedType));
         }
 
         // A buildtime `expand` handle has no callable methods — its metadata is read via the
@@ -1283,9 +1295,7 @@ public sealed partial class SemanticVerifier
         if (expectedType is null or ErrorTypeSymbol or GenericParameterTypeSymbol)
         {
             ReportError(code: SemanticDiagnosticCode.ResultTypeArgumentUnknown,
-                message: $"You called '{member.MemberName}()', which needs its type argument from where the result " +
-                         $"goes, but nothing here gives that type. Write it in the call ('.{member.MemberName}[S64]()'), " +
-                         "or give the variable a type.",
+                message: ResultTypeArgumentUnknownMessage(call: call, name: member.MemberName, typeParameter: null),
                 location: call.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -2873,6 +2883,12 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // A derived expectation binds only a type parameter nothing but the result names.
+        if (ResultOnlyTypeParameter(routine: routine, ownerParameters: []) != null)
+        {
+            expectedType = ResultOnlyExpectation(call: call, expectedType: expectedType);
+        }
+
         List<TypeSymbol>? inferred = InferGenericTypeArguments(genericRoutine: routine,
             arguments: call.Arguments,
             expectedType: expectedType);
@@ -3298,11 +3314,16 @@ public sealed partial class SemanticVerifier
 
         if (memberRoutine.IsGenericDefinition)
         {
+            HashSet<string> ownerTypeParameters = GetOwnerGenericParameterNames(ownerType: dispatchType)
+                                                  .Union(second: GetOwnerGenericParameterNames(ownerType: memberRoutine.OwnerType))
+                                                  .ToHashSet();
             List<TypeSymbol>? inferredMemberRoutineTypeArgs =
                 InferMemberRoutineGenericTypeArguments(genericMemberRoutine: memberRoutine,
                     arguments: call.Arguments,
                     receiverType: dispatchType,
-                    expectedType: expectedType);
+                    expectedType: ResultOnlyTypeParameter(routine: memberRoutine, ownerParameters: ownerTypeParameters) != null
+                        ? ResultOnlyExpectation(call: call, expectedType: expectedType)
+                        : expectedType);
             if (inferredMemberRoutineTypeArgs == null &&
                 ResultOnlyTypeParameter(routine: memberRoutine,
                     ownerParameters: GetOwnerGenericParameterNames(ownerType: dispatchType)
@@ -3310,9 +3331,8 @@ public sealed partial class SemanticVerifier
                        .ToHashSet()) is { } resultOnly)
             {
                 ReportError(code: SemanticDiagnosticCode.ResultTypeArgumentUnknown,
-                    message: $"You called '{member.MemberName}()', which needs its type argument '{resultOnly}' " +
-                             "from where the result goes, but nothing here gives that type. Write it in the call " +
-                             $"('.{member.MemberName}[S64]()'), or give the variable a type.",
+                    message: ResultTypeArgumentUnknownMessage(call: call, name: member.MemberName,
+                        typeParameter: resultOnly),
                     location: call.Location);
                 return ErrorTypeSymbol.Instance;
             }
@@ -4523,6 +4543,12 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // A derived expectation binds only a type parameter nothing but the result names.
+        if (ResultOnlyTypeParameter(routine: routine, ownerParameters: []) != null)
+        {
+            expectedType = ResultOnlyExpectation(call: call, expectedType: expectedType);
+        }
+
         List<TypeSymbol>? inferredImportGen = InferGenericTypeArguments(genericRoutine: routine,
             arguments: call.Arguments,
             expectedType: expectedType);
@@ -5602,6 +5628,17 @@ public sealed partial class SemanticVerifier
                 (a is NamedArgumentExpression named ? named.Value : a).ResolvedType is ErrorTypeSymbol))
         {
             return false;
+        }
+
+        // A type parameter only the result names comes from where the result goes (`ask()` where an S64 goes).
+        if (ResultOnlyTypeParameter(routine: routine, ownerParameters: []) is { } resultOnly)
+        {
+            ReportError(code: SemanticDiagnosticCode.CannotInferTypeArgument,
+                message: ResultTypeArgumentUnknownMessage(call: call,
+                    name: call.Callee is IdentifierExpression calleeName ? calleeName.Name : routine.Name,
+                    typeParameter: resultOnly, isMember: false),
+                location: call.Location);
+            return true;
         }
 
         string genericNames = string.Join(separator: ", ",

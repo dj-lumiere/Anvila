@@ -2235,7 +2235,8 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        if (!SupportsOperator(type: left, op: op))
+        // A side that already failed was reported where it failed.
+        if (left.Category != TypeCategory.Error && !SupportsOperator(type: left, op: op))
         {
             ReportError(code: SemanticDiagnosticCode.OrderingNotSupported,
                 message: MissingEqualityMessage(type: left, op: op) ??

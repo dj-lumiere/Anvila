@@ -923,6 +923,15 @@ public sealed partial class SemanticVerifier
         bool peerTyped = binary.Operator != BinaryOperator.Assign && literalCtx == null &&
                          !IsShiftOperator(op: binary.Operator) && binary.Operator is not (BinaryOperator.Power
                              or BinaryOperator.PowerWrap or BinaryOperator.PowerClamp or BinaryOperator.PowerUnchecked);
+
+        // The type the result goes to reaches an operand that may need it (`i.to() * x` where a B128 goes), when the
+        // operator routine of that type takes and gives it. A literal operand keeps the literal rules above.
+        TypeSymbol? operandCtx = literalCtx == null ? OperandExpectationFromResult(binary: binary, expectedType: expectedType) : null;
+        TypeSymbol? leftCtx = literalCtx ??
+                              (operandCtx != null && TakesTypeFromWhereItGoes(expression: binary.Left) ? operandCtx : null);
+        TypeSymbol? rightOperandCtx = operandCtx != null && TakesTypeFromWhereItGoes(expression: binary.Right)
+            ? operandCtx
+            : null;
         TypeSymbol leftType;
         TypeSymbol rightType;
         // `empty == marks`: the keyword takes the flags type of the other side.
@@ -936,7 +945,9 @@ public sealed partial class SemanticVerifier
         else if (peerTyped && (LeadingNumber(expression: binary.Left) != null || IsPlainTextLiteral(expression: binary.Left)) &&
             LeadingNumber(expression: binary.Right) == null && !IsPlainTextLiteral(expression: binary.Right))
         {
-            rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
+            rightType = rightCtx != null
+                ? AnalyzeExpression(expression: binary.Right, expectedType: rightCtx)
+                : AnalyzeWithDerivedExpectation(expression: binary.Right, expected: rightOperandCtx);
             TypeSymbol peer = ConstGenericValueType(type: rightType) ?? rightType;
             leftType = AnalyzeExpression(expression: binary.Left,
                 expectedType: LeadingNumber(expression: binary.Left) is { } leadingLeft
@@ -947,10 +958,25 @@ public sealed partial class SemanticVerifier
                         ? peer
                         : literalCtx);
         }
+        else if (ComparisonRoutine(op: binary.Operator) is { } comparison && operandCtx == null &&
+                 TakesTypeFromWhereItGoes(expression: binary.Left) && !TakesTypeFromWhereItGoes(expression: binary.Right) &&
+                 LeadingNumber(expression: binary.Right) == null && !IsPlainTextLiteral(expression: binary.Right))
+        {
+            // A comparison whose left side may need a type and whose right side has one (`x.to() < limit`): the right
+            // side is read first, and the left side expects its type when the comparison routine takes it.
+            rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
+            TypeSymbol known = ValueTokenTarget(type: rightType) ?? rightType;
+            leftType = IsUsableExpectation(type: known) &&
+                       OperatorTakesOwnType(type: known, operatorName: comparison, givesMe: false)
+                ? AnalyzeWithDerivedExpectation(expression: binary.Left, expected: known)
+                : AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
+        }
         else
         {
             // Logical negation should eventually lower through member routines rather than a not operator.
-            leftType = AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
+            leftType = literalCtx != null
+                ? AnalyzeExpression(expression: binary.Left, expectedType: literalCtx)
+                : AnalyzeWithDerivedExpectation(expression: binary.Left, expected: leftCtx);
             TypeSymbol peer = ConstGenericValueType(type: leftType) ?? leftType;
             if (narrowedBefore != null)
             {
@@ -971,15 +997,18 @@ public sealed partial class SemanticVerifier
                     expectedType: binary.Operator == BinaryOperator.Assign
                         ? leftType
                         : ValueTokenTarget(type: leftType) ?? leftType)
-                : AnalyzeExpression(expression: binary.Right,
-                    expectedType: peerTyped && LeadingNumber(expression: binary.Right) is { } leadingRight &&
-                                  LeadingNumber(expression: binary.Left) == null &&
-                                  ConformsToPeer(literal: leadingRight, peer: peer) ||
-                                  peerTyped && binary.Right is LiteralExpression { } rightText &&
-                                  IsPlainTextLiteral(expression: rightText) &&
-                                  TextLiteralTakesPeer(literal: rightText, peer: peer)
-                        ? peer
-                        : rightCtx);
+                : (peerTyped && LeadingNumber(expression: binary.Right) is { } leadingRight &&
+                   LeadingNumber(expression: binary.Left) == null &&
+                   ConformsToPeer(literal: leadingRight, peer: peer) ||
+                   peerTyped && binary.Right is LiteralExpression { } rightText &&
+                   IsPlainTextLiteral(expression: rightText) &&
+                   TextLiteralTakesPeer(literal: rightText, peer: peer)
+                    ? peer
+                    : rightCtx) is { } rightExpected
+                    ? AnalyzeExpression(expression: binary.Right, expectedType: rightExpected)
+                    : AnalyzeWithDerivedExpectation(expression: binary.Right,
+                        expected: rightOperandCtx ??
+                                  RightExpectationFromLeft(binary: binary, leftType: ValueTokenTarget(type: peer) ?? peer));
             if (narrowedBefore != null)
             {
                 ForgetNarrowing(target: binary.Left);
@@ -2674,12 +2703,14 @@ public sealed partial class SemanticVerifier
             expectedType = annotated;
         }
 
+        // A negation gives its operand's type, so a call under it expects the type the negation goes to.
         TypeSymbol? operandExpected = unary.Operator is UnaryOperator.Minus or UnaryOperator.BitwiseNot &&
                                       expectedType != null && IsNumericType(type: expectedType) &&
-                                      IsLiteralArithmetic(expression: unary.Operand)
+                                      (IsLiteralArithmetic(expression: unary.Operand) ||
+                                       TakesTypeFromWhereItGoes(expression: unary.Operand))
             ? expectedType
             : null;
-        TypeSymbol operandType = AnalyzeExpression(expression: unary.Operand, expectedType: operandExpected);
+        TypeSymbol operandType = AnalyzeWithDerivedExpectation(expression: unary.Operand, expected: operandExpected);
         operandType = ValueTokenTarget(type: operandType) ?? operandType;
 
         switch (unary.Operator)

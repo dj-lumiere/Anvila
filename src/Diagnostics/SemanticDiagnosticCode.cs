@@ -894,9 +894,12 @@ public enum SemanticDiagnosticCode
     /// holds one more reference to the container and is no token.</summary>
     SourceIterableKept = 644,
 
-    /// <summary>A generic routine whose type argument appears only in its result (<c>x.to()</c>) is called where
-    /// nothing gives that result's type (no declared variable type, return type, parameter type, or
-    /// <c>try</c>/<c>check</c> carrier around it): the type argument has to be written (<c>x.to[S64]()</c>).</summary>
+    /// <summary>A generic routine whose type argument appears only in its result (<c>x.to()</c>) is called
+    /// where nothing gives that result's type. The expected type flows inward from a declared variable type,
+    /// an assignment or compound assignment target, a parameter, a return type, a <c>try</c>/<c>check</c> carrier,
+    /// the result of an operator whose routine takes and gives <c>Me</c>, the other side of a comparison, and a call
+    /// on the result that gives <c>Me</c> back. With none of these the type argument has to be written
+    /// (<c>x.to[S64]()</c>).</summary>
     ResultTypeArgumentUnknown = 645,
 
     /// <summary>A call picks a specialization the receiver does not have (<c>flag.to[U8]()</c> where no
