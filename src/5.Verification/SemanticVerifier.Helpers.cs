@@ -689,6 +689,15 @@ public sealed partial class SemanticVerifier
                 callObjectType: callObjectType);
 
             Expression argExpr = binding.Value;
+
+            // An argument that already failed while the overload was looked for was reported then: analyzing it
+            // again against this parameter would only add a second error for the same mistake. A body the builder
+            // wrote reports nothing, so its arguments are analyzed again with the parameter's type.
+            if (argExpr.ResolvedType is ErrorTypeSymbol && !_isInCompilerGeneratedBody)
+            {
+                continue;
+            }
+
             TypeSymbol argType = AnalyzeExpression(expression: argExpr,
                 expectedType: CollectionLiteralConstraintType(routine: routine,
                     paramType: paramType,
