@@ -1606,6 +1606,8 @@ public partial class LlvmEmitter
         output.AppendLine(value: "declare void @lapila_set_library_folder(ptr)");
         // The arguments the program was started with, kept by the runtime for Environment.arguments().
         output.AppendLine(value: "declare void @lapila_set_arguments(i32, ptr)");
+        // Descriptors 0, 1 and 2 closed by the parent get the null device, before the runtime opens anything.
+        output.AppendLine(value: "declare void @lapila_keep_standard_descriptors()");
         // The standard library's folder, so a crash the runtime raises names where the program called into the library.
         string library = _registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "";
         output.AppendLine(handler:
@@ -1615,6 +1617,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "; Entry point");
         output.AppendLine(value: $"define i32 @main(i32 %argc, ptr %argv) {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
+        output.AppendLine(value: "  call void @lapila_keep_standard_descriptors()");
         // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RV_MEMORY_LIMIT).
         output.AppendLine(value: "  call void @rf_heap_limit_init()");
         output.AppendLine(value: "  call void @rf_runtime_init()");
