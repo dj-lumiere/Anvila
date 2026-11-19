@@ -41,7 +41,7 @@ public sealed class CallGraphNode
 
     /// <summary>
     /// Whether this routine's body directly invokes a coroutine suspend primitive
-    /// (e.g. <c>rf_coro_yield</c>). Seed for the may-suspend backward fixpoint
+    /// (e.g. <c>ig_coro_yield</c>). Seed for the may-suspend backward fixpoint
     /// (<see cref="MaySuspendAnalysis"/>); set when the call graph is built.
     /// </summary>
     public bool DirectlySuspends { get; set; }

@@ -1123,7 +1123,7 @@ internal static class NativeToolchain
         // -femulated-tls is LOAD-BEARING for the resident-JIT base: the ORC JIT lowers `thread_local` via
         // EMULATED TLS (`__emutls_v.<name>` + `__emutls_get_address`) — it cannot use native TLS in JIT'd code
         // on Windows — so the AOT'd base object MUST also use emulated TLS, else the base defines native-TLS
-        // `_rf_trace_stack` while the delta references emutls `__emutls_v._rf_trace_stack` → "symbol not found"
+        // `_ig_trace_stack` while the delta references emutls `__emutls_v._ig_trace_stack` → "symbol not found"
         // at JIT link (the shared trace globals). Emulated TLS makes both sides agree on the symbol names.
         // -ffunction-sections and -fdata-sections give each routine and global its own section. The JIT's linker
         // works out, for every symbol an object defines, what that symbol's section reaches: with one section for

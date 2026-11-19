@@ -8,7 +8,7 @@ namespace Builder.LlvmEmit;
 /// <summary>
 /// Line-tables-only DWARF debug info emission, so tools (Builder Explorer, debuggers) can map
 /// source &lt;-&gt; LLVM IR. Gated on build mode via <see cref="ShouldEmitDebugInfo"/> (same modes as
-/// the runtime trace, whose <c>@_rf_trace_push</c>/<c>@_rf_trace_update_loc</c> calls this pass reuses
+/// the runtime trace, whose <c>@_ig_trace_push</c>/<c>@_ig_trace_update_loc</c> calls this pass reuses
 /// as the per-instruction source-location cursor). Implemented as a post-process over the finished IR
 /// text — mirroring <c>ApplyTbaa</c> — so the hot emission path stays untouched.
 /// </summary>
@@ -299,12 +299,12 @@ public partial class LlvmEmitter
     [GeneratedRegex(pattern: @"i32 (-?\d+), i32 (-?\d+)\)")]
     private static partial Regex TraceLocPattern();
 
-    /// <summary>Reads the current source (line, col) from an <c>@_rf_trace_push</c>/<c>update_loc</c> call.</summary>
+    /// <summary>Reads the current source (line, col) from an <c>@_ig_trace_push</c>/<c>update_loc</c> call.</summary>
     private static bool TryParseTraceLoc(string line, out int line2, out int col)
     {
         line2 = 0;
         col = 0;
-        if (!line.Contains(value: "@_rf_trace_"))
+        if (!line.Contains(value: "@_ig_trace_"))
         {
             return false;
         }

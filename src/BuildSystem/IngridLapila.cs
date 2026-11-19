@@ -345,11 +345,12 @@ internal static class IngridLapila
             // The standard library's own exports (its crash handler, the half and bfloat conversions) stay out: the
             // Revare program brings its runtime, and a stray copy would pull in POSIX calls the JIT can't resolve.
             // Lapila's own crash trace stays out too: Ingrid's routines (ingrid_roam_hold and the like) sit on hot
-            // paths of every Revare program, and Revare keeps its own trace.
+            // paths of every Revare program, and Revare keeps its own trace. Every Console call here is the runtime's own
+            // (the crash report among them), so it writes straight out instead of collecting a whole line.
             NativeToolchain.ShareClangWithLapila();
             return new Lapila.Compiler(target: TargetConfig.ForCurrentHost().LapilaTarget(), decls: decls,
                     trace: false)
-                    { EmitLibraryExports = false }
+                    { EmitLibraryExports = false, WholeConsoleLines = false }
                 .Generate();
         }
         catch (Lapila.CompileError ex)

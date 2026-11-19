@@ -9,7 +9,7 @@ namespace Builder.LlvmEmit;
 /// </summary>
 public partial class LlvmEmitter
 {
-    private const string TracePop = "  call void @_rf_trace_pop()";
+    private const string TracePop = "  call void @_ig_trace_pop()";
     private const string RetVoid = "  ret void";
 
     #region Return Statements

@@ -14,7 +14,7 @@ namespace Builder.Lowering.Passes;
 /// zero for none.
 /// <list type="bullet">
 /// <item>Every entity gets its bytes from a slot of its type's store:
-/// <c>C::rf_slot_take(store: LLVM::slot_store[T](), size: ...)</c> is the creator's box.</item>
+/// <c>C::ig_slot_take(store: LLVM::slot_store[T](), size: ...)</c> is the creator's box.</item>
 /// <item>A reference made from an entity's address (<c>Modifying[T](me.hijack())</c>) is
 /// <c>LLVM::token_make[T](at:)</c>, which reads the slot's generation.</item>
 /// <item>A link built from a token (an <c>Optional</c> creator) is <c>LLVM::link_make[T](present:, token:)</c>.</item>

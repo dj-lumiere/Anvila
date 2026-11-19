@@ -160,11 +160,11 @@ internal sealed class LapilaIntrinsics
                 ? $"RV_TRACE_STACK.to[@{pointee}]()"
                 : "RV_TRACE_STACK",
             // The trace a failure was first thrown with (LapilaTrace's ring of recent failures).
-            "failure_trace_depth" => $"rf_failure_get_depth({Argument(index: 0)})",
+            "failure_trace_depth" => $"ig_failure_get_depth({Argument(index: 0)})",
             "failure_trace_frames" => _typeText(arg: _resultType) is ['@', .. var framePointee]
                 // The address may be zero (no trace kept), which the program's own code checks, so it is not to[@T]().
-                ? $"bitcast[Addr, @{framePointee}](rf_failure_get_frames({Argument(index: 0)}))"
-                : $"rf_failure_get_frames({Argument(index: 0)})",
+                ? $"bitcast[Addr, @{framePointee}](ig_failure_get_frames({Argument(index: 0)}))"
+                : $"ig_failure_get_frames({Argument(index: 0)})",
             "element_pointer" => ElementPointer(),
             // A signed byte count, taken as the ByteSize with the same bits: moving by it wraps to the same address.
             // The address itself may be zero (a hollow storage moved by nothing), so it is not made a view first.

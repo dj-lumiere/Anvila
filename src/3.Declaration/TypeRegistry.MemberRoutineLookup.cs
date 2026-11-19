@@ -475,8 +475,8 @@ public sealed partial class TypeRegistry
             return overload;
         }
 
-        // System-prefix fallback: bare callee names (e.g., "rf_allocate_dynamic_uninit") register
-        // under "System.rf_allocate_dynamic_uninit#…". Mirror LookupRoutine's behavior so overload
+        // System-prefix fallback: bare callee names (e.g., "ig_allocate_dynamic_uninit") register
+        // under "System.ig_allocate_dynamic_uninit#…". Mirror LookupRoutine's behavior so overload
         // resolution can find module-qualified registrations from unqualified call sites.
         if (!baseName.Contains(value: '.'))
         {

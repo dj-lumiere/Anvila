@@ -220,7 +220,7 @@ public partial class LlvmEmitter
                 // native build) defines it once per program through linkonce_odr. On Windows that store goes in a
                 // COMDAT of its own: without one, COFF makes a linkonce_odr global a weak external whose
                 // definition is an extra external symbol, `.weak.<store>.default.<first external symbol>`
-                // (`__emutls_v._rf_trace_depth` here). The JIT's object layer lists that symbol although the IR
+                // (`__emutls_v._ig_trace_depth` here). The JIT's object layer lists that symbol although the IR
                 // module never declared it, and ORC then reads it from outside its symbol table, so the run fails
                 // now and then with "Failed to materialize symbols" (the constant pools of OrcCoffConstantPools
                 // went wrong the same way).

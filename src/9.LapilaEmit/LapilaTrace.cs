@@ -12,17 +12,17 @@ namespace Builder.LapilaEmit;
 internal static class LapilaTrace
 {
     /// <summary>The routine that pushes a frame.</summary>
-    public const string Push = "rf_trace_push";
+    public const string Push = "ig_trace_push";
 
     /// <summary>The routine that pops the top frame.</summary>
-    public const string Pop = "rf_trace_pop";
+    public const string Pop = "ig_trace_pop";
 
     /// <summary>The routine that moves the top frame to another source position.</summary>
-    public const string UpdateLocation = "rf_trace_update_loc";
+    public const string UpdateLocation = "ig_trace_update_loc";
 
     /// <summary>The routine that notes the trace of a new failure in the thread's ring of recent failures and gives its
     /// number, which a caught error's Crashables keeps.</summary>
-    public const string FailureNote = "rf_failure_note";
+    public const string FailureNote = "ig_failure_note";
 
     /// <summary>The frame stack, the depth, and the routines over them.</summary>
     public const string Support = """
@@ -40,7 +40,7 @@ internal static class LapilaTrace
         global RV_TRACE_DEPTH: &S32
 
         ### Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
-        routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
+        routine ig_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
             depth: S32 = RV_TRACE_DEPTH.load()
             index: U64 = zext[S32, U64](band[S32](depth, 31))
             frame: @RvTraceFrame = RV_TRACE_STACK.getview().to[@RvTraceFrame]().stride(index)
@@ -51,12 +51,12 @@ internal static class LapilaTrace
             add[S32](depth, 1).poke_into(RV_TRACE_DEPTH)
             return
 
-        routine rf_trace_pop() -> Void
+        routine ig_trace_pop() -> Void
             sub[S32](RV_TRACE_DEPTH.load(), 1).poke_into(RV_TRACE_DEPTH)
             return
 
         ### Moves the top frame to the position of the call about to be made.
-        routine rf_trace_update_loc(line: S32, column: S32) -> Void
+        routine ig_trace_update_loc(line: S32, column: S32) -> Void
             depth: S32 = RV_TRACE_DEPTH.load()
             if depth.le(0)
                 return
@@ -67,21 +67,21 @@ internal static class LapilaTrace
             return
 
         ### The trace's depth, under the name the LLVM emitter exports it by: Ingrid's crash handler reads it.
-        @export("_rf_trace_get_depth_shared")
-        routine rf_trace_get_depth() -> S32
+        @export("_ig_trace_get_depth_shared")
+        routine ig_trace_get_depth() -> S32
             depth: S32 = RV_TRACE_DEPTH.load()
             return depth
 
         ### The trace's 32 frames, under the name the LLVM emitter exports them by.
-        @export("_rf_trace_get_frames_shared")
-        routine rf_trace_get_frames() -> @RvTraceFrame
+        @export("_ig_trace_get_frames_shared")
+        routine ig_trace_get_frames() -> @RvTraceFrame
             frames: @RvTraceFrame = RV_TRACE_STACK.getview().to[@RvTraceFrame]()
             return frames
 
         ### The trace's innermost frame, under the name the LLVM emitter exports it by: Ingrid's place of an access reads
         ### it. 1 when there is one, 0 for an empty trace.
-        @export("_rf_trace_get_innermost_shared")
-        routine rf_trace_get_innermost(out: @RvTraceFrame) -> S32
+        @export("_ig_trace_get_innermost_shared")
+        routine ig_trace_get_innermost(out: @RvTraceFrame) -> S32
             depth: S32 = RV_TRACE_DEPTH.load()
             if depth.le(0)
                 return 0
@@ -105,7 +105,7 @@ internal static class LapilaTrace
 
         ### Notes the running thread's trace as a new failure's, in the entry its number picks, and gives the failure's
         ### number (never 0), which a caught error keeps so a report of it thrown again shows where it began.
-        routine rf_failure_note() -> U64
+        routine ig_failure_note() -> U64
             previous: U64 = RV_FAILURE_COUNT.fetch_add_unbroken[RELAXED](1)
             seq: U64 = add[U64](previous, 1)
             entry: @RvFailure = RV_FAILURES.getview().to[@RvFailure]().stride(band[U64](previous, 63))
@@ -119,7 +119,7 @@ internal static class LapilaTrace
             return seq
 
         ### The entry of failure `seq`, or None when the thread doesn't remember it.
-        infallible routine rf_failure_find(seq: U64) -> @RvFailure?
+        infallible routine ig_failure_find(seq: U64) -> @RvFailure?
             if ieq[U64](seq, 0)
                 return None()
             for i in 0 til 64
@@ -130,16 +130,16 @@ internal static class LapilaTrace
 
         ### The address of the 32 frames of failure `seq`'s trace, under the name the LLVM emitter exports them by, or
         ### zero when the thread doesn't remember it.
-        @export("_rf_failure_get_frames_shared")
-        routine rf_failure_get_frames(seq: U64) -> Addr
-            when rf_failure_find(seq)
+        @export("_ig_failure_get_frames_shared")
+        routine ig_failure_get_frames(seq: U64) -> Addr
+            when ig_failure_find(seq)
                 is @RvFailure as entry => return entry.frames.getview().to[@RvTraceFrame]()
                 is None => return Addr.zero()
 
         ### The depth of failure `seq`'s trace, under the name the LLVM emitter exports it by, or 0.
-        @export("_rf_failure_get_depth_shared")
-        routine rf_failure_get_depth(seq: U64) -> S32
-            when rf_failure_find(seq)
+        @export("_ig_failure_get_depth_shared")
+        routine ig_failure_get_depth(seq: U64) -> S32
+            when ig_failure_find(seq)
                 is @RvFailure as entry => return entry.depth.peek()
                 is None => return 0
 

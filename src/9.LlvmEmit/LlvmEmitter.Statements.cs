@@ -448,7 +448,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Emits a <see cref="CancellationPushStatement"/>: a node slot for the local and one
-    /// <c>rf_coro_cf_push(node, value, destroy)</c>, where the value is the local's storage address or the
+    /// <c>ig_coro_cf_push(node, value, destroy)</c>, where the value is the local's storage address or the
     /// reference it holds, as the statement says.
     /// </summary>
     private void EmitCancellationPush(StringBuilder sb, CancellationPushStatement push)
@@ -471,7 +471,7 @@ public partial class LlvmEmitter
             line: $"  call void @{Declaration.RuntimeContract.Runtime.CoroCfPush}(ptr {node}, ptr {value}, ptr @{destroy})");
     }
 
-    /// <summary>Emits a <see cref="CancellationPopStatement"/>: <c>rf_coro_cf_pop</c> of the local's node.</summary>
+    /// <summary>Emits a <see cref="CancellationPopStatement"/>: <c>ig_coro_cf_pop</c> of the local's node.</summary>
     private void EmitCancellationPop(StringBuilder sb, CancellationPopStatement pop)
     {
         string unique = _localVarLlvmNames.GetValueOrDefault(key: pop.Local, defaultValue: pop.Local);

@@ -693,7 +693,7 @@ public partial class LlvmEmitter
     /// tracing one costs a push/pop plus a location update per call inside its loops, which made -O0
     /// limb kernels an order of magnitude slower than the straight-line code they replaced.
     /// </summary>
-    /// <summary>The LLVM value holding a traced routine's ring slot, from its <c>@_rf_trace_push</c>, for its
+    /// <summary>The LLVM value holding a traced routine's ring slot, from its <c>@_ig_trace_push</c>, for its
     /// location updates.</summary>
     private const string TraceSlotValue = "%trace.slot";
 
@@ -746,7 +746,7 @@ public partial class LlvmEmitter
         string fileCStr = EmitCStringConstant(value: fileName);
         EmitLine(sb: sb,
             line:
-            $"  {TraceSlotValue} = call i64 @_rf_trace_push(ptr {routineCStr}, ptr {fileCStr}, i32 {line}, i32 {col})");
+            $"  {TraceSlotValue} = call i64 @_ig_trace_push(ptr {routineCStr}, ptr {fileCStr}, i32 {line}, i32 {col})");
     }
 
     /// <summary>

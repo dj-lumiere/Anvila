@@ -106,15 +106,15 @@ public sealed class MaySuspendAnalysis
 
 /// <summary>
 /// Single source of truth for which routines are coroutine suspend primitives. v0.2.0 ships no
-/// suspend keyword (design §8); the substrate is the native <c>rf_coro_*</c> functions declared in
-/// <c>System/NativeDeclarations.rvr</c>. The park point is <c>rf_coro_yield</c>; v0.3.0 channels add
-/// <c>rf_channel_feed</c> / <c>rf_channel_next</c>, which park the calling coroutine internally
-/// (rf_sched_park_external) on a full/empty buffer exactly like a yield.
+/// suspend keyword (design §8); the substrate is the native <c>ig_coro_*</c> functions declared in
+/// <c>System/NativeDeclarations.rvr</c>. The park point is <c>ig_coro_yield</c>; v0.3.0 channels add
+/// <c>ig_channel_feed</c> / <c>ig_channel_next</c>, which park the calling coroutine internally
+/// (ig_sched_park_external) on a full/empty buffer exactly like a yield.
 /// </summary>
 public static class SuspendPrimitives
 {
     /// <summary>The native park primitive — switches the running coroutine out to its resumer.</summary>
-    public const string Yield = "rf_coro_yield";
+    public const string Yield = "ig_coro_yield";
 
     /// <summary>
     /// Channel send/receive (v0.3.0). Both park the calling coroutine inside the native runtime when
@@ -124,20 +124,20 @@ public static class SuspendPrimitives
     private static readonly HashSet<string> PrimitiveNames = new()
     {
         Yield,
-        "rf_channel_feed",
-        "rf_channel_next",
-        "rf_signal_wait",
-        "rf_signal_wait_deadline",
+        "ig_channel_feed",
+        "ig_channel_next",
+        "ig_signal_wait",
+        "ig_signal_wait_deadline",
         // A call of a foreign routine marked @blocking: the calling coroutine parks while an I/O thread runs it.
-        "rf_blocking_call",
+        "ig_blocking_call",
         // The scheduler's parks: `waitfor` parks on a timer, an await of another job parks until it wakes the
         // coroutine (with or without a deadline), and `retrieve` and a race drive the scheduler until a job ends.
-        "rf_sched_park_timer",
-        "rf_sched_park_deadline",
-        "rf_sched_park_external",
-        "rf_task_await_coro_deadline",
-        "rf_sched_run_until_default",
-        "rf_race_wait"
+        "ig_sched_park_timer",
+        "ig_sched_park_deadline",
+        "ig_sched_park_external",
+        "ig_task_await_coro_deadline",
+        "ig_sched_run_until_default",
+        "ig_race_wait"
     };
 
     /// <summary>

@@ -260,7 +260,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a call to <c>@_rf_trace_update_loc</c> with the call site's source line/col baked
+    /// Emits a call to <c>@_ig_trace_update_loc</c> with the call site's source line/col baked
     /// in as constants. This refreshes the topmost shadow-stack frame so a subsequent throw
     /// produces a stack trace pointing at the actual call site within the enclosing routine
     /// rather than the routine's declaration line. Skips when trace emission is disabled or
@@ -289,7 +289,7 @@ public partial class LlvmEmitter
         // the update gives the frame its place, and the program stores nothing.
         EmitLine(sb: sb, line: _traceFromStack
             ? $"  ; !traceloc {line} {col}"
-            : $"  call void @_rf_trace_update_loc(i64 {TraceSlotValue}, i32 {line}, i32 {col})");
+            : $"  call void @_ig_trace_update_loc(i64 {TraceSlotValue}, i32 {line}, i32 {col})");
     }
 
     /// <summary>

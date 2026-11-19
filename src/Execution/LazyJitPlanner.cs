@@ -95,7 +95,7 @@ internal static class LazyJitPlanner
         {
             if (!index.TryGetValue(key: name, value: out MonomorphizedBody? body))
             {
-                return null; // not ours — rf_* runtime resolves via the process-search generator
+                return null; // not ours — ig_* runtime resolves via the process-search generator
             }
 
             if (cache.TryGet(mangledName: name, ir: out string cached))

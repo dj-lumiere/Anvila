@@ -352,7 +352,7 @@ public partial class LlvmEmitter
 
     #region Helpers
 
-    /// <summary>Whether to emit rf_trace_push/rf_trace_pop calls for stack trace diagnostics.</summary>
+    /// <summary>Whether to emit ig_trace_push/ig_trace_pop calls for stack trace diagnostics.</summary>
     private bool ShouldEmitTrace => Builder.Collection.TraceFrames.Enabled(mode: _buildMode);
 
     /// <summary>
@@ -980,7 +980,7 @@ public partial class LlvmEmitter
         // (a build without a trace pushes nothing, so its depth stays 0).
         // A DELTA build (resident base present, not the base itself) must REFERENCE the base's shared
         // trace TLS globals as extern, not re-define them — else the base+delta JIT combine hits a
-        // duplicate-definition of `__emutls_v._rf_trace_stack`. Base/normal-cold builds define them.
+        // duplicate-definition of `__emutls_v._ig_trace_stack`. Base/normal-cold builds define them.
         AppendShadowStackHelpers(output: output,
             deltaMode: _forExternalJitModule || (_residentSymbols.Count > 0 && !_baseMode));
 
@@ -1002,15 +1002,15 @@ public partial class LlvmEmitter
             // which would also say it doesn't, is dropped by llvm-link. Then every path through a failure reloads
             // the trace depth, and a loop with a check in it keeps the depth in flight on its success path too (a
             // composite check in Mielia ran 5.5 ns instead of 3.5 ns, a chain of three 12 ns instead of 7.7 ns).
-            output.AppendLine(value: "declare ptr @rf_failure_mold() nounwind cold nofree nosync memory(none)");
+            output.AppendLine(value: "declare ptr @ig_failure_mold() nounwind cold nofree nosync memory(none)");
             output.AppendLine();
             // A throw: notes the failure and gives its number, with the bit that says the crashable is in the mold,
             // and the mold the crashable goes into.
-            output.AppendLine(value: $"define private {{ i64, ptr }} @_rf_failure_throw() noinline cold {CpuAttributes} {{");
+            output.AppendLine(value: $"define private {{ i64, ptr }} @_ig_failure_throw() noinline cold {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: "  %seq = call i64 @_rf_failure_note()");
+            output.AppendLine(value: "  %seq = call i64 @_ig_failure_note()");
             output.AppendLine(value: $"  %flagged = or i64 %seq, {FailureInMold}");
-            output.AppendLine(value: "  %mold = call ptr @rf_failure_mold()");
+            output.AppendLine(value: "  %mold = call ptr @ig_failure_mold()");
             output.AppendLine(value: "  %number = insertvalue { i64, ptr } poison, i64 %flagged, 0");
             output.AppendLine(value: "  %both = insertvalue { i64, ptr } %number, ptr %mold, 1");
             output.AppendLine(value: "  ret { i64, ptr } %both");
@@ -1219,7 +1219,7 @@ public partial class LlvmEmitter
         // of Ingrid's object, which refers to it, stops with "Program used external function ... which could not be
         // resolved". The base or the whole module defines them and a delta refers to the base's. They are not weak:
         // COFF names a weak definition's default after the first external symbol of the object, and when that is a
-        // thread-local's emulated TLS variable (`__emutls_v._rf_trace_depth`) the Windows JIT can't materialize it.
+        // thread-local's emulated TLS variable (`__emutls_v._ig_trace_depth`) the Windows JIT can't materialize it.
         if (!_traceFromStack)
         {
             string linkage = deltaMode ? "external" : "";
@@ -1238,23 +1238,23 @@ public partial class LlvmEmitter
         output.AppendLine(value: "; Shadow stack (inline — no DLL call)");
         output.AppendLine(
             value:
-            "@_rf_trace_stack = thread_local global [32 x { ptr, ptr, i32, i32 }] zeroinitializer");
-        output.AppendLine(value: "@_rf_trace_depth = thread_local global i32 0");
+            "@_ig_trace_stack = thread_local global [32 x { ptr, ptr, i32, i32 }] zeroinitializer");
+        output.AppendLine(value: "@_ig_trace_depth = thread_local global i32 0");
 
         output.AppendLine();
         // push helper — branchless: mask index to [0,31] with AND. It gives the frame's ring slot, which the
         // routine keeps for its location updates: a frame stays at its slot for its whole life (a coroutine's trace
-        // moves to another thread at the same ring positions, see _rf_trace_exchange), so an update is two stores.
+        // moves to another thread at the same ring positions, see _ig_trace_exchange), so an update is two stores.
         output.AppendLine(
             value:
-            $"define private i64 @_rf_trace_push(ptr %r, ptr %f, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
+            $"define private i64 @_ig_trace_push(ptr %r, ptr %f, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
-        output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  %d = load i32, ptr @_ig_trace_depth");
         output.AppendLine(value: "  %idx32 = and i32 %d, 31");
         output.AppendLine(value: "  %idx = zext i32 %idx32 to i64");
         output.AppendLine(
             value:
-            "  %slot = getelementptr inbounds [32 x { ptr, ptr, i32, i32 }], ptr @_rf_trace_stack, i64 0, i64 %idx");
+            "  %slot = getelementptr inbounds [32 x { ptr, ptr, i32, i32 }], ptr @_ig_trace_stack, i64 0, i64 %idx");
         output.AppendLine(
             value:
             "  %p0 = getelementptr inbounds { ptr, ptr, i32, i32 }, ptr %slot, i32 0, i32 0");
@@ -1272,27 +1272,27 @@ public partial class LlvmEmitter
             "  %p3 = getelementptr inbounds { ptr, ptr, i32, i32 }, ptr %slot, i32 0, i32 3");
         output.AppendLine(value: "  store i32 %col, ptr %p3");
         output.AppendLine(value: "  %nd = add i32 %d, 1");
-        output.AppendLine(value: "  store i32 %nd, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  store i32 %nd, ptr @_ig_trace_depth");
         output.AppendLine(value: "  ret i64 %idx");
         output.AppendLine(value: "}");
         output.AppendLine();
         // pop helper — branchless: depth is always > 0 when pop is called (paired with push)
-        output.AppendLine(value: $"define private void @_rf_trace_pop() alwaysinline {CpuAttributes} {{");
+        output.AppendLine(value: $"define private void @_ig_trace_pop() alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
-        output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  %d = load i32, ptr @_ig_trace_depth");
         output.AppendLine(value: "  %nd = add i32 %d, -1");
-        output.AppendLine(value: "  store i32 %nd, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  store i32 %nd, ptr @_ig_trace_depth");
         output.AppendLine(value: RetVoidInstruction);
         output.AppendLine(value: "}");
         output.AppendLine();
         // update-loc helper — overwrites the line/col of the routine's own frame, at the slot its push gave.
         // Emitted before each call so the trace reflects the call's source line.
         output.AppendLine(
-            value: $"define private void @_rf_trace_update_loc(i64 %slot, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
+            value: $"define private void @_ig_trace_update_loc(i64 %slot, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(
             value:
-            "  %frame = getelementptr inbounds [32 x { ptr, ptr, i32, i32 }], ptr @_rf_trace_stack, i64 0, i64 %slot");
+            "  %frame = getelementptr inbounds [32 x { ptr, ptr, i32, i32 }], ptr @_ig_trace_stack, i64 0, i64 %slot");
         output.AppendLine(
             value:
             "  %p2 = getelementptr inbounds { ptr, ptr, i32, i32 }, ptr %frame, i32 0, i32 2");
@@ -1310,21 +1310,21 @@ public partial class LlvmEmitter
             // Read from the stack (Ingrid's lapila_trace_fill_ring): reading the depth walks the calling flow's frames
             // and fills the ring as a shadow stack of that depth would hold them.
             output.AppendLine(value: "declare i32 @lapila_trace_fill_ring(ptr)");
-            output.AppendLine(value: $"define private i32 @_rf_trace_get_depth() {CpuAttributes} {{");
+            output.AppendLine(value: $"define private i32 @_ig_trace_get_depth() {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: "  %d = call i32 @lapila_trace_fill_ring(ptr @_rf_trace_stack)");
+            output.AppendLine(value: "  %d = call i32 @lapila_trace_fill_ring(ptr @_ig_trace_stack)");
             output.AppendLine(value: "  ret i32 %d");
             output.AppendLine(value: "}");
             output.AppendLine();
             // Every reader asks for the depth first, which filled the ring: the frames are read without a second walk
             // (a stack overflow's report reads them many times over a deep stack).
-            output.AppendLine(value: $"define private ptr @_rf_trace_get_frames() {CpuAttributes} {{");
+            output.AppendLine(value: $"define private ptr @_ig_trace_get_frames() {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: "  ret ptr @_rf_trace_stack");
+            output.AppendLine(value: "  ret ptr @_ig_trace_stack");
             output.AppendLine(value: "}");
             output.AppendLine();
             // Nothing to move between coroutines: each reads its own stack.
-            output.AppendLine(value: $"define private void @_rf_trace_exchange(ptr %area) {CpuAttributes} {{");
+            output.AppendLine(value: $"define private void @_ig_trace_exchange(ptr %area) {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
             output.AppendLine(value: RetVoidInstruction);
             output.AppendLine(value: "}");
@@ -1332,15 +1332,15 @@ public partial class LlvmEmitter
         }
         else
         {
-            output.AppendLine(value: $"define private i32 @_rf_trace_get_depth() alwaysinline {CpuAttributes} {{");
+            output.AppendLine(value: $"define private i32 @_ig_trace_get_depth() alwaysinline {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+            output.AppendLine(value: "  %d = load i32, ptr @_ig_trace_depth");
             output.AppendLine(value: "  ret i32 %d");
             output.AppendLine(value: "}");
             output.AppendLine();
-            output.AppendLine(value: $"define private ptr @_rf_trace_get_frames() alwaysinline {CpuAttributes} {{");
+            output.AppendLine(value: $"define private ptr @_ig_trace_get_frames() alwaysinline {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: "  ret ptr @_rf_trace_stack");
+            output.AppendLine(value: "  ret ptr @_ig_trace_stack");
             output.AppendLine(value: "}");
             output.AppendLine();
             AppendTraceExchange(output: output);
@@ -1349,7 +1349,7 @@ public partial class LlvmEmitter
 
         // The innermost frame alone, for the AccessManager's place of each access: read from the stack, the walk
         // stops at the first frame.
-        output.AppendLine(value: $"define private i32 @_rf_trace_get_innermost(ptr %out) {CpuAttributes} {{");
+        output.AppendLine(value: $"define private i32 @_ig_trace_get_innermost(ptr %out) {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         if (_traceFromStack)
         {
@@ -1358,7 +1358,7 @@ public partial class LlvmEmitter
         }
         else
         {
-            output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+            output.AppendLine(value: "  %d = load i32, ptr @_ig_trace_depth");
             output.AppendLine(value: "  %none = icmp sle i32 %d, 0");
             output.AppendLine(value: "  br i1 %none, label %empty, label %copy");
             output.AppendLine(value: "empty:");
@@ -1367,7 +1367,7 @@ public partial class LlvmEmitter
             output.AppendLine(value: "  %top = sub i32 %d, 1");
             output.AppendLine(value: "  %idx32 = and i32 %top, 31");
             output.AppendLine(value: "  %idx = zext i32 %idx32 to i64");
-            output.AppendLine(handler: $"  %slot = getelementptr inbounds {TraceRingType}, ptr @_rf_trace_stack, i64 0, i64 %idx");
+            output.AppendLine(handler: $"  %slot = getelementptr inbounds {TraceRingType}, ptr @_ig_trace_stack, i64 0, i64 %idx");
             output.AppendLine(value: "  %frame = load { ptr, ptr, i32, i32 }, ptr %slot");
             output.AppendLine(value: "  store { ptr, ptr, i32, i32 } %frame, ptr %out");
             output.AppendLine(value: "  ret i32 1");
@@ -1394,16 +1394,16 @@ public partial class LlvmEmitter
     /// <summary>The shadow-stack helpers as (name, LLVM return type, parameter list, forwarded argument list).</summary>
     private static readonly (string Name, string Returns, string Parameters, string Arguments)[] ShadowStackHelpers =
     [
-        ("_rf_trace_push", "i64", "ptr %r, ptr %f, i32 %ln, i32 %col", "ptr %r, ptr %f, i32 %ln, i32 %col"),
-        ("_rf_trace_pop", "void", "", ""),
-        ("_rf_trace_update_loc", "void", "i64 %slot, i32 %ln, i32 %col", "i64 %slot, i32 %ln, i32 %col"),
-        ("_rf_trace_get_depth", "i32", "", ""),
-        ("_rf_trace_get_frames", "ptr", "", ""),
-        ("_rf_trace_exchange", "void", "ptr %area", "ptr %area"),
-        ("_rf_failure_note", "i64", "", ""),
-        ("_rf_failure_get_frames", "ptr", "i64 %seq", "i64 %seq"),
-        ("_rf_failure_get_depth", "i32", "i64 %seq", "i64 %seq"),
-        ("_rf_trace_get_innermost", "i32", "ptr %out", "ptr %out")
+        ("_ig_trace_push", "i64", "ptr %r, ptr %f, i32 %ln, i32 %col", "ptr %r, ptr %f, i32 %ln, i32 %col"),
+        ("_ig_trace_pop", "void", "", ""),
+        ("_ig_trace_update_loc", "void", "i64 %slot, i32 %ln, i32 %col", "i64 %slot, i32 %ln, i32 %col"),
+        ("_ig_trace_get_depth", "i32", "", ""),
+        ("_ig_trace_get_frames", "ptr", "", ""),
+        ("_ig_trace_exchange", "void", "ptr %area", "ptr %area"),
+        ("_ig_failure_note", "i64", "", ""),
+        ("_ig_failure_get_frames", "ptr", "i64 %seq", "i64 %seq"),
+        ("_ig_failure_get_depth", "i32", "i64 %seq", "i64 %seq"),
+        ("_ig_trace_get_innermost", "i32", "ptr %out", "ptr %out")
     ];
 
     /// <summary>The trace ring: 32 frames of (routine name, file, line, column).</summary>
@@ -1413,15 +1413,15 @@ public partial class LlvmEmitter
     private const string TraceAreaType = "{ i32, " + TraceRingType + " }";
 
     /// <summary>
-    /// <c>_rf_trace_exchange(area)</c> swaps the thread's trace with a <c>TraceArea</c>: the runtime calls it on the way
-    /// into a coroutine and on the way back (rf_set_trace_exchange), so the thread's trace is always the running
+    /// <c>_ig_trace_exchange(area)</c> swaps the thread's trace with a <c>TraceArea</c>: the runtime calls it on the way
+    /// into a coroutine and on the way back (ig_set_trace_exchange), so the thread's trace is always the running
     /// coroutine's, on whichever thread it goes on after a park. Only the live frames are moved (a coroutine's trace is
     /// a few frames deep), each at its ring position, through a copy on the stack.
     /// </summary>
     private void AppendTraceExchange(StringBuilder output)
     {
         const string frame = "{ ptr, ptr, i32, i32 }";
-        output.AppendLine(value: $"define private void @_rf_trace_copy_live(ptr %dst, ptr %src, i32 %depth) alwaysinline {CpuAttributes} {{");
+        output.AppendLine(value: $"define private void @_ig_trace_copy_live(ptr %dst, ptr %src, i32 %depth) alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  %big = icmp sgt i32 %depth, 32");
         output.AppendLine(value: "  %capped = select i1 %big, i32 32, i32 %depth");
@@ -1444,16 +1444,16 @@ public partial class LlvmEmitter
         output.AppendLine(value: RetVoidInstruction);
         output.AppendLine(value: "}");
         output.AppendLine();
-        output.AppendLine(value: $"define private void @_rf_trace_exchange(ptr %area) {CpuAttributes} {{");
+        output.AppendLine(value: $"define private void @_ig_trace_exchange(ptr %area) {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(handler: $"  %held = alloca {TraceRingType}");
-        output.AppendLine(value: "  %td = load i32, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  %td = load i32, ptr @_ig_trace_depth");
         output.AppendLine(value: "  %ad = load i32, ptr %area");
         output.AppendLine(handler: $"  %ring = getelementptr inbounds {TraceAreaType}, ptr %area, i32 0, i32 1");
-        output.AppendLine(value: "  call void @_rf_trace_copy_live(ptr %held, ptr @_rf_trace_stack, i32 %td)");
-        output.AppendLine(value: "  call void @_rf_trace_copy_live(ptr @_rf_trace_stack, ptr %ring, i32 %ad)");
-        output.AppendLine(value: "  call void @_rf_trace_copy_live(ptr %ring, ptr %held, i32 %td)");
-        output.AppendLine(value: "  store i32 %ad, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  call void @_ig_trace_copy_live(ptr %held, ptr @_ig_trace_stack, i32 %td)");
+        output.AppendLine(value: "  call void @_ig_trace_copy_live(ptr @_ig_trace_stack, ptr %ring, i32 %ad)");
+        output.AppendLine(value: "  call void @_ig_trace_copy_live(ptr %ring, ptr %held, i32 %td)");
+        output.AppendLine(value: "  store i32 %ad, ptr @_ig_trace_depth");
         output.AppendLine(value: "  store i32 %td, ptr %area");
         output.AppendLine(value: RetVoidInstruction);
         output.AppendLine(value: "}");
@@ -1469,22 +1469,22 @@ public partial class LlvmEmitter
     private const int FailureRingSize = 64;
 
     /// <summary>
-    /// The ring of recent failures, one for the program: when a crashable lands in a carrier, <c>_rf_failure_note</c>
+    /// The ring of recent failures, one for the program: when a crashable lands in a carrier, <c>_ig_failure_note</c>
     /// copies the thread's trace into the entry its new number picks (unique, never 0) and gives the number, which the
     /// carrier's <c>Crashables</c> keeps. A report of the error thrown again (on any thread) finds the trace by the
     /// number, or reports none when later failures took its place. Nothing is allocated.
     /// </summary>
     private void AppendFailureRing(StringBuilder output)
     {
-        output.AppendLine(handler: $"@_rf_failure_ring = global [{FailureRingSize} x {FailureEntryType}] zeroinitializer");
-        output.AppendLine(value: "@_rf_failure_count = global i64 0");
+        output.AppendLine(handler: $"@_ig_failure_ring = global [{FailureRingSize} x {FailureEntryType}] zeroinitializer");
+        output.AppendLine(value: "@_ig_failure_count = global i64 0");
         output.AppendLine();
-        output.AppendLine(value: $"define private i64 @_rf_failure_note() {CpuAttributes} {{");
+        output.AppendLine(value: $"define private i64 @_ig_failure_note() {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
-        output.AppendLine(value: "  %prev = atomicrmw add ptr @_rf_failure_count, i64 1 monotonic");
+        output.AppendLine(value: "  %prev = atomicrmw add ptr @_ig_failure_count, i64 1 monotonic");
         output.AppendLine(value: "  %seq = add i64 %prev, 1");
         output.AppendLine(handler: $"  %slot = and i64 %prev, {FailureRingSize - 1}");
-        output.AppendLine(handler: $"  %slotPtr = getelementptr inbounds [{FailureRingSize} x {FailureEntryType}], ptr @_rf_failure_ring, i64 0, i64 %slot");
+        output.AppendLine(handler: $"  %slotPtr = getelementptr inbounds [{FailureRingSize} x {FailureEntryType}], ptr @_ig_failure_ring, i64 0, i64 %slot");
         output.AppendLine(handler: $"  %seqPtr = getelementptr inbounds {FailureEntryType}, ptr %slotPtr, i32 0, i32 0");
         output.AppendLine(value: "  store atomic i64 0, ptr %seqPtr release, align 8");
         output.AppendLine(handler: $"  %depthPtr = getelementptr inbounds {FailureEntryType}, ptr %slotPtr, i32 0, i32 1");
@@ -1497,9 +1497,9 @@ public partial class LlvmEmitter
         }
         else
         {
-            output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+            output.AppendLine(value: "  %d = load i32, ptr @_ig_trace_depth");
             output.AppendLine(value: "  store i32 %d, ptr %depthPtr");
-            output.AppendLine(handler: $"  %frames = load {TraceRingType}, ptr @_rf_trace_stack");
+            output.AppendLine(handler: $"  %frames = load {TraceRingType}, ptr @_ig_trace_stack");
             output.AppendLine(handler: $"  store {TraceRingType} %frames, ptr %framesPtr");
         }
         output.AppendLine(value: "  store atomic i64 %seq, ptr %seqPtr release, align 8");
@@ -1508,7 +1508,7 @@ public partial class LlvmEmitter
         output.AppendLine();
         foreach ((string name, int field, string returns, string missing) in new[]
                  {
-                     ("_rf_failure_get_frames", 2, "ptr", "null"), ("_rf_failure_get_depth", 1, "i32", "0")
+                     ("_ig_failure_get_frames", 2, "ptr", "null"), ("_ig_failure_get_depth", 1, "i32", "0")
                  })
         {
             output.AppendLine(value: $"define private {returns} @{name}(i64 %seq) {CpuAttributes} {{");
@@ -1517,7 +1517,7 @@ public partial class LlvmEmitter
             output.AppendLine(value: "  br i1 %none, label %missing, label %look");
             output.AppendLine(value: "look:");
             output.AppendLine(value: "  %i = phi i64 [ 0, %entry ], [ %i1, %next ]");
-            output.AppendLine(handler: $"  %at = getelementptr inbounds [{FailureRingSize} x {FailureEntryType}], ptr @_rf_failure_ring, i64 0, i64 %i");
+            output.AppendLine(handler: $"  %at = getelementptr inbounds [{FailureRingSize} x {FailureEntryType}], ptr @_ig_failure_ring, i64 0, i64 %i");
             output.AppendLine(handler: $"  %seqPtr = getelementptr inbounds {FailureEntryType}, ptr %at, i32 0, i32 0");
             output.AppendLine(value: "  %held = load atomic i64, ptr %seqPtr acquire, align 8");
             output.AppendLine(value: "  %found = icmp eq i64 %held, %seq");
@@ -1568,7 +1568,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Appends the <c>main()</c> entry point that inits the runtime, sets the trace mode, calls
     /// the entry module's <c>start()</c>, and returns the exit status <c>set_exit_code</c> stored
-    /// (the runtime's <c>rf_exit_code</c>, 0 when nothing set one), or 82 when a routine test's heap went past its
+    /// (the runtime's <c>ig_exit_code</c>, 0 when nothing set one), or 82 when a routine test's heap went past its
     /// memory limit. No-op when no start symbol is found.
     /// </summary>
     private void AppendMainEntryPoint(StringBuilder output)
@@ -1587,21 +1587,21 @@ public partial class LlvmEmitter
             _ => 0
         };
 
-        output.AppendLine(value: "declare void @__rf_set_trace_mode(i32)");
-        output.AppendLine(value: "declare void @rf_set_stack_overflow_report(ptr)");
-        output.AppendLine(value: "declare i32 @rf_exit_code()");
-        output.AppendLine(value: "declare void @rf_heap_limit_init()");
-        output.AppendLine(value: "declare i32 @rf_heap_limit_status(i32)");
-        output.AppendLine(value: "declare void @rf_failure_mold_size(i64)");
+        output.AppendLine(value: "declare void @__ig_set_trace_mode(i32)");
+        output.AppendLine(value: "declare void @ig_set_stack_overflow_report(ptr)");
+        output.AppendLine(value: "declare i32 @ig_exit_code()");
+        output.AppendLine(value: "declare void @ig_heap_limit_init()");
+        output.AppendLine(value: "declare i32 @ig_heap_limit_status(i32)");
+        output.AppendLine(value: "declare void @ig_failure_mold_size(i64)");
         // Revare reports a stack overflow, Mielia (no "stack" in its vocabulary) running out of memory.
         string overflowReport = _registry.Language == Language.Mielia
             ? "lapila_deep_calls_report"
             : "lapila_stack_overflow_report";
         output.AppendLine(handler: $"declare void @{overflowReport}(i64)");
-        output.AppendLine(value: "declare void @rf_access_configure(i32, i32, i32, ptr)");
+        output.AppendLine(value: "declare void @ig_access_configure(i32, i32, i32, ptr)");
         output.AppendLine(value: "declare void @ingrid_access_place(ptr)");
-        output.AppendLine(value: "declare void @rf_set_crash_report(ptr)");
-        output.AppendLine(value: "declare void @rf_set_trace_exchange(ptr)");
+        output.AppendLine(value: "declare void @ig_set_crash_report(ptr)");
+        output.AppendLine(value: "declare void @ig_set_trace_exchange(ptr)");
         output.AppendLine(value: "declare void @lapila_runtime_crash_report(ptr, ptr, ptr)");
         output.AppendLine(value: "declare void @lapila_set_library_folder(ptr)");
         // The arguments the program was started with, kept by the runtime for Environment.arguments().
@@ -1619,30 +1619,30 @@ public partial class LlvmEmitter
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  call void @lapila_keep_standard_descriptors()");
         // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RV_MEMORY_LIMIT).
-        output.AppendLine(value: "  call void @rf_heap_limit_init()");
-        output.AppendLine(value: "  call void @rf_runtime_init()");
+        output.AppendLine(value: "  call void @ig_heap_limit_init()");
+        output.AppendLine(value: "  call void @ig_runtime_init()");
         // Every flow's failure mold holds the program's largest crashable: the main thread's is reserved here.
-        output.AppendLine(handler: $"  call void @rf_failure_mold_size(i64 {(CrashablesRoomBytes() + 7) / 8 * 8})");
+        output.AppendLine(handler: $"  call void @ig_failure_mold_size(i64 {(CrashablesRoomBytes() + 7) / 8 * 8})");
         output.AppendLine(value: "  call void @lapila_set_arguments(i32 %argc, ptr %argv)");
-        output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
+        output.AppendLine(handler: $"  call void @__ig_set_trace_mode(i32 {traceMode})");
         // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace, and so
         // is a crash the runtime raises (a deadlock, a failed allocation).
-        output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
-        output.AppendLine(value: "  call void @rf_set_crash_report(ptr @lapila_runtime_crash_report)");
+        output.AppendLine(handler: $"  call void @ig_set_stack_overflow_report(ptr @{overflowReport})");
+        output.AppendLine(value: "  call void @ig_set_crash_report(ptr @lapila_runtime_crash_report)");
         // Each coroutine keeps its own crash trace: the runtime swaps it in and out as the coroutine runs.
-        output.AppendLine(value: "  call void @rf_set_trace_exchange(ptr @_rf_trace_exchange_shared)");
+        output.AppendLine(value: "  call void @ig_set_trace_exchange(ptr @_ig_trace_exchange_shared)");
         output.AppendLine(value: "  call void @lapila_set_library_folder(ptr @.crash.library)");
         // The AccessManager's checks ([debug] deadlock-check, on in debug, and access-order), the language its
         // reports speak, and where the program's code is when it takes an access (the crash trace's top frame).
         (int deadlockCheck, int accessOrder, int language) = AccessChecks(registry: _registry, mode: _buildMode);
         output.AppendLine(handler:
-            $"  call void @rf_access_configure(i32 {deadlockCheck}, i32 {accessOrder}, i32 {language}, ptr @ingrid_access_place)");
+            $"  call void @ig_access_configure(i32 {deadlockCheck}, i32 {accessOrder}, i32 {language}, ptr @ingrid_access_place)");
 
         // The entry has no debug location to keep start's frame in if LLVM inlined start there: with the trace read
         // from the stack, start stays a routine of its own.
         output.AppendLine(handler: $"  call void @{startFunc}(){(_traceFromStack ? " noinline" : "")}");
-        output.AppendLine(value: "  %set = call i32 @rf_exit_code()");
-        output.AppendLine(value: "  %status = call i32 @rf_heap_limit_status(i32 %set)");
+        output.AppendLine(value: "  %set = call i32 @ig_exit_code()");
+        output.AppendLine(value: "  %status = call i32 @ig_heap_limit_status(i32 %set)");
         output.AppendLine(value: "  ret i32 %status");
         output.AppendLine(value: "}");
     }

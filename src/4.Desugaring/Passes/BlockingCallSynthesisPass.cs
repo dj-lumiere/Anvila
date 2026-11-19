@@ -8,7 +8,7 @@ namespace Builder.Desugaring.Passes;
 /// A foreign routine marked <c>@blocking</c> (<c>@blocking routine C::read_line(...) -> T</c>) may block its thread
 /// for a long time. A coroutine that calls it must not hold its worker meanwhile: the call runs on one of the
 /// runtime's I/O threads while the coroutine parks, and anywhere else it runs right there (Ingrid's
-/// <c>rf_blocking_call</c>). Runs on the user programs with <see cref="WorkRecipe"/>, before
+/// <c>ig_blocking_call</c>). Runs on the user programs with <see cref="WorkRecipe"/>, before
 /// declarations are collected.
 ///
 /// <para>For <c>@blocking routine C::f(a: A) -> R</c> it appends:</para>
@@ -19,7 +19,7 @@ namespace Builder.Desugaring.Passes;
 ///         recipe_put[A](recipe: recipe, slot: 1, value: a)
 ///         blocking_call(entry: __blocking_run_f, recipe: recipe)
 ///         var result = recipe_take[R](recipe: recipe, slot: 0)
-///         C::rf_invalidate(ptr: recipe)
+///         C::ig_invalidate(ptr: recipe)
 ///         return result
 ///
 /// routine __blocking_run_f(recipe: Addr)
@@ -165,7 +165,7 @@ internal static class BlockingCallSynthesisPass
 
         statements.Add(item: new ExpressionStatement(
             Expression: new CallExpression(
-                Callee: new IdentifierExpression(Name: "rf_invalidate", Location: loc, Realm: "C"),
+                Callee: new IdentifierExpression(Name: "ig_invalidate", Location: loc, Realm: "C"),
                 Arguments: [Named(name: "ptr", value: Id(name: "recipe", loc: loc))],
                 Location: loc),
             Location: loc));

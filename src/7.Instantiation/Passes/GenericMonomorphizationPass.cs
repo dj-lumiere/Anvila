@@ -1291,7 +1291,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                         // though no CallExpression names it. Discover it here so the demand walk follows it.
                         // Two forms: pre-resolved (ResolvedRoutine set) or a bare name whose ResolvedType is a
                         // RoutineTypeSymbol (codegen resolves it by name+param-types via TryResolveRoutineReference,
-                        // e.g. a routine passed to a C function pointer like `rf_coro_create(entry: coro_body)`).
+                        // e.g. a routine passed to a C function pointer like `ig_coro_create(entry: coro_body)`).
                         // A routine value also carries its recovering entry (the routine's recovery variant).
                         case IdentifierExpression { ResolvedRoutine: { } ir } routineValue
                             when !callees.Contains(item: routineValue):
@@ -2002,7 +2002,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         // (3) Text.replace — FStringLoweringPass synthesizes it for `:?`/`?` in-flight-entity interpolation. (An entity
-        // gives back its box through `C::rf_invalidate(ptr: me.get_address())`, a call in its `destruct`, so nothing is
+        // gives back its box through `C::ig_invalidate(ptr: me.get_address())`, a call in its `destruct`, so nothing is
         // seeded for that.)
         private void SeedTextReplaceIfApplicable(TypeSymbol type)
         {

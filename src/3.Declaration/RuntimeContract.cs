@@ -457,8 +457,8 @@ public static class RuntimeContract
         /// <summary><c>LLVM::slot_store[T]()</c>: the address of an entity type's slot store.</summary>
         public const string SlotStore = "slot_store";
 
-        /// <summary><c>C::rf_slot_take(store:, size:)</c>: a slot for a new entity.</summary>
-        public const string SlotTake = "rf_slot_take";
+        /// <summary><c>C::ig_slot_take(store:, size:)</c>: a slot for a new entity.</summary>
+        public const string SlotTake = "ig_slot_take";
 
         /// <summary><c>LLVM::token_make[T](at:)</c>: a reference to the entity at an address, with its slot's
         /// generation.</summary>
@@ -960,42 +960,42 @@ public static class RuntimeContract
     /// exported routines (<c>#export("...")</c>).
     ///
     /// <para>INVENTORY-ONLY: unlike the stdlib names above, codegen still emits these inline in its
-    /// IR-template strings (<c>declare .. @rf_allocate_dynamic ..</c> / <c>call .. @rf_...</c>). A
+    /// IR-template strings (<c>declare .. @ig_allocate_dynamic ..</c> / <c>call .. @ig_...</c>). A
     /// rename here breaks LOUDLY at link (undefined symbol), so it needs no silent-break guard and is
     /// deliberately not funnelled through these consts — they exist to document the one name table.</para></summary>
     public static class Runtime
     {
         /// <summary>Zero-initialized heap allocation.</summary>
-        public const string AllocateDynamic = "rf_allocate_dynamic";
+        public const string AllocateDynamic = "ig_allocate_dynamic";
 
         /// <summary>Uninitialized heap allocation.</summary>
-        public const string AllocateDynamicUninit = "rf_allocate_dynamic_uninit";
+        public const string AllocateDynamicUninit = "ig_allocate_dynamic_uninit";
 
         /// <summary>Entity invalidation / free.</summary>
-        public const string Invalidate = "rf_invalidate";
+        public const string Invalidate = "ig_invalidate";
 
         /// <summary>Trace: update current source location.</summary>
-        public const string TraceUpdateLoc = "_rf_trace_update_loc";
+        public const string TraceUpdateLoc = "_ig_trace_update_loc";
 
         /// <summary>Work/task: create.</summary>
-        public const string TaskCreate = "rf_task_create";
+        public const string TaskCreate = "ig_task_create";
 
         /// <summary>Work/task: spawn on a dedicated thread.</summary>
-        public const string TaskSpawnThreaded = "rf_task_spawn_threaded";
+        public const string TaskSpawnThreaded = "ig_task_spawn_threaded";
 
         /// <summary>Work/task: complete with a value payload.</summary>
-        public const string TaskCompleteValue = "rf_task_complete_value";
+        public const string TaskCompleteValue = "ig_task_complete_value";
 
         /// <summary>Coroutine: create.</summary>
-        public const string CoroCreate = "rf_coro_create";
+        public const string CoroCreate = "ig_coro_create";
 
         /// <summary>Coroutine: push a cancellation frame.</summary>
-        public const string CoroCfPush = "rf_coro_cf_push";
+        public const string CoroCfPush = "ig_coro_cf_push";
 
         /// <summary>Coroutine: pop a cancellation frame.</summary>
-        public const string CoroCfPop = "rf_coro_cf_pop";
+        public const string CoroCfPop = "ig_coro_cf_pop";
 
         /// <summary>Scheduler: spawn onto the default scheduler.</summary>
-        public const string SchedSpawnDefault = "rf_sched_spawn_default";
+        public const string SchedSpawnDefault = "ig_sched_spawn_default";
     }
 }

@@ -204,7 +204,7 @@ public partial class LlvmEmitter
         // throws is as cheap to inline where it is called as before.
         _usesFailureMold = true;
         string thrown = NextTemp();
-        EmitLine(sb: sb, line: $"  {thrown} = call {{ i64, ptr }} @_rf_failure_throw()");
+        EmitLine(sb: sb, line: $"  {thrown} = call {{ i64, ptr }} @_ig_failure_throw()");
         string flagged = NextTemp();
         EmitLine(sb: sb, line: $"  {flagged} = extractvalue {{ i64, ptr }} {thrown}, 0");
         EmitLine(sb: sb, line: $"  store i64 {flagged}, ptr {seqPtr}");
@@ -219,7 +219,7 @@ public partial class LlvmEmitter
 
     private const string FailureNumberMask = "9223372036854775807";
 
-    /// <summary>Whether this module calls the runtime's <c>rf_failure_mold</c> (declared at the end).</summary>
+    /// <summary>Whether this module calls the runtime's <c>ig_failure_mold</c> (declared at the end).</summary>
     private bool _usesFailureMold;
 
     /// <summary>The mold of the flow running here (the running coroutine's, or the thread's): where a failure is written
@@ -228,7 +228,7 @@ public partial class LlvmEmitter
     {
         _usesFailureMold = true;
         string mold = NextTemp();
-        EmitLine(sb: sb, line: $"  {mold} = call ptr @rf_failure_mold()");
+        EmitLine(sb: sb, line: $"  {mold} = call ptr @ig_failure_mold()");
         return mold;
     }
 
@@ -494,7 +494,7 @@ public partial class LlvmEmitter
 
         // Field initializers with `steal` transfer ownership from local entity vars into
         // the new entity. Drop the source locals from the cleanup set so the function-exit
-        // rf_invalidate pass doesn't free the same allocation now held by the field. Roamed[T] fields
+        // ig_invalidate pass doesn't free the same allocation now held by the field. Roamed[T] fields
         // now MOVE too (EmitEntityAllocation no longer retains them): their arg is an owned rvalue
         // (`.roam()` / fresh promote), so consuming is a no-op for the rvalue shape and correctly drops
         // any bare source local — matching every other moved field.

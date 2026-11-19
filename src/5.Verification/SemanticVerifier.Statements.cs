@@ -2497,7 +2497,7 @@ public sealed partial class SemanticVerifier
     private const string GetAddressName = "get_address";
 
     /// <summary>The runtime routine that gives back a box.</summary>
-    private const string InvalidateRuntimeRoutine = "rf_invalidate";
+    private const string InvalidateRuntimeRoutine = "ig_invalidate";
 
     /// <summary>Whether <paramref name="expression"/> is <c>me.get_address()</c>.</summary>
     private static bool IsMeAddress(Expression expression)

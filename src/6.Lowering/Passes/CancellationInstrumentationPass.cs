@@ -15,7 +15,7 @@ namespace Builder.Lowering.Passes;
 /// carrying every decision: which locals (those declared in the body, and the parameters, that its inline teardown
 /// destroys), the <c>destruct</c> routine (the one that teardown calls), and whether it takes the local's address. This
 /// pass runs LAST (after all analysis/lowering, just before the emitter), so nothing else observes the
-/// markers; the emitter translates them to the <c>rf_coro_cf_push</c>/<c>rf_coro_cf_pop</c> runtime calls.</para>
+/// markers; the emitter translates them to the <c>ig_coro_cf_push</c>/<c>ig_coro_cf_pop</c> runtime calls.</para>
 ///
 /// <para>Consistency-by-construction: the set of instrumented locals is DERIVED from the inline
 /// <c>local.destruct()</c> calls <c>ScopeTeardownLoweringPass</c> already inserted. A push goes

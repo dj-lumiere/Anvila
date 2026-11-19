@@ -844,14 +844,14 @@ public partial class LlvmEmitter
         string lok = NextLabel(prefix: "cbound.ok");
         EmitLine(sb: sb, line: $"  br i1 {isCap}, label %{lcap}, label %{lok}");
         EmitLine(sb: sb, line: $"{lcap}:");
-        _rfRoutineDeclarations[key: "__rf_throw"] = "declare void @__rf_throw(ptr, ptr)";
+        _rfRoutineDeclarations[key: "__ig_throw"] = "declare void @__ig_throw(ptr, ptr)";
         string errSym = EmitCStringConstant(value: "ForeignCallbackCaptureError");
         string msgSym =
             EmitCStringConstant(
                 value:
                 "A capturing routine cannot cross the C boundary; pass a captureless callback and thread " +
                 "state through an explicit userdata parameter.");
-        EmitLine(sb: sb, line: $"  call void @__rf_throw(ptr {errSym}, ptr {msgSym})");
+        EmitLine(sb: sb, line: $"  call void @__ig_throw(ptr {errSym}, ptr {msgSym})");
         EmitLine(sb: sb, line: "  unreachable");
         EmitLine(sb: sb, line: $"{lok}:");
         return fn;

@@ -374,7 +374,7 @@ public record AtomicRmwStatement(
 /// right after the local is constructed: if the coroutine is abandoned while parked, the runtime tears the
 /// value down with <paramref name="Destroy"/>. Inserted by CancellationInstrumentationPass, which decided
 /// everything here, and translated as is by the emitter (a node slot for the local plus one
-/// <c>rf_coro_cf_push</c> call).
+/// <c>ig_coro_cf_push</c> call).
 /// </summary>
 /// <param name="Local">The local's name, as declared in the routine body.</param>
 /// <param name="Destroy">The routine the local's own inline teardown calls.</param>

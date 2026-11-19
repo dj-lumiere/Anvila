@@ -60,9 +60,9 @@ internal sealed class LapilaWriter
             : new HashSet<string>();
         foreach (string name in new[]
                  {
-                     LapilaTrace.Push, LapilaTrace.Pop, LapilaTrace.UpdateLocation, "rf_runtime_init", "start", "c_rf_exit_code",
-                     "c_rf_set_trace_mode", "RvTraceFrame", "RV_TRACE_STACK", "RV_TRACE_DEPTH", "rf_trace_get_depth",
-                     "rf_trace_get_frames"
+                     LapilaTrace.Push, LapilaTrace.Pop, LapilaTrace.UpdateLocation, "ig_runtime_init", "start", "c_ig_exit_code",
+                     "c_ig_set_trace_mode", "RvTraceFrame", "RV_TRACE_STACK", "RV_TRACE_DEPTH", "ig_trace_get_depth",
+                     "ig_trace_get_frames"
                  })
         {
             _usedNames.Add(item: name);
@@ -1048,7 +1048,7 @@ internal sealed class LapilaWriter
     }
 
     /// <summary>Lapila's entry point <c>start</c>: initializes the runtime, runs the entry module's <c>start</c>, and
-    /// hands the exit status the program set (the runtime's <c>rf_exit_code</c>) to Lapila's <c>set_exit_code</c>,
+    /// hands the exit status the program set (the runtime's <c>ig_exit_code</c>) to Lapila's <c>set_exit_code</c>,
     /// which the <c>main</c> Lapila writes returns.</summary>
     private string WriteStart(List<(RoutineInfo Info, Statement Body)> routines)
     {
@@ -1058,40 +1058,40 @@ internal sealed class LapilaWriter
                             throw new NotSupportedException(
                                 message: $"The Lapila backend found no start() routine in the entry module '{entry}'.");
 
-        return "@external(\"c\")\n@symbol(\"rf_runtime_init\")\n" +
-               "routine rf_runtime_init() -> Void\n\n" +
-               "@external(\"c\")\n@symbol(\"__rf_set_trace_mode\")\n" +
-               "routine c_rf_set_trace_mode(mode: S32) -> Void\n\n" +
-               "@external(\"c\")\n@symbol(\"rf_set_stack_overflow_report\")\n" +
-               "routine c_rf_set_stack_overflow_report(report: Addr) -> Void\n\n" +
+        return "@external(\"c\")\n@symbol(\"ig_runtime_init\")\n" +
+               "routine ig_runtime_init() -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"__ig_set_trace_mode\")\n" +
+               "routine c_ig_set_trace_mode(mode: S32) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"ig_set_stack_overflow_report\")\n" +
+               "routine c_ig_set_stack_overflow_report(report: Addr) -> Void\n\n" +
                // Revare reports a stack overflow, Mielia (no "stack" in its vocabulary) running out of memory.
                $"@external(\"c\")\n@symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Mielia ? "lapila_deep_calls_report" : "lapila_stack_overflow_report")}\")\n" +
                "routine c_lapila_stack_overflow_report(stack_size: U64) -> Void\n\n" +
-               "@external(\"c\")\n@symbol(\"rf_set_crash_report\")\n" +
-               "routine c_rf_set_crash_report(report: Addr) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"ig_set_crash_report\")\n" +
+               "routine c_ig_set_crash_report(report: Addr) -> Void\n\n" +
                "@external(\"c\")\n@symbol(\"lapila_runtime_crash_report\")\n" +
                "routine c_lapila_runtime_crash_report(name: CStrView, message: CStrView, place: Addr) -> Void\n\n" +
                "@external(\"c\")\n@symbol(\"lapila_set_library_folder\")\n" +
                "routine c_lapila_set_library_folder(library: CStrView) -> Void\n\n" +
-               "@external(\"c\")\n@symbol(\"rf_exit_code\")\n" +
-               "routine c_rf_exit_code() -> S32\n\n" +
-               "@external(\"c\")\n@symbol(\"rf_access_configure\")\n" +
-               "routine c_rf_access_configure(deadlock_check: U32, access_order: U32, language: U32, place: Addr) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"ig_exit_code\")\n" +
+               "routine c_ig_exit_code() -> S32\n\n" +
+               "@external(\"c\")\n@symbol(\"ig_access_configure\")\n" +
+               "routine c_ig_access_configure(deadlock_check: U32, access_order: U32, language: U32, place: Addr) -> Void\n\n" +
                "routine start() -> Void\n" +
-               "    rf_runtime_init()\n" +
+               "    ig_runtime_init()\n" +
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
-               $"    c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +
+               $"    c_ig_set_trace_mode({(Traces ? 2 : 0)})\n" +
                // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
-               "    c_rf_set_stack_overflow_report(c_lapila_stack_overflow_report.addr())\n" +
+               "    c_ig_set_stack_overflow_report(c_lapila_stack_overflow_report.addr())\n" +
                // So is a crash the runtime raises (a deadlock, a failed allocation), named by where the program called
                // into the standard library.
-               "    c_rf_set_crash_report(c_lapila_runtime_crash_report.addr())\n" +
+               "    c_ig_set_crash_report(c_lapila_runtime_crash_report.addr())\n" +
                $"    c_lapila_set_library_folder({LapilaTrace.CString(text: _input.Registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "")})\n" +
                // The AccessManager's checks and the language its reports speak. The places in its reports come from
                // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
-               $"    c_rf_access_configure({AccessCheckArguments()}, Addr.zero())\n" +
+               $"    c_ig_access_configure({AccessCheckArguments()}, Addr.zero())\n" +
                $"    {RoutineName(routine: start)}()\n" +
-               "    Hosted/set_exit_code(c_rf_exit_code())\n" +
+               "    Hosted/set_exit_code(c_ig_exit_code())\n" +
                "    return\n";
     }
 }

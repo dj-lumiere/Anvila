@@ -12,7 +12,7 @@ namespace Builder.Execution;
 /// dev-loop-speed work — paired with the warm-compile daemon (which removes the ~5 s stdlib SA), it takes
 /// the edit→run loop toward the sub-250 ms goal.
 ///
-/// The emitted <c>@main</c> is self-contained: it calls <c>rf_runtime_init()</c>, sets trace mode, runs
+/// The emitted <c>@main</c> is self-contained: it calls <c>ig_runtime_init()</c>, sets trace mode, runs
 /// <c>start()</c>, and returns 0 — so calling it directly does full runtime initialization exactly as the
 /// AOT entry point would. The JIT runs IN THIS PROCESS, so the program's stdout/stderr/stdin are the
 /// caller's own streams (no forwarding) and a program crash (RV fails loudly by aborting) surfaces as this
@@ -22,7 +22,7 @@ namespace Builder.Execution;
 /// The LLVMSharp bindings and the loaded libLLVM come from the same LLVM release (the libLLVM.runtime
 /// package for the host). <c>LLVMOrcCreateNewThreadSafeContextFromLLVMContext</c> is still resolved by hand
 /// from the loaded module handle, which works whether or not the bindings declare it.
-/// (Proven end-to-end first by tests/Perf/OrcJitSpike.cs, incl. rf_* runtime-symbol resolution.)
+/// (Proven end-to-end first by tests/Perf/OrcJitSpike.cs, incl. ig_* runtime-symbol resolution.)
 /// </summary>
 #pragma warning disable S6640 // unsafe is required for LLVM ORC function-pointer interop (delegate* unmanaged[Cdecl])
 internal static unsafe class OrcJitExecutor
@@ -103,8 +103,8 @@ internal static unsafe class OrcJitExecutor
                     (delegate* unmanaged[Cdecl]<LLVMOpaqueContext*, LLVMOrcOpaqueThreadSafeContext*
                         >)fromCtxPtr;
 
-                // Load the native runtime so its rf_* exports are visible to ORC's process-wide symbol
-                // search (this is what lets JIT'd RV code link against rf_console_show, the scheduler, …).
+                // Load the native runtime so its ig_* exports are visible to ORC's process-wide symbol
+                // search (this is what lets JIT'd RV code link against ig_console_show, the scheduler, …).
                 // The handle is intentionally not stored: the library stays loaded for the process lifetime
                 // by virtue of NativeLibrary.Load, so no explicit reference is needed.
                 string rtName = OperatingSystem.IsWindows() ? "revare_runtime.dll"
@@ -339,7 +339,7 @@ internal static unsafe class OrcJitExecutor
     }
 
     /// <summary>Adds the process-search generator to the JIT's main dylib and returns that dylib. The
-    /// generator resolves any symbol already loaded in the process, including the rf_* runtime exports
+    /// generator resolves any symbol already loaded in the process, including the ig_* runtime exports
     /// (revare_runtime.dll is loaded in TryInitialize).</summary>
     private static LLVMOrcOpaqueJITDylib* AddProcessSearchGenerator(LLVMOrcOpaqueLLJIT* jit)
     {
@@ -711,7 +711,7 @@ internal static unsafe class OrcJitExecutor
     /// (@main + user routines + shared runtime globals; every stdlib callee an extern <c>declare</c>) and
     /// attaches an ORC custom definition generator: when a materialization needs an unresolved RV symbol,
     /// <paramref name="materialize"/> is called with that symbol's IR name (ORC's name without the global prefix)
-    /// and returns its external-linkage one-routine IR module (or null → defer to the process-search generator for <c>rf_*</c>
+    /// and returns its external-linkage one-routine IR module (or null → defer to the process-search generator for <c>ig_*</c>
     /// runtime symbols). Codegen happens strictly on demand as ORC resolves each symbol — only what <c>@main</c>
     /// transitively reaches at run time is emitted, with NO caller-side closure walk (that was M1b's
     /// <c>JitAndRunModules</c>). The materialize output MUST use external linkage
@@ -764,7 +764,7 @@ internal static unsafe class OrcJitExecutor
     /// external-linkage one-routine module (via the materialize delegate) and add it to the dylib on demand.
     /// Runs under the ExecutionSession lock — adding the module here IS re-entrancy-safe (the added module's
     /// definitions satisfy the in-flight lookup, and its own unresolved callees re-fire this generator). A
-    /// symbol the delegate can't produce is left for the process-search generator (rf_* runtime).</summary>
+    /// symbol the delegate can't produce is left for the process-search generator (ig_* runtime).</summary>
 #pragma warning disable S107 // signature is fixed by the LLVM ORC C-API generator fn-ptr type — params can't be bundled
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static LLVMOpaqueError* LazyGeneratorCallback(
@@ -810,7 +810,7 @@ internal static unsafe class OrcJitExecutor
             string? ir = materialize(arg: name);
             if (ir == null)
             {
-                continue; // not ours — process-search (rf_* runtime) resolves it
+                continue; // not ours — process-search (ig_* runtime) resolves it
             }
 
             LLVMOrcOpaqueThreadSafeModule* tsm = ParseToTsm(llvmIr: ir, modName: "rf_lazy");

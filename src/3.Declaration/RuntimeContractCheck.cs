@@ -17,7 +17,7 @@ namespace Builder.Declaration;
 /// (<see cref="RuntimeContract.StdlibRoutineContracts"/>), the wrapper TYPE names
 /// (<see cref="RuntimeContract.WrapperTypes"/>), and the <c>Optional</c> carrier fields. It deliberately
 /// does NOT check builder-generated / intrinsic names (the <c>try</c> variant of <c>emit</c>, <c>refer</c>/<c>control</c>,
-/// BuilderQuery/<c>data_size</c>) or the native <c>rf_*</c> externs (link-checked C-ABI).</para>
+/// BuilderQuery/<c>data_size</c>) or the native <c>ig_*</c> externs (link-checked C-ABI).</para>
 /// </summary>
 public static class RuntimeContractCheck
 {
