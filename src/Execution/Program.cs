@@ -46,6 +46,14 @@ internal partial class Program
     public static int Run(string[] args, Language cliLanguage)
     {
         CliLanguage = cliLanguage;
+        // A daemon a client started lets go of the client's output handles before anything here opens the console:
+        // the console keeps copies of the handles it first sees, and a pipe reading the client's output would stay
+        // open as long as those copies do.
+        if (args is [var first, ..] && first.TrimStart(trimChar: '-').Equals(value: "daemon", comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            CompileDaemon.DetachIfAutoSpawned();
+        }
+
         RuntimeShadowLoader.Install();
 
         // Make the build driver byte-faithful for UTF-8. RV child processes write UTF-8 and

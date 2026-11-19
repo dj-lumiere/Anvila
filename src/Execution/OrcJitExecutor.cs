@@ -194,7 +194,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         byte[] ir = Encoding.ASCII.GetBytes(s: llvmIr);
-        byte[] modName = Encoding.ASCII.GetBytes(s: "rf_jit\0");
+        byte[] modName = Encoding.ASCII.GetBytes(s: "anv_jit\0");
 
         LLVMOpaqueContext* ctx = LLVM.ContextCreate();
         LLVMOpaqueModule* mod;
@@ -571,7 +571,7 @@ internal static unsafe class OrcJitExecutor
             }
         }
 
-        LLVMOrcOpaqueThreadSafeModule* tsmDelta = ParseToTsm(llvmIr: deltaIr, modName: "rf_delta");
+        LLVMOrcOpaqueThreadSafeModule* tsmDelta = ParseToTsm(llvmIr: deltaIr, modName: "anv_delta");
         JitStage(s: "delta IR parsed");
 
         LLVMOrcOpaqueLLJITBuilder* builder = LLVM.OrcCreateLLJITBuilder();
@@ -692,7 +692,7 @@ internal static unsafe class OrcJitExecutor
             OrcCoffConstantPools.Localize(obj: obj);
         }
 
-        byte[] nm = Encoding.ASCII.GetBytes(s: $"rf_{what}_obj\0");
+        byte[] nm = Encoding.ASCII.GetBytes(s: $"anv_{what}_obj\0");
         LLVMOpaqueMemoryBuffer* buf;
         fixed (byte* objp = obj)
         fixed (byte* np = nm)
@@ -728,7 +728,7 @@ internal static unsafe class OrcJitExecutor
         _lazyMaterialize = materialize;
         _lazyDone.Clear();
 
-        LLVMOrcOpaqueThreadSafeModule* tsmMain = ParseToTsm(llvmIr: mainIr, modName: "rf_main");
+        LLVMOrcOpaqueThreadSafeModule* tsmMain = ParseToTsm(llvmIr: mainIr, modName: "anv_main");
 
         LLVMOrcOpaqueLLJITBuilder* builder = LLVM.OrcCreateLLJITBuilder();
         if (OperatingSystem.IsWindows())
@@ -813,7 +813,7 @@ internal static unsafe class OrcJitExecutor
                 continue; // not ours — process-search (ig_* runtime) resolves it
             }
 
-            LLVMOrcOpaqueThreadSafeModule* tsm = ParseToTsm(llvmIr: ir, modName: "rf_lazy");
+            LLVMOrcOpaqueThreadSafeModule* tsm = ParseToTsm(llvmIr: ir, modName: "anv_lazy");
             CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: _lazyJit, JD: jd, TSM: tsm),
                 what: $"AddLLVMIRModule(lazy:{name})");
         }

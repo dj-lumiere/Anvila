@@ -69,7 +69,7 @@ internal static unsafe class OrcCoffConstantPools
 
         byte[] copy = bytes.ToArray();
         Localize(obj: copy);
-        byte[] name = "rf_jit_obj\0"u8.ToArray();
+        byte[] name = "anv_jit_obj\0"u8.ToArray();
         fixed (byte* copyPointer = copy)
         fixed (byte* namePointer = name)
         {

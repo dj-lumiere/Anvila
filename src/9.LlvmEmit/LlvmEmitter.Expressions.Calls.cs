@@ -892,7 +892,7 @@ public partial class LlvmEmitter
 
     /// <summary>The name of the module's recovery table: <c>ptr (ptr fn)</c>, the recovering entry of the routine
     /// at <c>fn</c>, or null.</summary>
-    internal const string RecoverEntryTable = "__rf_recover_entry";
+    internal const string RecoverEntryTable = "__anv_recover_entry";
 
     /// <summary>Whether a call in this module asks the recovery table, so the module defines it.</summary>
     private bool _recoverTableUsed;

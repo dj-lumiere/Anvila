@@ -75,7 +75,7 @@ internal static class PresetEvaluation
             return 0;
         }
 
-        string root = Path.Combine(path1: Path.GetTempPath(), path2: "rf_presets_" + Guid.NewGuid().ToString(format: "N"));
+        string root = Path.Combine(path1: Path.GetTempPath(), path2: "anv_presets_" + Guid.NewGuid().ToString(format: "N"));
         try
         {
             string? evaluatorEntry = WriteEvaluator(root: root, entryFile: entryFile, projectRoot: projectRoot,

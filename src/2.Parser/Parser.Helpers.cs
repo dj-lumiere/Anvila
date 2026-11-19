@@ -237,7 +237,7 @@ public partial class Parser
 
     /// <summary>
     /// Wraps <paramref name="body"/> in a single-parameter lambda when a `_` placeholder was parsed
-    /// within it (see <see cref="_sawHole"/>): `xs.map(_ * 2)` -> `xs.map(__rf_hole => __rf_hole * 2)`.
+    /// within it (see <see cref="_sawHole"/>): `xs.map(_ * 2)` -> `xs.map(__anv_hole => __anv_hole * 2)`.
     /// All `_` occurrences in the argument share the ONE hole parameter. No-op when no hole was seen.
     /// </summary>
     private Expression MaybeWrapHoleLambda(Expression body, SourceLocation location)

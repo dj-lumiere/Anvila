@@ -1331,7 +1331,7 @@ public sealed partial class SemanticVerifier
         _deadrefVariables.Remove(item: varDecl.Name);
         NoteAssigned(name: varDecl.Name);
         // A variable declared without a value (`lateinit var label: Text`) can't be read until every path to the
-        // read has given it one. Names the builder writes itself (`__rf_...`) are assigned by the code it writes.
+        // read has given it one. Names the builder writes itself (`__anv_...`) are assigned by the code it writes.
         if (varDecl is { Initializer: null, Type: not null } &&
             !varDecl.Name.StartsWith(value: "__", comparisonType: StringComparison.Ordinal))
         {

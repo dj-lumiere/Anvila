@@ -165,7 +165,7 @@ public partial class Parser
     /// <c>_</c> as a reference to this name and wraps the whole argument in
     /// <c>LambdaExpression([hole], _*2)</c>.
     /// </summary>
-    internal const string HoleParamName = "__rf_hole";
+    internal const string HoleParamName = "__anv_hole";
 
     /// <summary>
     /// Set by <c>ParsePrimary</c> when it parses a bare `_` placeholder (single-hole lambda). Read and

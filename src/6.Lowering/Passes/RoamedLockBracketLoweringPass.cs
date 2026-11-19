@@ -358,7 +358,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     {
         var handles = new List<Expression>();
         var seen = new HashSet<string>();
-        // A handle the block declares itself (`var __rf_hoist_N = cs[0]` a recovery variant splits out) does not
+        // A handle the block declares itself (`var __anv_hoist_N = cs[0]` a recovery variant splits out) does not
         // exist before the block, so it cannot be locked there: the statements that use it bracket it themselves.
         var declaredInside = new HashSet<string>(comparer: StringComparer.Ordinal);
         AstWalker.Walk(root: block,

@@ -41,7 +41,7 @@ public sealed class RoutineIrCache
     {
         _fingerprint = fingerprint;
         _userModuleSegments = userModuleSegments;
-        _dir = dir ?? Path.Combine(path1: Path.GetTempPath(), path2: "rf_jit_ir_cache");
+        _dir = dir ?? Path.Combine(path1: Path.GetTempPath(), path2: "anv_jit_ir_cache");
         Directory.CreateDirectory(path: _dir);
     }
 

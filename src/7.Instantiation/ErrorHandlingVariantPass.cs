@@ -910,7 +910,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         };
     }
 
-    /// <summary><c>return f()</c> as <c>var __rf_tail_N = f()</c> then <c>return __rf_tail_N</c> (an entity
+    /// <summary><c>return f()</c> as <c>var __anv_tail_N = f()</c> then <c>return __anv_tail_N</c> (an entity
     /// result is moved out of the temp with <c>steal</c>).</summary>
     private static BlockStatement SplitTailCall(ReturnStatement ret, CallExpression call)
     {
@@ -925,7 +925,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Location: ret.Location);
         }
 
-        string tempName = $"__rf_tail_{Interlocked.Increment(location: ref _hoistTemp)}";
+        string tempName = $"__anv_tail_{Interlocked.Increment(location: ref _hoistTemp)}";
         var decl = new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
                 Type: null,
                 Initializer: call,
@@ -1045,9 +1045,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// For each such statement the remainder of the block is folded into the success branch of a
     /// plain <c>if</c> over the inner safe variant's Optional carrier:
     /// <code>
-    /// var __rf_prop_N = src.emit() (under try)      # Optional[T]
-    /// if __rf_prop_N.present
-    ///   var item = __rf_prop_N.value
+    /// var __anv_prop_N = src.emit() (under try)      # Optional[T]
+    /// if __anv_prop_N.present
+    ///   var item = __anv_prop_N.value
     ///   &lt;rest of block&gt;
     /// else
     ///   &lt;return None&gt;                       # VariantReturnStatement(Try, FromAbsent)
@@ -1073,7 +1073,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             {
                 BlockStatement spelled = Desugaring.Passes.ControlFlowLoweringPass.LowerDestructuring(
                     destruct: destruct,
-                    tmpName: $"__rf_destructured_{Interlocked.Increment(location: ref _hoistTemp)}");
+                    tmpName: $"__anv_destructured_{Interlocked.Increment(location: ref _hoistTemp)}");
                 var spliced = new List<Statement>(collection: spelled.Statements);
                 spliced.AddRange(collection: stmts.Skip(count: i + 1));
                 result.AddRange(collection: TransformBlockStatements(stmts: spliced,
@@ -1235,7 +1235,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Splits a statement whose failable calls are NESTED inside an expression into A-normal form, so the
     /// statement-shaped propagation (<see cref="TryBuildTryPropagation"/> / <see cref="TryBuildCarrierSafeCall"/>)
     /// and the tail rewriter can see them. <c>return v.sqrtrem().item0</c> becomes
-    /// <c>var __rf_hoist_0 = v.sqrtrem()</c> then <c>return __rf_hoist_0.item0</c>.
+    /// <c>var __anv_hoist_0 = v.sqrtrem()</c> then <c>return __anv_hoist_0.item0</c>.
     ///
     /// Only eagerly evaluated positions are split: the value of a <c>return</c>, a variable initializer, an
     /// expression / <c>drop</c> statement, an assignment's value, and an <c>if</c> condition (evaluated once,
@@ -1338,7 +1338,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// The <c>drop</c> left after its value was hoisted. When the dropped call itself went into a temp
-    /// (<c>drop xs.remove_last()</c> became <c>var __rf_hoist_N = xs.remove_last()</c>), the drop ends that temp's
+    /// (<c>drop xs.remove_last()</c> became <c>var __anv_hoist_N = xs.remove_last()</c>), the drop ends that temp's
     /// binding: the value ends at the drop, as it does in the routine's plain version, not when the scope ends.
     /// </summary>
     private static DropStatement DropHoisted(DropStatement dropped, Expression newRoot, List<Statement> hoisted)
@@ -1378,7 +1378,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <see cref="CallExpression"/> it reaches gets a sequence index (post-order). The scan mode
     /// (<c>hoistUpTo</c> = -1) only records which indices are propagatable failable calls. The hoist mode
     /// moves each call with index &lt;= <c>hoistUpTo</c> (except <c>skipIndex</c>) into a fresh
-    /// <c>var __rf_hoist_N = call</c> in <see cref="Hoisted"/> and replaces it with a reference to the temp.
+    /// <c>var __anv_hoist_N = call</c> in <see cref="Hoisted"/> and replaces it with a reference to the temp.
     /// An entity-typed temp is referenced through <c>steal</c>, which keeps the original meaning of the
     /// call's result as a temporary that is moved into its use rather than a named local the scope destroys.
     /// </summary>
@@ -1448,7 +1448,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 return call;
             }
 
-            string tempName = $"__rf_hoist_{Interlocked.Increment(location: ref _hoistTemp)}";
+            string tempName = $"__anv_hoist_{Interlocked.Increment(location: ref _hoistTemp)}";
             Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(
                     Name: tempName,
                     Type: null,
@@ -1516,7 +1516,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             //   if t       (and)        |  if t (or): nothing, else t = <right>
             //     t = <right>
             // The assignment's failable calls are split out again when the branch itself is transformed.
-            string tempName = $"__rf_lazy_{Interlocked.Increment(location: ref _hoistTemp)}";
+            string tempName = $"__anv_lazy_{Interlocked.Increment(location: ref _hoistTemp)}";
             SourceLocation loc = e.Location;
             Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
                     Type: null,
@@ -1541,11 +1541,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         /// <c>carrier ?? fallback</c> with a failable call in the fallback, which runs only when the carrier
         /// holds no value. Lowered to statements so the fallback's call is split out inside that branch:
         /// <code>
-        /// var __rf_car_N = carrier
-        /// var __rf_lazy_N: T         (late-initialized)
-        /// when __rf_car_N
-        ///   is T v => __rf_lazy_N = v
-        ///   else => __rf_lazy_N = fallback
+        /// var __anv_car_N = carrier
+        /// var __anv_lazy_N: T         (late-initialized)
+        /// when __anv_car_N
+        ///   is T v => __anv_lazy_N = v
+        ///   else => __anv_lazy_N = fallback
         /// </code>
         /// </summary>
         private Expression HoistCoalesce(BinaryExpression e, Expression left, Expression kept)
@@ -1563,9 +1563,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             }
 
             int n = Interlocked.Increment(location: ref _hoistTemp);
-            string carrierName = $"__rf_car_{n}";
-            string resultName = $"__rf_lazy_{n}";
-            string valueName = $"__rf_val_{n}";
+            string carrierName = $"__anv_car_{n}";
+            string resultName = $"__anv_lazy_{n}";
+            string valueName = $"__anv_val_{n}";
             SourceLocation loc = e.Location;
             Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: carrierName,
                     Type: null,
@@ -1655,10 +1655,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// declaration or a bare <c>F!(...)</c> expression statement) and the callee has a <c>try</c>
     /// variant returning a <c>Optional</c>, produces the spliced pieces:
     /// <list type="bullet">
-    /// <item><paramref name="tempDecl"/>: <c>var __rf_prop_N = recv.try_X(...)</c></item>
-    /// <item><paramref name="presentCondition"/>: <c>__rf_prop_N.present</c> (the <c>if</c> condition)</item>
-    /// <item><paramref name="bindStmt"/>: <c>var x = __rf_prop_N.value</c> (null when the result was discarded)</item>
-    /// <item><paramref name="moveOutStmt"/>: <c>__rf_prop_N.present = false</c> when the value moves out to
+    /// <item><paramref name="tempDecl"/>: <c>var __anv_prop_N = recv.try_X(...)</c></item>
+    /// <item><paramref name="presentCondition"/>: <c>__anv_prop_N.present</c> (the <c>if</c> condition)</item>
+    /// <item><paramref name="bindStmt"/>: <c>var x = __anv_prop_N.value</c> (null when the result was discarded)</item>
+    /// <item><paramref name="moveOutStmt"/>: <c>__anv_prop_N.present = false</c> when the value moves out to
     /// <c>x</c> (a payload with no <c>assign</c>, such as an entity): the carrier no longer owns it, so its
     /// teardown does not free what <c>x</c> now holds</item>
     /// </list>
@@ -1742,7 +1742,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         SourceLocation loc = stmt.Location;
-        string tempName = $"__rf_prop_{Interlocked.Increment(location: ref _propTemp)}";
+        string tempName = $"__anv_prop_{Interlocked.Increment(location: ref _propTemp)}";
 
         // Retarget the failable call to its try variant, typed as the carrier.
         CallExpression safeCall = BindToVariant(call: failCall, variant: variant, registry: registry);
@@ -2087,7 +2087,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         {
             // The caught error MOVES to the outer carrier (PatternLoweringPass clears the inner carrier's tag, so its
             // teardown does not free the object the outer one now holds).
-            const string errName = "__rf_prop_err";
+            const string errName = "__anv_prop_err";
             clauses.Add(item: new WhenClause(
                 Pattern: new CrashablePattern(ErrorType: null,
                     VariableName: errName,
@@ -2104,7 +2104,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         // The success value stays the carrier's (its teardown frees it), so the remainder takes a copy of its own:
         // the arm binds the payload as read, and `var x = <payload>` is an ordinary initialization the copy pass
-        // gives a share (as the try propagation's `var x = __rf_prop.value`). Binding `x` straight to the payload
+        // gives a share (as the try propagation's `var x = __anv_prop.value`). Binding `x` straight to the payload
         // left a value the carrier freed under a returned or consumed `x`.
         // The payload moves out: the binding takes it with `steal` and the carrier forgets it (its tag cleared, as
         // the error arm does), so only the binding tears it down. That is right for a value and for an entity alike,

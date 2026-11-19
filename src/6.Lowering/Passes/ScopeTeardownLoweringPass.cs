@@ -574,9 +574,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// The locals a recovery variant made to hold what an emitter's <c>emit</c> gave (<c>var __rf_prop_1 =
+    /// The locals a recovery variant made to hold what an emitter's <c>emit</c> gave (<c>var __anv_prop_1 =
     /// me.source.emit()</c>), by name, with that call: a local that then reads the item out of it
-    /// (<c>var item = __rf_prop_1.value</c>) holds what the emitter gave.
+    /// (<c>var item = __anv_prop_1.value</c>) holds what the emitter gave.
     /// </summary>
     private readonly Dictionary<string, CallExpression> _emitCarriers = new(comparer: StringComparer.Ordinal);
 
@@ -1708,7 +1708,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// </summary>
     private CallExpression? SourceStepOf(VariableDeclaration v)
     {
-        // The item read out of a carrier moves out of it (`steal __rf_prop_1.value`) or, for a value, is shared.
+        // The item read out of a carrier moves out of it (`steal __anv_prop_1.value`) or, for a value, is shared.
         Expression? read = v.Initializer switch
         {
             StealExpression { Operand: { } moved } => moved,

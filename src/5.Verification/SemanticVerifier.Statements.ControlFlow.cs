@@ -734,7 +734,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        const string errorName = "__rf_unhandled_error";
+        const string errorName = "__anv_unhandled_error";
         SourceLocation loc = whenStmt.Location;
         whenStmt.Clauses.Add(item: new WhenClause(
             Pattern: new TypePattern(

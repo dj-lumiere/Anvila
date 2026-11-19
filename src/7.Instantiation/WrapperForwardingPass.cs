@@ -1138,25 +1138,25 @@ internal sealed class WrapperForwardingPass
                 [
                     new WhenClause(
                         Pattern: new CrashablePattern(ErrorType: null,
-                            VariableName: "__rf_e",
+                            VariableName: "__anv_e",
                             Location: _synthLoc),
                         Body: new BlockStatement(Statements:
                             [
                                 MkLock(m: lockExit, verb: LockExit),
                                 new ThrowStatement(
-                                    Error: new IdentifierExpression(Name: "__rf_e",
+                                    Error: new IdentifierExpression(Name: "__anv_e",
                                         Location: _synthLoc),
                                     Location: _synthLoc)
                             ],
                             Location: _synthLoc),
                         Location: _synthLoc),
                     new WhenClause(
-                        Pattern: new ElsePattern(VariableName: "__rf_v", Location: _synthLoc),
+                        Pattern: new ElsePattern(VariableName: "__anv_v", Location: _synthLoc),
                         Body: new BlockStatement(Statements:
                             [
                                 MkLock(m: lockExit, verb: LockExit),
                                 new ReturnStatement(
-                                    Value: new IdentifierExpression(Name: "__rf_v",
+                                    Value: new IdentifierExpression(Name: "__anv_v",
                                         Location: _synthLoc),
                                     Location: _synthLoc)
                             ],
@@ -1170,14 +1170,14 @@ internal sealed class WrapperForwardingPass
         if (ctx.HasReturnValue)
         {
             Statement resultDecl = new DeclarationStatement(
-                Declaration: new VariableDeclaration(Name: "__rf_locked",
+                Declaration: new VariableDeclaration(Name: "__anv_locked",
                     Type: null,
                     Initializer: innerCall,
                     Visibility: VisibilityModifier.Open,
                     Location: _synthLoc),
                 Location: _synthLoc);
             Statement retStmt = new ReturnStatement(
-                Value: new IdentifierExpression(Name: "__rf_locked", Location: _synthLoc)
+                Value: new IdentifierExpression(Name: "__anv_locked", Location: _synthLoc)
                 {
                     ResolvedType = ctx.InnerMemberRoutine.ReturnType
                 },

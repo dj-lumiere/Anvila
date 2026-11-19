@@ -35,6 +35,84 @@ internal partial class Program
         [return: MarshalAs(unmanagedType: UnmanagedType.Bool)]
         private static partial bool FreeConsole();
 
+        [LibraryImport(libraryName: "kernel32.dll", SetLastError = true)]
+        private static partial IntPtr GetStdHandle(int nStdHandle);
+
+        [LibraryImport(libraryName: "kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(unmanagedType: UnmanagedType.Bool)]
+        private static partial bool SetStdHandle(int nStdHandle, IntPtr hHandle);
+
+        [LibraryImport(libraryName: "kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(unmanagedType: UnmanagedType.Bool)]
+        private static partial bool CloseHandle(IntPtr hObject);
+
+        /// <summary>The null device the daemon's standard handles point at on Windows, kept open for its life.</summary>
+        private static FileStream? _nullDevice;
+
+        /// <summary>
+        /// Points the daemon's standard input, output and error at the null device, closing the ones it inherited from
+        /// the client that started it. Otherwise the daemon keeps the client's output pipe open, and a pipe reading the
+        /// client's output (`run ... | cat`) only ends when the daemon stops. What the daemon writes itself goes to its
+        /// log file (<see cref="DetachAutoSpawnedConsole"/>), so nothing it says is lost.
+        /// </summary>
+        /// <summary>Lets go of the client's standard handles when a client started this daemon (its log path is set),
+        /// before the console is first opened. Does nothing for a daemon a developer started by hand.</summary>
+        public static void DetachIfAutoSpawned()
+        {
+            if (string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: DaemonLogEnvVar)))
+            {
+                return;
+            }
+
+            try
+            {
+                DetachStandardHandles();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // No null device to open: the inherited handles stay.
+            }
+        }
+
+        private static unsafe void DetachStandardHandles()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                _nullDevice = new FileStream(path: "NUL", mode: FileMode.Open, access: FileAccess.ReadWrite,
+                    share: FileShare.ReadWrite);
+                IntPtr nul = _nullDevice.SafeFileHandle.DangerousGetHandle();
+                // STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE
+                foreach (int which in (int[])[-10, -11, -12])
+                {
+                    IntPtr inherited = GetStdHandle(nStdHandle: which);
+                    if (SetStdHandle(nStdHandle: which, hHandle: nul) && inherited != IntPtr.Zero && inherited != new IntPtr(value: -1)
+                        && inherited != nul)
+                    {
+                        CloseHandle(hObject: inherited);
+                    }
+                }
+
+                return;
+            }
+
+            // dup2 over descriptors 0, 1 and 2 closes what they were and leaves the null device there.
+            string libc = OperatingSystem.IsMacOS() ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";
+            if (!NativeLibrary.TryLoad(libraryPath: libc, handle: out IntPtr library)
+                || !NativeLibrary.TryGetExport(handle: library, name: "dup2", address: out IntPtr dup2Address))
+            {
+                return;
+            }
+
+            var dup2 = (delegate* unmanaged<int, int, int>)dup2Address;
+            using var nullDevice = new FileStream(path: "/dev/null", mode: FileMode.Open, access: FileAccess.ReadWrite,
+                share: FileShare.ReadWrite);
+            int fd = (int)nullDevice.SafeFileHandle.DangerousGetHandle();
+            for (int target = 0; target <= 2; target++)
+            {
+                dup2(fd, target);
+            }
+        }
+
         // ---- request / response DTOs ---------------------------------------------------------------
 
         /// <summary>A daemon IPC message: written and read as a fixed field sequence with <see cref="BinaryWriter"/>.
@@ -342,7 +420,7 @@ internal partial class Program
                 // a Mielia seed needs Mielia's library and its checks, which a bare verifier does not set up.
                 (string seedSource, string seedFile) = BaseObjectCache.SeedFor(language: language);
                 string seedDir = Path.Combine(path1: Path.GetTempPath(),
-                    path2: $"rf_base_seed_{language}_{Environment.ProcessId}");
+                    path2: $"anv_base_seed_{language}_{Environment.ProcessId}");
                 Directory.CreateDirectory(path: seedDir);
                 string seedPath = Path.Combine(path1: seedDir, path2: seedFile);
                 File.WriteAllText(path: seedPath, contents: seedSource);
@@ -1666,9 +1744,14 @@ internal partial class Program
             // Named after the pipe, so daemons started on overridden pipes (several at once) keep separate logs.
             // The default pipe gives the usual `<tool>-daemon-<user>.log`.
             string logPath = Path.Combine(path1: Path.GetTempPath(), path2: $"{PipeName()}.log");
+            // The daemon gets standard handles of its own, never this client's: a handle it inherited (the runtime keeps
+            // copies of the ones a process starts with) would keep a pipe reading this client's output open until the
+            // daemon stops. The client closes its ends right after the start, and the daemon points its own at the
+            // null device (DetachIfAutoSpawned) and writes to its log file.
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = host, UseShellExecute = false, CreateNoWindow = true
+                FileName = host, UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
             };
             // Command line depends on HOW this client was launched:
             //   • via the apphost `Revare.exe`  → ProcessPath IS Revare.exe → spawn `Revare.exe
@@ -1696,6 +1779,10 @@ internal partial class Program
             {
                 return null;
             }
+
+            proc.StandardInput.Close();
+            proc.StandardOutput.Close();
+            proc.StandardError.Close();
 
             Console.Error.WriteLine(
                 value:
