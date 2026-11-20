@@ -1409,7 +1409,7 @@ internal partial class Program
             };
             try
             {
-                DaemonResponse? resp = SendRequest(request: req, timeoutMs: 500);
+                DaemonResponse? resp = SendRequest(request: req, timeoutMs: RequestConnectTimeoutMs);
                 if (resp == null)
                 {
                     Console.Error.WriteLine(value: "[daemon] the daemon did not answer; this run builds in this process.");
@@ -1480,7 +1480,7 @@ internal partial class Program
 
             try
             {
-                response = SendRequest(request: req, timeoutMs: 500);
+                response = SendRequest(request: req, timeoutMs: RequestConnectTimeoutMs);
                 return response != null;
             }
             catch
@@ -1497,6 +1497,12 @@ internal partial class Program
         /// so the caller falls back to a cold in-process build — the safety net the JIT IR path already had
         /// (its daemon fetch is optional, with an immediate cold branch), now extended to the exe path.</summary>
         private const int ResponseReadTimeoutMs = 30_000;
+
+        /// <summary>How long a build or IR request waits to connect to a daemon that answered a ping. The daemon serves
+        /// one connection at a time and opens the next one only after the last (another client's build, the next
+        /// build's preparation), which on a loaded machine takes more than a moment. A client that gave up after half a
+        /// second built in its own process right after starting the daemon.</summary>
+        private const int RequestConnectTimeoutMs = 10_000;
 
         private static DaemonResponse? SendRequest(DaemonRequest request, int timeoutMs)
         {
@@ -1774,20 +1780,146 @@ internal partial class Program
                 psi.Environment[key: BuilderLocation.HomeEnvVar] = BuilderLocation.Directory;
             }
 
-            var proc = System.Diagnostics.Process.Start(startInfo: psi);
+            System.Diagnostics.Process? proc;
+            if (OperatingSystem.IsWindows())
+            {
+                // Process.Start passes every inheritable handle of this client to the child, among them the pipes this
+                // client's own output goes to, so on Windows the daemon is started without handle inheritance.
+                proc = StartWithoutInheritedHandles(startInfo: psi);
+            }
+            else
+            {
+                proc = System.Diagnostics.Process.Start(startInfo: psi);
+                if (proc != null)
+                {
+                    proc.StandardInput.Close();
+                    proc.StandardOutput.Close();
+                    proc.StandardError.Close();
+                }
+            }
+
             if (proc == null)
             {
                 return null;
             }
 
-            proc.StandardInput.Close();
-            proc.StandardOutput.Close();
-            proc.StandardError.Close();
-
             Console.Error.WriteLine(
                 value:
                 $"[daemon] no daemon running — started one (pid {proc.Id}, log: {logPath}); warming…");
             return proc;
+        }
+
+        [StructLayout(layoutKind: LayoutKind.Sequential)]
+        private struct StartupInfo
+        {
+            public int cb;
+            public IntPtr lpReserved, lpDesktop, lpTitle;
+            public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+            public short wShowWindow, cbReserved2;
+            public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+        }
+
+        [StructLayout(layoutKind: LayoutKind.Sequential)]
+        private struct ProcessInformation
+        {
+            public IntPtr hProcess, hThread;
+            public int dwProcessId, dwThreadId;
+        }
+
+        [LibraryImport(libraryName: "kernel32.dll", EntryPoint = "CreateProcessW", SetLastError = true,
+            StringMarshalling = StringMarshalling.Utf16)]
+        [return: MarshalAs(unmanagedType: UnmanagedType.Bool)]
+        private static partial bool CreateProcess(string? lpApplicationName, char[] lpCommandLine, IntPtr lpProcessAttributes,
+            IntPtr lpThreadAttributes, [MarshalAs(unmanagedType: UnmanagedType.Bool)] bool bInheritHandles, uint dwCreationFlags,
+            char[] lpEnvironment, string? lpCurrentDirectory, ref StartupInfo lpStartupInfo, out ProcessInformation lpProcessInformation);
+
+        /// <summary>
+        /// Starts <paramref name="startInfo"/>'s program on Windows with no handle of this process inherited and no
+        /// console: CreateProcess with handle inheritance off and DETACHED_PROCESS. The daemon's standard handles start
+        /// empty, it points them at the null device (DetachIfAutoSpawned) and writes to its log file. The environment is
+        /// this process's plus <paramref name="startInfo"/>'s.
+        /// </summary>
+        private static System.Diagnostics.Process? StartWithoutInheritedHandles(System.Diagnostics.ProcessStartInfo startInfo)
+        {
+            var commandLine = new System.Text.StringBuilder();
+            foreach (string arg in (IEnumerable<string>)[startInfo.FileName, .. startInfo.ArgumentList])
+            {
+                if (commandLine.Length > 0)
+                {
+                    commandLine.Append(value: ' ');
+                }
+
+                AppendWindowsArgument(sb: commandLine, arg: arg);
+            }
+
+            var environment = new System.Text.StringBuilder();
+            foreach (KeyValuePair<string, string?> variable in startInfo.Environment
+                         .OrderBy(keySelector: kv => kv.Key, comparer: StringComparer.OrdinalIgnoreCase))
+            {
+                if (variable.Value != null)
+                {
+                    environment.Append(value: variable.Key).Append(value: '=').Append(value: variable.Value)
+                               .Append(value: '\0');
+                }
+            }
+
+            environment.Append(value: '\0');
+            var startup = new StartupInfo { cb = Marshal.SizeOf<StartupInfo>() };
+            const uint detachedProcess = 0x00000008;
+            const uint createNewProcessGroup = 0x00000200;
+            const uint createUnicodeEnvironment = 0x00000400;
+            if (!CreateProcess(lpApplicationName: startInfo.FileName,
+                    lpCommandLine: (commandLine + "\0").ToCharArray(), lpProcessAttributes: IntPtr.Zero,
+                    lpThreadAttributes: IntPtr.Zero, bInheritHandles: false,
+                    dwCreationFlags: detachedProcess | createNewProcessGroup | createUnicodeEnvironment,
+                    lpEnvironment: environment.ToString().ToCharArray(), lpCurrentDirectory: null,
+                    lpStartupInfo: ref startup, lpProcessInformation: out ProcessInformation info))
+            {
+                return null;
+            }
+
+            CloseHandle(hObject: info.hThread);
+            try
+            {
+                return System.Diagnostics.Process.GetProcessById(processId: info.dwProcessId);
+            }
+            catch (ArgumentException)
+            {
+                // It ended at once: the caller sees no daemon and builds in its own process.
+                return null;
+            }
+            finally
+            {
+                CloseHandle(hObject: info.hProcess);
+            }
+        }
+
+        /// <summary>Appends one argument quoted the way the C runtime reads a Windows command line.</summary>
+        private static void AppendWindowsArgument(System.Text.StringBuilder sb, string arg)
+        {
+            if (arg.Length > 0 && arg.IndexOfAny(anyOf: [' ', '\t', '"']) < 0)
+            {
+                sb.Append(value: arg);
+                return;
+            }
+
+            sb.Append(value: '"');
+            int backslashes = 0;
+            foreach (char c in arg)
+            {
+                if (c == '\\')
+                {
+                    backslashes++;
+                    continue;
+                }
+
+                sb.Append(value: '\\', repeatCount: c == '"' ? backslashes * 2 + 1 : backslashes);
+                backslashes = 0;
+                sb.Append(value: c);
+            }
+
+            sb.Append(value: '\\', repeatCount: backslashes * 2);
+            sb.Append(value: '"');
         }
 
         /// <summary>Polls a freshly-spawned daemon until it answers a ping (warmed) or the ~60 s budget
