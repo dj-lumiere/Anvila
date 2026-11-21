@@ -1750,14 +1750,12 @@ internal partial class Program
             // Named after the pipe, so daemons started on overridden pipes (several at once) keep separate logs.
             // The default pipe gives the usual `<tool>-daemon-<user>.log`.
             string logPath = Path.Combine(path1: Path.GetTempPath(), path2: $"{PipeName()}.log");
-            // The daemon gets standard handles of its own, never this client's: a handle it inherited (the runtime keeps
-            // copies of the ones a process starts with) would keep a pipe reading this client's output open until the
-            // daemon stops. The client closes its ends right after the start, and the daemon points its own at the
-            // null device (DetachIfAutoSpawned) and writes to its log file.
+            // The daemon starts with the null device as its standard input, output and error, never this client's: a
+            // handle it inherited (the runtime keeps copies of the ones a process starts with) would keep a pipe reading
+            // this client's output open until the daemon stops. It writes what it says to its log file.
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = host, UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
+                FileName = host, UseShellExecute = false, CreateNoWindow = true
             };
             // Command line depends on HOW this client was launched:
             //   • via the apphost `Revare.exe`  → ProcessPath IS Revare.exe → spawn `Revare.exe
@@ -1789,13 +1787,28 @@ internal partial class Program
             }
             else
             {
-                proc = System.Diagnostics.Process.Start(startInfo: psi);
-                if (proc != null)
+                // Linux and macOS: the shell replaces its standard descriptors with the null device and then becomes the
+                // daemon (exec keeps the process id), so the daemon's runtime opens the null device from its first
+                // instruction. A pipe the client gave and then closed would instead be one the daemon may still write
+                // to, which raises SIGPIPE.
+                var shell = new System.Diagnostics.ProcessStartInfo
                 {
-                    proc.StandardInput.Close();
-                    proc.StandardOutput.Close();
-                    proc.StandardError.Close();
+                    FileName = "/bin/sh", UseShellExecute = false
+                };
+                shell.ArgumentList.Add(item: "-c");
+                shell.ArgumentList.Add(item: "exec \"$0\" \"$@\" </dev/null >/dev/null 2>&1");
+                shell.ArgumentList.Add(item: psi.FileName);
+                foreach (string arg in psi.ArgumentList)
+                {
+                    shell.ArgumentList.Add(item: arg);
                 }
+
+                foreach (KeyValuePair<string, string?> variable in psi.Environment)
+                {
+                    shell.Environment[key: variable.Key] = variable.Value;
+                }
+
+                proc = System.Diagnostics.Process.Start(startInfo: shell);
             }
 
             if (proc == null)
