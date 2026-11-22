@@ -239,7 +239,7 @@ public sealed class InstantiationContext
         RestoredVariantKeys = options?.RestoredVariantKeys ??
                               new HashSet<string>(comparer: StringComparer.Ordinal);
         InstantiatedGenericBodies = options?.InstantiatedGenericBodies ?? [];
-        Target = options?.Target ?? TargetConfig.ForCurrentHost();
+        Target = options?.Target ?? TargetConfig.Build;
         BuildMode = options?.BuildMode ?? RvBuildMode.Debug;
         BodyScanCache = options?.BodyScanCache;
         if (options?.ResidentInstanceKeys is { Count: > 0 } rik)

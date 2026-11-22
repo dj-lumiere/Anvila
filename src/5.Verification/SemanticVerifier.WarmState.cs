@@ -349,7 +349,7 @@ public partial class SemanticVerifier
         _typeBodyResolver = new TypeBodyResolver(sa: this, typeResolver: _typeResolver);
         _signatureResolver = new SignatureResolver(sa: this, typeResolver: _typeResolver);
         _conformanceAnalyzer = new ProtocolConformanceAnalyzer(sa: this);
-        _target = target ?? TargetConfig.ForCurrentHost();
+        _target = target ?? TargetConfig.Build;
         _buildMode = buildMode;
 
         // Seed the codegen-consumed body dicts from the captured (already-lowered/analyzed) stdlib.

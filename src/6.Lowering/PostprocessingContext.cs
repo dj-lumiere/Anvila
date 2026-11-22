@@ -59,7 +59,7 @@ public sealed class PostprocessingContext
         Registry = registry;
         VariantBodies = variantBodies ?? new Dictionary<string, Statement>();
         SynthesizedBodies = synthesizedBodies;
-        Target = target ?? TargetConfig.ForCurrentHost();
+        Target = target ?? TargetConfig.Build;
         BuildMode = buildMode;
         MonomorphizedBodies = monomorphizedBodies;
     }

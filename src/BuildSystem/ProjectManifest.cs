@@ -122,6 +122,14 @@ public sealed class BuildTarget
     /// <summary>The backend that translates the program, by registered name (<c>[target] backend</c>):
     /// <c>"llvm"</c> (the default, the LLVM emitter) or another registered backend such as Lapila.</summary>
     public string Backend { get; set; } = "llvm";
+
+    /// <summary>The target the program is built for (<c>[target] triple</c>): <c>"wasm32-wasip1-none"</c> for
+    /// WebAssembly under WASI, or null for this machine.</summary>
+    public string? Triple { get; set; }
+
+    /// <summary>The program that runs a build this machine can't run by itself (<c>[target] runner</c>): a name looked
+    /// up on PATH, or a path from the config.toml's folder. A WASI program runs in wasmtime from PATH without it.</summary>
+    public string? Runner { get; set; }
 }
 
 /// <summary>

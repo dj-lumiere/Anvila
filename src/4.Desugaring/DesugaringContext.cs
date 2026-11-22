@@ -140,7 +140,7 @@ public sealed class DesugaringContext
     {
         Registry = registry;
         RoutineBodies = routineBodies;
-        Target = target ?? TargetConfig.ForCurrentHost();
+        Target = target ?? TargetConfig.Build;
         BuildMode = buildMode;
     }
 }

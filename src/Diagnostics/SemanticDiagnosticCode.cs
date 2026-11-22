@@ -1264,6 +1264,14 @@ public enum SemanticDiagnosticCode
     /// <summary>Bare entity type used as type argument to Optional/Check. Wrap in Retained[T] or Guarded[T].</summary>
     BareEntityInCarrierType = 961,
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CONCURRENCY AND TASK DEPENDENCY ERRORS (RV-S900 - RV-S949)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>A program built for a target that can't run a Work (WebAssembly under WASI: one thread, no stack
+    /// switching) starts one. The message shows the call path from <c>start</c>.</summary>
+    WorkNeedsStackOnTarget = 900,
+
     /// <summary>Residual high-level AST node survived backend-entry lowering validation.</summary>
     IllegalBackendResidualNode = 954,
 

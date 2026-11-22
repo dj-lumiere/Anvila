@@ -58,13 +58,48 @@ public sealed class TargetConfig
         ? "x86-64-v3"
         : null;
 
+    /// <summary>The WebAssembly target under WASI, as Lapila names it (<c>[target] triple</c> in config.toml).</summary>
+    public const string WasiTriple = "wasm32-wasip1-none";
+
+    /// <summary>Whether the target is WebAssembly under WASI: a <c>.wasm</c> program that runs in a WASI runtime.</summary>
+    public bool IsWasi => TargetOS == "wasip1";
+
+    /// <summary>The target this build makes a program for: the host, or the one <c>[target] triple</c> names. The
+    /// build sets it once, before analysis, so every stage that asks reads the same one.</summary>
+    public static TargetConfig Build { get; set; } = ForCurrentHost();
+
+    /// <summary>
+    /// The target <paramref name="triple"/> names, as <c>[target] triple</c> writes it: <c>wasm32-wasip1-none</c>,
+    /// or this machine's own. Returns null, with the reason in <paramref name="error"/>, for any other name.
+    /// </summary>
+    public static TargetConfig? FromTriple(string triple, out string error)
+    {
+        error = "";
+        TargetConfig host = ForCurrentHost();
+        if (triple == WasiTriple)
+        {
+            return Wasm32WasiConfig();
+        }
+
+        Lapila.BuildTarget hostTarget = host.LapilaTarget();
+        string hostName = $"{hostTarget.Arch}-{hostTarget.Os}-{hostTarget.Abi}";
+        if (triple == hostName || triple == host.Triple)
+        {
+            return host;
+        }
+
+        error = $"triple = \"{triple}\" is not a target this builder makes programs for: write \"{WasiTriple}\" " +
+                $"for WebAssembly under WASI, or leave it out for this machine ({hostName})";
+        return null;
+    }
+
     /// <summary>The target as the Lapila builder names it (arch-os-abi), with <see cref="Cpu"/>.</summary>
     public Lapila.BuildTarget LapilaTarget()
     {
         string abi = TargetOS switch
         {
             "windows" => "msvc",
-            "macos" => "none",
+            "macos" or "wasip1" => "none",
             _ => "gnu"
         };
         return Lapila.BuildTarget.Parse(triple: $"{TargetArch}-{TargetOS}-{abi}") with { Cpu = Cpu };
@@ -199,6 +234,18 @@ public sealed class TargetConfig
             cacheLineSize: 64,
             targetOS: os,
             targetArch: "aarch64");
+    }
+
+    /// <summary>WebAssembly under WASI: 32-bit addresses, 64 KiB pages, run in a WASI runtime such as wasmtime.</summary>
+    private static TargetConfig Wasm32WasiConfig()
+    {
+        return new TargetConfig(triple: "wasm32-unknown-wasip1",
+            dataLayout: "e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-i128:128-n32:64-S128-ni:1:10:20",
+            pointerBitWidth: 32,
+            pageSize: 65536,
+            cacheLineSize: 64,
+            targetOS: "wasip1",
+            targetArch: "wasm32");
     }
 
     private static PlatformNotSupportedException UnsupportedHost(string os)

@@ -32,7 +32,12 @@ internal static class IngridLapila
     /// </summary>
     internal static string IrPath(string exeDir)
     {
-        string cached = Path.Combine(path1: exeDir, path2: IrFileName);
+        TargetConfig target = TargetConfig.Build;
+        // Another target's library is a file of its own, named for the target.
+        string fileName = target.IsWasi
+            ? Path.ChangeExtension(path: IrFileName, extension: $".{TargetConfig.WasiTriple}.ll")
+            : IrFileName;
+        string cached = Path.Combine(path1: exeDir, path2: fileName);
         lock (CacheLock)
         {
             if (!TryFindSourceDir(exeDir: exeDir, sourceDir: out string sourceDir))
@@ -41,7 +46,7 @@ internal static class IngridLapila
                     ? cached
                     : throw new InvalidOperationException(
                         message: $"Ingrid's Lapila library is missing: no '{CheckoutSourceDir}' sources near the " +
-                                 $"executable and no '{IrFileName}' next to it.");
+                                 $"executable and no '{fileName}' next to it.");
             }
 
             string[] sources = Directory.GetFiles(path: sourceDir, searchPattern: "*.lpa",
@@ -53,7 +58,7 @@ internal static class IngridLapila
                 return cached;
             }
 
-            string ir = Compile(sourceDir: sourceDir, sources: sources);
+            string ir = Compile(sourceDir: sourceDir, sources: sources, target: target);
             // A file of this process's own: builds run side by side (the test suites start several builder
             // processes at once), and a shared temporary name let one process move another's half-written file.
             string tmp = $"{cached}.{Environment.ProcessId}.tmp";
@@ -320,7 +325,7 @@ internal static class IngridLapila
                || builders.Any(predicate: b => File.GetLastWriteTimeUtc(path: b) > cachedAt);
     }
 
-    private static string Compile(string sourceDir, string[] sources)
+    private static string Compile(string sourceDir, string[] sources, TargetConfig target)
     {
         // The folders Lapila programs import (`decimal/` is Ingrid/Decimal) are a library, as in a Lapila build: only
         // what an export reaches is built. The rest of the folder is Revare's and Mielia's, built whole.
@@ -348,7 +353,7 @@ internal static class IngridLapila
             // paths of every Revare program, and Revare keeps its own trace. Every Console call here is the runtime's own
             // (the crash report among them), so it writes straight out instead of collecting a whole line.
             NativeToolchain.ShareClangWithLapila();
-            return new Lapila.Compiler(target: TargetConfig.ForCurrentHost().LapilaTarget(), decls: decls,
+            return new Lapila.Compiler(target: target.LapilaTarget(), decls: decls,
                     trace: false)
                     { EmitLibraryExports = false, WholeConsoleLines = false }
                 .Generate();
@@ -360,15 +365,98 @@ internal static class IngridLapila
         }
     }
 
-    /// <summary>Finds <c>Ingrid/lapila</c> by walking up from the executable (development checkouts only).</summary>
-    private static bool TryFindSourceDir(string exeDir, out string sourceDir)
+    /// <summary>Where a development checkout keeps the runtime library's sources.</summary>
+    private static readonly string RuntimeSourceDir = Path.Combine(path1: "Ingrid", path2: "runtime-lapila");
+
+    /// <summary>
+    /// Returns the path of Ingrid's runtime library compiled to LLVM IR for a target where the program and the runtime
+    /// are one module (WebAssembly under WASI, which has no shared libraries), compiling it when the cache is missing or
+    /// stale. A build llvm-links it into the program as it links the Lapila library. On the other targets the runtime
+    /// is the shared library the native build makes.
+    /// </summary>
+    internal static string RuntimeIrPath(string exeDir)
+    {
+        TargetConfig target = TargetConfig.Build;
+        string fileName = $"ingrid_runtime_lapila.{TargetConfig.WasiTriple}.ll";
+        string cached = Path.Combine(path1: exeDir, path2: fileName);
+        lock (CacheLock)
+        {
+            if (!TryFindSourceDir(exeDir: exeDir, sourceDir: out string libraryDir, wanted: RuntimeSourceDir))
+            {
+                return File.Exists(path: cached)
+                    ? cached
+                    : throw new InvalidOperationException(
+                        message: $"Ingrid's runtime for {TargetConfig.WasiTriple} is missing: no '{RuntimeSourceDir}' " +
+                                 $"sources near the executable and no '{fileName}' next to it.");
+            }
+
+            string[] sources = Directory.GetFiles(path: libraryDir, searchPattern: "*.lpa")
+                                        .Order(comparer: StringComparer.Ordinal)
+                                        .ToArray();
+            if (File.Exists(path: cached) && !IsStale(cached: cached, sources: sources))
+            {
+                return cached;
+            }
+
+            var decls = new List<Lapila.Decl>();
+            foreach (string file in sources)
+            {
+                string shown = Path.Combine(path1: RuntimeSourceDir,
+                    path2: Path.GetRelativePath(relativeTo: libraryDir, path: file));
+                decls.AddRange(collection: LapilaBackend.Parse(file: shown,
+                    source: Lapila.SourceText.Read(path: file, shown: shown),
+                    isLibrary: false));
+            }
+
+            decls.AddRange(collection: Lapila.StandardLibrary.Load(directory: LapilaBackend.StdlibDirectory()));
+            string ir;
+            try
+            {
+                // As the native runtime library is built (runtime-lapila/config.toml): no Lapila crash trace, the
+                // runtime's own crash handler. The standard library's exports come with the program.
+                NativeToolchain.ShareClangWithLapila();
+                ir = new Lapila.Compiler(target: target.LapilaTarget(), decls: decls, trace: false)
+                    {
+                        EmitLibraryExports = false
+                    }
+                    .Generate();
+            }
+            catch (Lapila.CompileError ex)
+            {
+                throw new InvalidOperationException(
+                    message: $"The Lapila builder rejected Ingrid's runtime for {TargetConfig.WasiTriple}: {ex.Message}",
+                    innerException: ex);
+            }
+
+            string tmp = $"{cached}.{Environment.ProcessId}.tmp";
+            File.WriteAllText(path: tmp, contents: ir);
+            try
+            {
+                File.Move(sourceFileName: tmp, destFileName: cached, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                TryDelete(path: tmp);
+                if (!File.Exists(path: cached))
+                {
+                    throw;
+                }
+            }
+
+            return cached;
+        }
+    }
+
+    /// <summary>Finds <c>Ingrid/lapila</c> (or <paramref name="wanted"/>) by walking up from the executable
+    /// (development checkouts only).</summary>
+    private static bool TryFindSourceDir(string exeDir, out string sourceDir, string? wanted = null)
     {
         // AppContext.BaseDirectory ends in a separator, and GetDirectoryName of "a/b/" is "a/b": without the trim the
         // first step up stays in the same folder and the walk ends one level short of the workspace root.
         string? current = Path.TrimEndingDirectorySeparator(path: exeDir);
         for (int i = 0; i < 6 && current != null; i++)
         {
-            string candidate = Path.Combine(path1: current, path2: CheckoutSourceDir);
+            string candidate = Path.Combine(path1: current, path2: wanted ?? CheckoutSourceDir);
             if (Directory.Exists(path: candidate))
             {
                 sourceDir = candidate;

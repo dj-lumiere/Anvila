@@ -305,7 +305,7 @@ public partial class LlvmEmitter
         TypeRegistry registry, LlvmEmitterOptions? options = null)
     {
         options ??= new LlvmEmitterOptions();
-        _target = options.Target ?? TargetConfig.ForCurrentHost();
+        _target = options.Target ?? TargetConfig.Build;
         if (_target.PointerBitWidth != 64)
         {
             throw new ArgumentException(

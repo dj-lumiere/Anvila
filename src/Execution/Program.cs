@@ -613,6 +613,10 @@ internal partial class Program
         /// <summary>The backend that translates the program (manifest <c>[target] backend</c>).</summary>
         public string Backend { get; init; } = BuilderBackends.DefaultName;
 
+        /// <summary>The program that runs the build when this machine can't (manifest <c>[target] runner</c>), or
+        /// null.</summary>
+        public string? Runner { get; init; }
+
         /// <summary>Incremental JIT dev loop (manifest <c>[target] incremental</c>): fully-lazy on-demand JIT +
         /// per-routine IR cache. Also enables the resident-JIT base/delta split (daemon AOTs the stdlib base
         /// once + ships only the per-run delta IR) — base/delta has no separate opt-in.</summary>
@@ -656,6 +660,38 @@ internal partial class Program
         }
 
         return ResolveManifestEntry(explicitEntry: explicitEntry, outputFile: outputFile);
+    }
+
+    /// <summary>
+    /// Sets the target the build makes a program for (<see cref="TargetConfig.Build"/>) from <c>[target] triple</c>,
+    /// this machine when the key is left out. A WebAssembly program is translated by the Lapila backend: with another
+    /// backend it is a build error. Returns false after printing the error.
+    /// </summary>
+    private static bool SelectBuildTarget(BuildTarget target)
+    {
+        TargetConfig.Build = TargetConfig.ForCurrentHost();
+        if (target.Triple is not { } triple)
+        {
+            return true;
+        }
+
+        if (TargetConfig.FromTriple(triple: triple, error: out string error) is not { } selected)
+        {
+            Console.Error.WriteLine(value: $"error: {ManifestLoader.ManifestFileName}: {error}.");
+            return false;
+        }
+
+        if (selected.IsWasi && target.Backend != Builder.LapilaEmit.LapilaBackend.BackendName)
+        {
+            Console.Error.WriteLine(value:
+                $"error: {ManifestLoader.ManifestFileName}: a {TargetConfig.WasiTriple} program is built through the " +
+                $"Lapila backend: write backend = \"{Builder.LapilaEmit.LapilaBackend.BackendName}\" under [target] next to " +
+                $"triple = \"{triple}\".");
+            return false;
+        }
+
+        TargetConfig.Build = selected;
+        return true;
     }
 
     /// <summary>Parses the positional CLI args (<c>[entry-file] [out.ll]</c>) after the command name. Returns
@@ -777,6 +813,11 @@ internal partial class Program
             }
 
             ApplyDiagnosticFlags(manifest: manifest);
+            if (!SelectBuildTarget(target: target))
+            {
+                return new ResolvedEntry();
+            }
+
             bool residentBase = BuilderBackends.Get(name: target.Backend).SupportsResidentBase;
             return new ResolvedEntry
             {
@@ -792,10 +833,11 @@ internal partial class Program
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
-                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
-                Jit = ModeUsesJit(mode: target.Mode),
-                Incremental = target.Incremental && residentBase,
-                Backend = target.Backend
+                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv() && !TargetConfig.Build.IsWasi,
+                Jit = ModeUsesJit(mode: target.Mode) && !TargetConfig.Build.IsWasi,
+                Incremental = target.Incremental && residentBase && !TargetConfig.Build.IsWasi,
+                Backend = target.Backend,
+                Runner = target.Runner
             };
         }
         catch (Exception ex)
@@ -868,6 +910,11 @@ internal partial class Program
             }
 
             ApplyDiagnosticFlags(manifest: manifest);
+            if (!SelectBuildTarget(target: target))
+            {
+                return new ResolvedEntry();
+            }
+
             bool residentBase = BuilderBackends.Get(name: target.Backend).SupportsResidentBase;
             return new ResolvedEntry
             {
@@ -883,10 +930,11 @@ internal partial class Program
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
-                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
-                Jit = ModeUsesJit(mode: target.Mode),
-                Incremental = target.Incremental && residentBase,
-                Backend = target.Backend
+                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv() && !TargetConfig.Build.IsWasi,
+                Jit = ModeUsesJit(mode: target.Mode) && !TargetConfig.Build.IsWasi,
+                Incremental = target.Incremental && residentBase && !TargetConfig.Build.IsWasi,
+                Backend = target.Backend,
+                Runner = target.Runner
             };
         }
         catch (Exception ex)
@@ -1471,7 +1519,7 @@ internal partial class Program
             // Phase 3: Code generation (multi-program)
             return RunPhase3Codegen(p3: new Phase3Context(EntryFile: entryFile,
                     OutputFile: outputFile,
-                    Target: TargetConfig.ForCurrentHost(),
+                    Target: TargetConfig.Build,
                     BuildMode: buildMode,
                     SaTiming: saTiming,
                     DumpAst: dumpAst,
@@ -1514,7 +1562,7 @@ internal partial class Program
             Console.WriteLine(value: "=== SEMANTIC ANALYSIS ===");
         }
 
-        var target = TargetConfig.ForCurrentHost();
+        TargetConfig target = TargetConfig.Build;
         // Warm path: a daemon supplies a fully-processed stdlib snapshot for this language, so the
         // restore ctor skips the stdlib desugaring/verification/monomorphization and only the user
         // program is analyzed. Cold path (WarmProvider == null) constructs a fresh verifier.
@@ -1834,7 +1882,17 @@ internal partial class Program
                 stdlibPrograms: stdlibPrograms, result: result, showBuildStages: showBuildStages);
         }
 
-        BackendOutput emitted = p3.Backend.Emit(input: backendInput);
+        BackendOutput emitted;
+        try
+        {
+            emitted = p3.Backend.Emit(input: backendInput);
+        }
+        catch (Builder.LapilaEmit.BackendBuildErrorException ex)
+        {
+            DiagnosticRenderer.Print(error: ex.Error);
+            return 1;
+        }
+
         string llvmIr = emitted.LlvmIr;
 
         // dump-lapila with another backend still writes the Lapila translation, for reading side by side.
@@ -2179,7 +2237,7 @@ internal partial class Program
         // (LinkAndStageExecutable), so a failed build leaves the last good one in place.
         string llFile = Path.ChangeExtension(path: entryFile, extension: ".ll");
         string optFile = Path.ChangeExtension(path: llFile, extension: ".opt.ll");
-        exeFile = Path.ChangeExtension(path: llFile, extension: ".exe");
+        exeFile = Path.ChangeExtension(path: llFile, extension: TargetConfig.Build.IsWasi ? ".wasm" : ".exe");
         if (SameNameInOtherLanguage(entryFile: entryFile) is { } twin)
         {
             Console.Error.WriteLine(value:
@@ -2268,6 +2326,11 @@ internal partial class Program
         {
             Console.WriteLine(value: $"Failed to resolve native runtime layout: {ex.Message}");
             return 1;
+        }
+
+        if (TargetConfig.Build.IsWasi)
+        {
+            return LinkWasmProgram(exeDir: exeDir, exeFile: exeFile, llFile: llFile, buildMode: buildMode);
         }
 
         if (NativeToolchain.TryFindNativeBuildDirectory(exeDir: exeDir,
@@ -2373,6 +2436,45 @@ internal partial class Program
         return 0;
     }
 
+    /// <summary>
+    /// The link of a WebAssembly program for WASI: Ingrid's runtime and Lapila library go into the module (there are no
+    /// shared libraries), the module is optimized, and wasm-ld makes the <c>.wasm</c> program. C libraries are not
+    /// linked: WASI has none.
+    /// </summary>
+    private static int LinkWasmProgram(string exeDir, string exeFile, string llFile, RvBuildMode buildMode)
+    {
+        if (!NativeToolchain.TryLinkIngridLapila(exeDir: exeDir,
+                llFile: llFile,
+                linkedFile: out string withIngrid,
+                error: out string ingridError,
+                bitcodeOutput: true))
+        {
+            Console.WriteLine(value: ingridError);
+            return 1;
+        }
+
+        string optFile = Path.ChangeExtension(path: llFile, extension: ".opt.bc");
+        int optResult = NativeToolchain.OptimizeIr(llFile: withIngrid,
+            optFile: optFile,
+            buildMode: buildMode,
+            internalizeForLto: buildMode != RvBuildMode.Debug);
+        if (optResult != 0)
+        {
+            return optResult;
+        }
+
+        int linkResult = NativeToolchain.LinkWasm(optFile: optFile, wasmFile: exeFile, buildMode: buildMode);
+        foreach (string step in new[] { withIngrid, optFile })
+        {
+            if (File.Exists(path: step) && !DiagnosticFlags.DumpIr)
+            {
+                File.Delete(path: step);
+            }
+        }
+
+        return linkResult;
+    }
+
     private static int BuildAndRun(string entryFile, ResolvedEntry config,
         Func<Language, SemanticVerifier.CompiledStdlibState?>? warmProvider = null)
     {
@@ -2385,7 +2487,7 @@ internal partial class Program
             return buildResult;
         }
 
-        return RunExecutable(exeFile: exeFile, showBuildStages: config.ShowBuildStages);
+        return RunExecutable(exeFile: exeFile, showBuildStages: config.ShowBuildStages, runner: config.Runner);
     }
 
     /// <summary>
@@ -2402,7 +2504,7 @@ internal partial class Program
     /// or crashed program printed where a harness timeout can read it. Standard input is inherited the same way,
     /// so nothing of ours waits on it.
     /// </remarks>
-    private static int RunExecutable(string exeFile, bool showBuildStages)
+    private static int RunExecutable(string exeFile, bool showBuildStages, string? runner = null)
     {
         if (showBuildStages)
         {
@@ -2421,6 +2523,16 @@ internal partial class Program
             RedirectStandardError = false,
             RedirectStandardInput = false
         };
+        // A WebAssembly program runs in its WASI runtime ([target] runner, else wasmtime from PATH), with the working
+        // directory open as "." and the system's temporary directory as "/tmp", as Lapila runs its WASI programs.
+        if (exeFile.EndsWith(value: ".wasm", comparisonType: StringComparison.Ordinal))
+        {
+            psi.FileName = runner ?? "wasmtime";
+            psi.ArgumentList.Add(item: "run");
+            psi.ArgumentList.Add(item: "--dir=.::.");
+            psi.ArgumentList.Add(item: $"--dir={Path.GetTempPath().TrimEnd('/', '\\')}::/tmp");
+            psi.ArgumentList.Add(item: Path.GetFullPath(path: exeFile));
+        }
 
         try
         {

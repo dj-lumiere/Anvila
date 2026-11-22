@@ -905,6 +905,49 @@ internal static class NativeToolchain
             return false;
         }
 
+        // Under WASI there are no shared libraries: the runtime goes into the module too. The runtime and the Lapila
+        // library call each other, so each is linked again for what the other brought in, until both have given what
+        // is needed (two rounds reach it, the third is a margin). What is still missing is the link's error.
+        if (TargetConfig.Build.IsWasi)
+        {
+            string runtime;
+            try
+            {
+                runtime = IngridLapila.RuntimeIrPath(exeDir: exeDir);
+            }
+            catch (InvalidOperationException ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+
+            string current = linked;
+            for (int round = 0; round < 3; round++)
+            {
+                foreach (string library in new[] { runtime, bitcode ?? ingrid })
+                {
+                    string next = Path.ChangeExtension(path: llFile, extension: $".ingrid{round}{(library == runtime ? "r" : "l")}.bc");
+                    rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
+                        args: $"\"{current}\" --only-needed \"{library}\" -o \"{next}\"",
+                        stderr: out err);
+                    if (rc != 0)
+                    {
+                        error = $"llvm-link could not merge Ingrid's runtime into the module: {err.Trim()}";
+                        return false;
+                    }
+
+                    if (current != linked)
+                    {
+                        File.Delete(path: current);
+                    }
+
+                    current = next;
+                }
+            }
+
+            File.Move(sourceFileName: current, destFileName: linked, overwrite: true);
+        }
+
         linkedFile = linked;
         error = "";
         return true;
@@ -1477,6 +1520,25 @@ internal static class NativeToolchain
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Links the optimized module (the program with Ingrid's runtime and Lapila library in it) into a WebAssembly
+    /// program for WASI. There is no C library: the standard library reaches WASI's calls itself and brings the
+    /// compiler's helper routines, so wasm-ld gets the module alone and a symbol nothing defines stays an error
+    /// instead of becoming an import. The stack is 8 MiB, below the globals, as Lapila links its own WASI programs.
+    /// </summary>
+    internal static int LinkWasm(string optFile, string wasmFile, RvBuildMode buildMode)
+    {
+        string args = $"--target={TargetConfig.Build.Triple} -{OptLevelString(buildMode: buildMode)} -nostdlib " +
+                      $"-Wl,-z,stack-size=8388608 -Wl,--stack-first -g -o \"{wasmFile}\" \"{optFile}\"";
+        int rc = RunToolCapture(toolPath: ClangTool.Value, args: args, stderr: out string err);
+        if (rc != 0)
+        {
+            Console.Error.WriteLine(value: $"Linking the WebAssembly program failed:\n{err.Trim()}");
+        }
+
+        return rc;
     }
 
     /// <summary>

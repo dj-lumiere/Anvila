@@ -196,8 +196,8 @@ public static class ManifestLoader
         ],
         ["target"] =
         [
-            "executable", "mode", "use-daemon", "incremental", "backend", "module_paths", "c_libraries",
-            "library_paths", "library"
+            "executable", "mode", "use-daemon", "incremental", "backend", "triple", "runner", "module_paths",
+            "c_libraries", "library_paths", "library"
         ],
         ["debug"] =
         [
@@ -542,6 +542,20 @@ public static class ManifestLoader
             !string.IsNullOrWhiteSpace(value: backend?.ToString()))
         {
             target.Backend = backend.ToString()!;
+        }
+
+        if (table.TryGetValue(key: "triple", value: out object? triple) &&
+            !string.IsNullOrWhiteSpace(value: triple?.ToString()))
+        {
+            target.Triple = triple.ToString()!;
+        }
+
+        // A runner named with a folder is a path from the config.toml's folder, a bare name is looked up on PATH.
+        if (table.TryGetValue(key: "runner", value: out object? runner) && runner?.ToString() is { Length: > 0 } named)
+        {
+            target.Runner = named.Contains(value: '/') || named.Contains(value: '\\')
+                ? Path.GetFullPath(path: named, basePath: manifestDir)
+                : named;
         }
 
         // Resolve the executable's module name to a file path

@@ -435,7 +435,7 @@ public sealed partial class SemanticVerifier
         _typeBodyResolver = new TypeBodyResolver(sa: this, typeResolver: _typeResolver);
         _signatureResolver = new SignatureResolver(sa: this, typeResolver: _typeResolver);
         _conformanceAnalyzer = new ProtocolConformanceAnalyzer(sa: this);
-        _target = target ?? TargetConfig.ForCurrentHost();
+        _target = target ?? TargetConfig.Build;
         _buildMode = buildMode;
         _memo = StdlibMemo.Empty;
     }
@@ -454,7 +454,7 @@ public sealed partial class SemanticVerifier
         _typeBodyResolver = new TypeBodyResolver(sa: this, typeResolver: _typeResolver);
         _signatureResolver = new SignatureResolver(sa: this, typeResolver: _typeResolver);
         _conformanceAnalyzer = new ProtocolConformanceAnalyzer(sa: this);
-        _target = target ?? TargetConfig.ForCurrentHost();
+        _target = target ?? TargetConfig.Build;
         _buildMode = buildMode;
         _memo = StdlibMemo.Empty with { IsWarm = true };
     }

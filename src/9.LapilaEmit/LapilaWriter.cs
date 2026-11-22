@@ -105,6 +105,16 @@ internal sealed class LapilaWriter
     public string Write()
     {
         List<(RoutineInfo Info, Statement Body)> routines = CollectRoutines();
+        // WebAssembly under WASI runs no Work: a program that starts one is a build error there.
+        if (_input.Target.IsWasi && !_residentBase &&
+            Collection.EntryPoint.StartOf(defined: routines.Select(selector: r => r.Info),
+                entryModule: _input.EntryModule) is { } start)
+        {
+            WasiWorkCheck.Check(start: start, routines: routines, registry: _input.Registry,
+                programFiles: _input.UserPrograms.Select(selector: p => Path.GetFullPath(path: p.FilePath))
+                                    .ToHashSet(comparer: StringComparer.Ordinal));
+        }
+
         RegisterCrashReachability();
         // A delta writes no routine the resident base defines: each one it calls is declared on first call.
         routines.RemoveAll(match: r => _resident.Contains(item: LlvmEmitter.MangleRoutineName(routine: r.Info)));
@@ -1186,6 +1196,9 @@ internal sealed class LapilaWriter
                "routine c_ig_exit_code() -> S32\n\n" +
                "@external(\"c\")\n@symbol(\"ig_access_configure\")\n" +
                "routine c_ig_access_configure(deadlock_check: U32, access_order: U32, language: U32, place: Addr) -> Void\n\n" +
+               (_input.Target.IsWasi
+                   ? "@external(\"c\")\n@symbol(\"ig_run_at_exit\")\nroutine c_ig_run_at_exit() -> Void\n\n"
+                   : "") +
                "routine start() -> Void\n" +
                "    ig_runtime_init()\n" +
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
@@ -1200,6 +1213,9 @@ internal sealed class LapilaWriter
                // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
                $"    c_ig_access_configure({AccessCheckArguments()}, Addr.zero())\n" +
                $"    {RoutineName(routine: start)}()\n" +
+               // WASI has no C library to run what the runtime keeps for the end (standard output's last flush): the
+               // runtime runs it here.
+               (_input.Target.IsWasi ? "    c_ig_run_at_exit()\n" : "") +
                "    Hosted/set_exit_code(c_ig_exit_code())\n" +
                "    return\n";
     }

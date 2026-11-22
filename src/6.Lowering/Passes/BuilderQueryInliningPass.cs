@@ -65,7 +65,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     {
         _registry = registry;
         _ownedVariantBodies = variantBodies;
-        _target = target ?? TargetConfig.ForCurrentHost();
+        _target = target ?? TargetConfig.Build;
         _buildMode = buildMode;
     }
 

@@ -26,7 +26,7 @@ namespace Builder.Targeting;
 /// </summary>
 public static class TargetGate
 {
-    private static readonly TargetConfig HostTarget = TargetConfig.ForCurrentHost();
+    private static TargetConfig HostTarget => TargetConfig.Build;
 
     /// <summary>
     /// Returns false only when <paramref name="filePath"/> is in a language with target directives and
