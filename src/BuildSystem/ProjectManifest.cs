@@ -123,6 +123,9 @@ public sealed class BuildTarget
     /// <c>"llvm"</c> (the default, the LLVM emitter) or another registered backend such as Lapila.</summary>
     public string Backend { get; set; } = "llvm";
 
+    /// <summary>Whether config.toml writes <c>backend</c> itself, rather than leaving the default.</summary>
+    public bool BackendWritten { get; set; }
+
     /// <summary>The target the program is built for (<c>[target] triple</c>): <c>"wasm32-wasip1-none"</c> for
     /// WebAssembly under WASI, or null for this machine.</summary>
     public string? Triple { get; set; }

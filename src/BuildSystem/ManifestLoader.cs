@@ -542,6 +542,7 @@ public static class ManifestLoader
             !string.IsNullOrWhiteSpace(value: backend?.ToString()))
         {
             target.Backend = backend.ToString()!;
+            target.BackendWritten = true;
         }
 
         if (table.TryGetValue(key: "triple", value: out object? triple) &&

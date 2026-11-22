@@ -11,7 +11,7 @@ namespace Builder;
 internal static class ManifestCache
 {
     /// <summary>Bumped whenever the cached field sequence changes.</summary>
-    private const int FormatVersion = 7;
+    private const int FormatVersion = 8;
 
     /// <summary>Reads the cached manifest for this path and text, or returns false.</summary>
     public static bool TryRead(string fullPath, string content, out ProjectManifest? manifest)
@@ -42,6 +42,7 @@ internal static class ManifestCache
             loaded.Target.UseDaemon = reader.ReadBoolean();
             loaded.Target.Incremental = reader.ReadBoolean();
             loaded.Target.Backend = reader.ReadString();
+            loaded.Target.BackendWritten = reader.ReadBoolean();
             loaded.Target.Triple = ReadNullable(reader: reader);
             loaded.Target.Runner = ReadNullable(reader: reader);
             loaded.Target.CLibraries = ReadList(reader: reader);
@@ -95,6 +96,7 @@ internal static class ManifestCache
                 writer.Write(value: manifest.Target.UseDaemon);
                 writer.Write(value: manifest.Target.Incremental);
                 writer.Write(value: manifest.Target.Backend);
+                writer.Write(value: manifest.Target.BackendWritten);
                 WriteNullable(writer: writer, value: manifest.Target.Triple);
                 WriteNullable(writer: writer, value: manifest.Target.Runner);
                 WriteList(writer: writer, values: manifest.Target.CLibraries);

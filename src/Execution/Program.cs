@@ -664,8 +664,9 @@ internal partial class Program
 
     /// <summary>
     /// Sets the target the build makes a program for (<see cref="TargetConfig.Build"/>) from <c>[target] triple</c>,
-    /// this machine when the key is left out. A WebAssembly program is translated by the Lapila backend: with another
-    /// backend it is a build error. Returns false after printing the error.
+    /// this machine when the key is left out. A WebAssembly program is translated by the Lapila backend, which the
+    /// triple selects when <c>backend</c> is left out: another backend written next to it is a build error. Returns
+    /// false after printing the error.
     /// </summary>
     private static bool SelectBuildTarget(BuildTarget target)
     {
@@ -681,12 +682,17 @@ internal partial class Program
             return false;
         }
 
+        if (selected.IsWasi && !target.BackendWritten)
+        {
+            target.Backend = Builder.LapilaEmit.LapilaBackend.BackendName;
+        }
+
         if (selected.IsWasi && target.Backend != Builder.LapilaEmit.LapilaBackend.BackendName)
         {
             Console.Error.WriteLine(value:
                 $"error: {ManifestLoader.ManifestFileName}: a {TargetConfig.WasiTriple} program is built through the " +
-                $"Lapila backend: write backend = \"{Builder.LapilaEmit.LapilaBackend.BackendName}\" under [target] next to " +
-                $"triple = \"{triple}\".");
+                $"Lapila backend, and backend = \"{target.Backend}\" is written next to triple = \"{triple}\": leave " +
+                $"backend out.");
             return false;
         }
 

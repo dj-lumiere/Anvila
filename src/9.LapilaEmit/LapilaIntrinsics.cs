@@ -107,6 +107,9 @@ internal sealed class LapilaIntrinsics
             "float_gt" => Generic(operation: "fgt"),
             "float_ge" => Generic(operation: "fge"),
             "float_abs" => Generic(operation: "fabs"),
+            // Lapila's own B32 and B64 rounding, which no target turns into a call to the C library's round (WASI has
+            // no C library).
+            "round" when Type(index: 0) is "B32" or "B64" => $"{Argument(index: 0)}.round()",
             "sqrt" or "floor" or "ceil" or "round" or "rint" or "copysign" or "fma" or "minnum" or "maxnum" =>
                 Generic(operation: _routine.Name),
             "float_truncate" => Generic(operation: "ftrunc"),
