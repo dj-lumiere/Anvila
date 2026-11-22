@@ -980,16 +980,19 @@ internal sealed class LapilaRoutineWriter
             Type: list.ResolvedType, IsPlace: false);
     }
 
-    /// <summary>A routine value: the routine's code address, the bound payload (an address, or null), and the address
-    /// of the routine's recovering entry (its check recovery variant), or null when it has none.</summary>
+    /// <summary>A routine value: the routine's code address and the bound payload (an address, or null). A routine with
+    /// a recovering entry (its check recovery variant) is noted for <see cref="LapilaWriter.RecoverLookup"/>.</summary>
     private Operand RoutineValue(RoutineInfo routine, string bound, RoutineInfo? recover, TypeSymbol? type)
     {
         string record = _module.RoutineValueRecord;
         string name = $"t{_temps++}";
-        string recoverAddress = recover != null && _module.HasRoutine(routine: recover)
-            ? $"{_module.RoutineName(routine: recover)}.addr()"
-            : "Addr.zero()";
-        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: {recoverAddress})");
+        if (recover != null && _module.HasRoutine(routine: recover))
+        {
+            _ = _module.RecoverLookup(routine: _module.RoutineName(routine: routine),
+                recover: _module.RoutineName(routine: recover));
+        }
+
+        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound})");
         return new Operand(Text: name, Type: type as RoutineTypeSymbol, IsPlace: false);
     }
 
@@ -1026,7 +1029,7 @@ internal sealed class LapilaRoutineWriter
         string slot = $"carrier{_temps++}";
         Emit(line: $"lateinit {slot}: &{TypeText(type: carrier)}");
         Emit(line: $"{slot}.zeroinit(1)");
-        string recover = Temp(type: _module.PointerType, expression: $"{value}.recover");
+        string recover = Temp(type: _module.PointerType, expression: $"{_module.RecoverLookup()}({value}.fn)");
         string none = Temp(type: _module.BoolType, expression: $"ptrtoint[Addr, U64]({recover}).eq(0)");
         Emit(line: $"if {none}");
         _indent++;
@@ -1053,7 +1056,7 @@ internal sealed class LapilaRoutineWriter
             returnType: carrier, isFailable: false);
         string record = _module.RoutineValueRecord;
         string entry = $"t{_temps++}";
-        Emit(line: $"{entry}: {record} = {record}(fn: {recover}, bound: {value}.bound, recover: Addr.zero())");
+        Emit(line: $"{entry}: {record} = {record}(fn: {recover}, bound: {value}.bound)");
         string recovered = Temp(type: carrier,
             expression: $"{_module.RoutineValueCall(routineType: recovering)}({ArgumentList(first: entry)})");
         Emit(line: $"{slot}.store({recovered})");

@@ -169,6 +169,7 @@ internal sealed class LapilaWriter
         module.Append(value: _globals);
         module.Append(value: _externs);
         module.Append(value: definitions);
+        module.Append(value: RecoverLookupRoutine());
         module.Append(value: main);
         // A record that holds something to release says how it is made and released (a construct taking its fields, a
         // destruct).
@@ -394,6 +395,60 @@ internal sealed class LapilaWriter
 
     // ── Names ─────────────────────────────────────────────────────────────────
 
+    /// <summary>The routines taken as values that have a recovering entry, each with that entry, by the routines'
+    /// Lapila names.</summary>
+    private readonly SortedDictionary<string, string> _recoverEntries = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The name of the routine that gives the recovering entry of a routine value's code address.</summary>
+    private const string RecoverLookupName = "`Routine value recover`";
+
+    /// <summary>
+    /// The Lapila routine that gives the recovering entry (the check recovery variant) of the routine whose code address
+    /// it is given, zero when it has none, as the LLVM emitter's table of recovering entries does. A routine value is the
+    /// code address and the bound payload alone, as in the LLVM emitter, so a call beneath <c>try</c> or <c>check</c>
+    /// looks its entry up here. <paramref name="routine"/> and <paramref name="recover"/> name a routine taken as a value
+    /// and its entry.
+    /// </summary>
+    public string RecoverLookup(string? routine = null, string? recover = null)
+    {
+        if (routine != null && recover != null)
+        {
+            _recoverEntries[key: routine] = recover;
+        }
+        else
+        {
+            _recoverLookupCalled = true;
+        }
+
+        return RecoverLookupName;
+    }
+
+    /// <summary>Whether a call beneath <c>try</c> or <c>check</c> looks a recovering entry up, so the module writes the
+    /// routine that does.</summary>
+    private bool _recoverLookupCalled;
+
+    /// <summary>The routine <see cref="RecoverLookup"/> names, comparing the address with each routine taken as a value
+    /// that has a recovering entry.</summary>
+    private string RecoverLookupRoutine()
+    {
+        if (!_recoverLookupCalled)
+        {
+            return "";
+        }
+
+        var text = new StringBuilder();
+        text.Append(value: $"routine {RecoverLookupName}(code: Addr) -> Addr\n");
+        text.Append(value: "    at: U64 = ptrtoint[Addr, U64](code)\n");
+        foreach ((string routine, string recover) in _recoverEntries)
+        {
+            text.Append(value: $"    if at.eq(ptrtoint[Addr, U64]({routine}.addr()))\n");
+            text.Append(value: $"        return {recover}.addr()\n");
+        }
+
+        text.Append(value: "    return Addr.zero()\n\n");
+        return text.ToString();
+    }
+
     /// <summary>The builder's type registry.</summary>
     public TypeRegistry Registry => _input.Registry;
 
@@ -521,7 +576,7 @@ internal sealed class LapilaWriter
             }
 
             _routineValueRecord = VerbatimName(text: "Routine value");
-            _records.Append(value: $"record {_routineValueRecord}\n    fn: Addr\n    bound: Addr\n    recover: Addr\n\n");
+            _records.Append(value: $"record {_routineValueRecord}\n    fn: Addr\n    bound: Addr\n\n");
             return _routineValueRecord;
         }
     }
