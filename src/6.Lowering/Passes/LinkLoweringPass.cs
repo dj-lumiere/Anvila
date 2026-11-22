@@ -302,7 +302,7 @@ internal sealed class LinkLoweringPass : AstRewriter
                            throw new InvalidOperationException(
                                message: $"C::{RuntimeContract.Link.SlotTake} is not registered.");
         var size = new LiteralExpression(
-            Value: entity.HeapBlockSize(pointerSize: 8)
+            Value: entity.HeapBlockSize(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes)
                          .ToString(provider: System.Globalization.CultureInfo.InvariantCulture),
             LiteralType: TokenType.U64Literal,
             Location: location) { ResolvedType = _u64 };

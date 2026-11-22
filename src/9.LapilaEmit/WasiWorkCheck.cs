@@ -26,7 +26,7 @@ internal static class WasiWorkCheck
     /// <summary>The runtime's routines that make a coroutine or start a thread for a Work.</summary>
     private static readonly HashSet<string> StackRoutines = new(comparer: StringComparer.Ordinal)
     {
-        "ig_coro_create", "ig_sched_spawn_default", "ig_sched_run_until_default", "ig_task_spawn_threaded"
+        "ig_coro_create", "ig_sched_spawn_default", "ig_task_spawn_threaded"
     };
 
     /// <summary>

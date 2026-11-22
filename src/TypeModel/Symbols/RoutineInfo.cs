@@ -793,7 +793,7 @@ public sealed class RoutineInfo
                 substitution.TryGetValue(key: name, value: out TypeSymbol? s)
                     ? s
                     : null,
-            pointerSize: 8,
+            pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes,
             result: out long folded)
             ? new ConstGenericValueTypeSymbol(literalText: folded.ToString(),
                 value: folded,

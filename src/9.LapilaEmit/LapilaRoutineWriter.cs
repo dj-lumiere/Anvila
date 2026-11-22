@@ -698,6 +698,20 @@ internal sealed class LapilaRoutineWriter
     {
         string fromText = TypeText(type: from);
         string toText = TypeText(type: to);
+        // A value handed where its Optional goes (`d[3] = Box(n: 9)` into a `Dict[Int, Box?]`): the Optional that holds
+        // it, as the LLVM emitter wraps it.
+        if (to is RecordTypeSymbol
+            {
+                CarrierKind: CarrierKind.Optional, IsEntityOptional: false, TypeArguments: [var held],
+                MemberVariables: [var presentField, var valueField]
+            } && from != null && from is not RecordTypeSymbol { CarrierKind: CarrierKind.Optional } &&
+            fromText == TypeText(type: held) && fromText != toText)
+        {
+            return Temp(type: to,
+                expression: $"{toText}({LapilaWriter.ValueName(name: presentField.Name)}: true, " +
+                            $"{LapilaWriter.ValueName(name: valueField.Name)}: {value})");
+        }
+
         // An untyped address, or a pointer to another type (a token's `hijack()` points at what the token is on), is
         // the parameter's pointer as it is.
         return (fromText == "Addr" || fromText.StartsWith(value: '@')) && toText.StartsWith(value: '@') &&

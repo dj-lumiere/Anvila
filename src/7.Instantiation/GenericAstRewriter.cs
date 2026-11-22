@@ -2829,7 +2829,7 @@ internal static class GenericAstRewriter
 
             RuntimeContract.BlockSize when s64Type != null => new LiteralExpression(
                 Value: (long)(typeInfo is EntityTypeSymbol block
-                    ? block.HeapBlockSize(pointerSize: 8)
+                    ? block.HeapBlockSize(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes)
                     : -1),
                 LiteralType: TokenType.S64Literal,
                 Location: location) { ResolvedType = s64Type },

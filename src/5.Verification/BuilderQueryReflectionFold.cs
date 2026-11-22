@@ -833,13 +833,13 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
                     : (ulong)Math.Max(val1: 1,
                         val2: fields[index: i]
                              .Type
-                             .Alignment(pointerSize: 8));
+                             .Alignment(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes));
                 cursor = (cursor + align - 1) / align * align;
                 offsets[i] = cursor;
                 cursor += (ulong)Math.Max(val1: 0,
                     val2: fields[index: i]
                          .Type
-                         .SizeBytes(pointerSize: 8));
+                         .SizeBytes(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes));
             }
             catch
             {

@@ -1361,7 +1361,7 @@ public sealed partial class SemanticVerifier
         {
             if (type is CrashableTypeSymbol { IsGenericDefinition: false } crashable)
             {
-                largest = Math.Max(val1: largest, val2: crashable.SizeBytes(pointerSize: 8));
+                largest = Math.Max(val1: largest, val2: crashable.SizeBytes(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes));
             }
         }
 

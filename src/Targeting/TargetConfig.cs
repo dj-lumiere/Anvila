@@ -34,6 +34,9 @@ public sealed class TargetConfig
     /// <summary>Pointer bit width (32 or 64).</summary>
     public int PointerBitWidth { get; }
 
+    /// <summary>The size of an address in bytes: 8, or 4 on a 32-bit target.</summary>
+    public int PointerBytes => PointerBitWidth / 8;
+
     /// <summary>OS virtual memory page size in bytes.</summary>
     public int PageSize { get; }
 

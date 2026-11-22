@@ -663,7 +663,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
             case RuntimeContract.BlockSize when _s64Type != null:
                 return MakeLiteralS64(value: type is EntityTypeSymbol block
-                        ? block.HeapBlockSize(pointerSize: 8)
+                        ? block.HeapBlockSize(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes)
                         : -1,
                     type: _s64Type,
                     loc: loc);
@@ -883,20 +883,21 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         {
             // Tuple is a RecordTypeSymbol (item0/item1/... members) — delegate to SizeBytes like records.
             // `element_count * 8` was wrong for tuples holding a non-8-byte element (e.g. a Text=24).
-            TupleTypeSymbol t => (ulong)t.SizeBytes(pointerSize: 8),
+            TupleTypeSymbol t => (ulong)t.SizeBytes(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes),
             // Variant is a tagged union: tag + MAX arm payload (not sum). Delegate to SizeBytes.
             // Variant is a RecordTypeSymbol subclass, so it MUST precede the Record arms below.
-            VariantTypeSymbol v => (ulong)v.SizeBytes(pointerSize: 8),
+            VariantTypeSymbol v => (ulong)v.SizeBytes(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes),
             RecordTypeSymbol { BackendType: not null } r => LlvmBackendTypeSize(
                 llvmType: r.BackendType),
             // Delegate to the SAME size function codegen uses (RecordTypeSymbol.SizeBytes) so the List
             // element stride matches the actual struct layout. `member_count * 8` was wrong for any
             // record with a non-8-byte member (a nested value-record like Text=24, or i32/i128).
-            RecordTypeSymbol r => (ulong)r.SizeBytes(pointerSize: 8),
-            EntityTypeSymbol => 8, // heap pointer (Crashable, an entity subclass, included)
+            RecordTypeSymbol r => (ulong)r.SizeBytes(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes),
+            // A heap pointer (Crashable, an entity subclass, included).
+            EntityTypeSymbol => (ulong)Builder.Targeting.TargetConfig.Build.PointerBytes,
             // A routine value is two pointers (the routine and what it is bound to). Counted as 0, a heap cell made
             // for one (a Work's recipe argument) was a 0-byte block the 16-byte store overran.
-            RoutineTypeSymbol r => (ulong)r.SizeBytes(pointerSize: 8),
+            RoutineTypeSymbol r => (ulong)r.SizeBytes(pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes),
             _ => 0
         };
     }
@@ -912,7 +913,8 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             "i1" or "i8" => 1,
             "i16" or "half" => 2,
             "i32" or "float" => 4,
-            "i64" or "double" or "ptr" => 8,
+            "i64" or "double" => 8,
+            "ptr" => (ulong)Builder.Targeting.TargetConfig.Build.PointerBytes,
             "i128" or "fp128" => 16,
             var s when s.StartsWith(value: '[') => ParseLlvmArraySize(arrayType: s),
             var s when s.Contains(value: '{') => 0,

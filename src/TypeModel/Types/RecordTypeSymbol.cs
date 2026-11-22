@@ -827,7 +827,7 @@ public class RecordTypeSymbol : TypeSymbol
                 substitution.TryGetValue(key: name, value: out TypeSymbol? bound)
                     ? bound
                     : null,
-            pointerSize: 8,
+            pointerSize: Builder.Targeting.TargetConfig.Build.PointerBytes,
             result: out long folded)
             ? new ConstGenericValueTypeSymbol(literalText: folded.ToString(),
                 value: folded,

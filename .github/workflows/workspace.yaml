@@ -17,7 +17,9 @@ env:
   MI_TESTS: Mielia/tests/Mielia.Tests.csproj
   # Tests that assert a wall-clock bound carry the Timing category: the numbers depend on the runner and on what
   # runs beside them, so CI leaves them out. A local `dotnet test` runs them.
-  TEST_FILTER: Category!=Timing
+  # The Wasm32 category builds every fixture for WebAssembly under WASI and runs it in wasmtime: the wasm32 job runs
+  # it, the other jobs leave it out.
+  TEST_FILTER: Category!=Timing&Category!=Wasm32
   # The tests' limits on a child process (a build, a built program) catch hangs. A hosted runner builds the stdlib
   # bundle in 2 to 4.5 minutes, near the 5-minute base limit, so the limits are doubled here (TestHelpers.ChildTimeoutMs).
   RV_TEST_TIMEOUT_SCALE: '2'
@@ -92,6 +94,65 @@ jobs:
         run: |
           dotnet test "$RV_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
           dotnet test "$MI_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
+
+  # Revare and Mielia fixtures built for wasm32-wasip1-none through the Lapila backend and run in wasmtime. The
+  # target comes from tests/Fixtures/Wasm32/config.toml in each language's repository, the runner from PATH.
+  wasm32-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      WASMTIME_VERSION: v50.0.3
+
+    steps:
+      - name: Checkout the workspace
+        uses: dj-lumiere/Anvila/.github/actions/checkout-workspace@master
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config python3 curl wget ca-certificates \
+            lsb-release software-properties-common gnupg
+
+      # lld-22 brings wasm-ld, which clang-22 finds in its own folder.
+      - name: Install LLVM 22 toolchain
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
+          echo /usr/lib/llvm-22/bin >> "$GITHUB_PATH"
+          test -x /usr/lib/llvm-22/bin/wasm-ld
+          /usr/lib/llvm-22/bin/clang --version
+
+      - name: Install wasmtime
+        run: |
+          curl -fsSL -o wasmtime.tar.xz "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
+          mkdir -p "$HOME/wasmtime"
+          tar -xJf wasmtime.tar.xz -C "$HOME/wasmtime" --strip-components=1
+          echo "$HOME/wasmtime" >> "$GITHUB_PATH"
+          "$HOME/wasmtime/wasmtime" --version
+
+      - name: Build native libraries
+        run: |
+          dotnet build Lapila/Lapila.csproj --configuration Release
+          export LAPILA_DLL="$GITHUB_WORKSPACE/Lapila/bin/Release/net10.0/lapila.dll"
+          cd Ingrid/native
+          chmod +x build.sh
+          export CC=clang
+          export CXX=clang++
+          ./build.sh
+
+      - name: Build
+        run: |
+          dotnet build "$RV_TESTS" --configuration Release
+          dotnet build "$MI_TESTS" --configuration Release
+
+      - name: Test on wasm32
+        run: |
+          dotnet test "$RV_TESTS" --configuration Release --no-build --verbosity normal --filter "Category=Wasm32"
+          dotnet test "$MI_TESTS" --configuration Release --no-build --verbosity normal --filter "Category=Wasm32"
 
   build-windows:
     runs-on: windows-latest
