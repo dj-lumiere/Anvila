@@ -111,10 +111,24 @@ internal static class WasiWorkCheck
                                    .LastOrDefault(predicate: l => l.FileName is { } file &&
                                                                   programFiles.Contains(item: Path.GetFullPath(path: file)))
                                ?? path[index: 0].At;
-        string shown = string.Join(separator: " -> ",
-            values: new[] { Display(routine: start) }.Concat(
-                second: path.Where(predicate: p => p.Routine.CallingConvention != "C")
-                            .Select(selector: p => Display(routine: p.Routine))));
+        // The path through the program's own routines, then the first routine of the standard library it calls: what
+        // the library does inside is not the program's.
+        var shownPath = new List<string> { Display(routine: start) };
+        foreach ((RoutineInfo routine, SourceLocation _) in path)
+        {
+            if (routine.CallingConvention == "C")
+            {
+                break;
+            }
+
+            shownPath.Add(item: Display(routine: routine));
+            if (routine.Location?.FileName is not { } file || !programFiles.Contains(item: Path.GetFullPath(path: file)))
+            {
+                break;
+            }
+        }
+
+        string shown = string.Join(separator: " -> ", values: shownPath);
         // Mielia's words have no "stack" in them: a Work there runs alongside the routine that starts it.
         string why = registry.Language == Language.Mielia
             ? "WebAssembly under WASI runs one routine at a time, and a Work runs alongside the routine that starts it"
@@ -126,6 +140,10 @@ internal static class WasiWorkCheck
             Location: place);
     }
 
+    /// <summary>A routine as the program spells it: <c>Work[Int].retrieve()</c>, the types without their modules.</summary>
     private static string Display(RoutineInfo routine) =>
-        routine.OwnerType != null ? $"{routine.OwnerType.Name}.{routine.Name}()" : $"{routine.Name}()";
+        System.Text.RegularExpressions.Regex.Replace(
+            input: routine.OwnerType != null ? $"{routine.OwnerType.Name}.{routine.Name}()" : $"{routine.Name}()",
+            pattern: @"[A-Za-z0-9_]+(/[A-Za-z0-9_]+)*\.(?=[A-Z])",
+            replacement: "");
 }
