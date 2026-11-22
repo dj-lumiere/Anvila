@@ -147,6 +147,7 @@ internal sealed class LapilaIntrinsics
             "load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek()",
             "load_unaligned" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_unaligned()",
             "store" => $"{Argument(index: 0)}.to[@{Type(index: 1)}]().poke({Argument(index: 1)})",
+            "swap_values" => SwapValues(),
             // zero_value is zeroed under an older name: every byte of a T zero.
             "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"({Argument(index: 0)} === {Argument(index: 1)})",
@@ -218,6 +219,20 @@ internal sealed class LapilaIntrinsics
             ? _typeStore(arg: entity)
             : throw new NotSupportedException(
                 message: $"The Lapila backend found an LLVM::{_routine.Name} without its entity type.");
+    }
+
+    /// <summary>The values at two addresses traded bit for bit: the first is read into a slot, the second is written
+    /// over it, and the slot over the second. The same address twice leaves the value as it was.</summary>
+    private string SwapValues()
+    {
+        TypeSymbol held = _routine.TypeArguments is [{ } typeArgument]
+            ? typeArgument
+            : throw new NotSupportedException(
+                message: $"The Lapila backend found an LLVM::{_routine.Name} without its value type.");
+        string pointer = $"@{_typeText(arg: held)}";
+        string first = _spill(arg1: $"{Argument(index: 0)}.to[{pointer}]().peek()", arg2: held);
+        _emit(obj: $"{Argument(index: 0)}.to[{pointer}]().poke({Argument(index: 1)}.to[{pointer}]().peek())");
+        return $"{Argument(index: 1)}.to[{pointer}]().poke({first}.load())";
     }
 
     /// <summary>

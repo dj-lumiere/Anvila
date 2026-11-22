@@ -142,7 +142,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.MieliaNoCInterop,
                 message:
                 $"You declare the foreign routine '{external.Name}' here, but a {_registry.Rules.Name} program " +
-                "cannot reach C directly. Declare it in a `.rvr` module and import that module from this program.",
+                "cannot reach C directly. Declare it in a `.rvr` module and import that module from this program." +
+                WrappingCNote,
                 location: external.Location);
         }
 

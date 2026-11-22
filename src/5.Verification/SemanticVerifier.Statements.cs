@@ -330,7 +330,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FeatureNotInMielia,
                 message:
                 $"You mark '{routine.Name}' `dangerous`, but a {_registry.Rules.Name} program has no memory-unsafe " +
-                "routines. Remove `dangerous`, or move the routine into a `.rvr` module this program imports.",
+                "routines. Remove `dangerous`, or move the routine into a `.rvr` module this program imports." +
+                WrappingCNote,
                 location: routine.Location);
         }
 

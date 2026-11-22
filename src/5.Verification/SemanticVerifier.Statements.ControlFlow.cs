@@ -1508,7 +1508,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FeatureNotInMielia,
                 message:
                 $"A {_registry.Rules.Name} program has no `danger` block: memory is never handled directly here. " +
-                "Code that must handle memory or call C goes in a `.rvr` module this program imports.",
+                "Code that must handle memory or call C goes in a `.rvr` module this program imports." + WrappingCNote,
                 location: danger.Location);
             return;
         }

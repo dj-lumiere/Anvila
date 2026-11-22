@@ -28,13 +28,21 @@ public sealed partial class SemanticVerifier
     {
         if (routine.IsForeign && UnsafeSurfaceIsBarred())
         {
+            // A foreign routine declared in such a program has its error at the declaration already: its calls are
+            // not reported again.
+            if (UnsafeSurfaceIsBarredIn(filePath: routine.Location?.FileName))
+            {
+                return;
+            }
+
             string realm = routine.Realm == RoutineRealm.C
                 ? "C"
                 : "LLVM";
             ReportError(code: SemanticDiagnosticCode.MieliaNoCInterop,
                 message:
                 $"You call the foreign routine '{realm}::{routine.Name}' here, but a {_registry.Rules.Name} program " +
-                "cannot reach it directly. Call it from a `.rvr` module and import that module from this program.",
+                "cannot reach it directly. Call it from a `.rvr` module and import that module from this program." +
+                WrappingCNote,
                 location: location);
             return;
         }
@@ -220,6 +228,13 @@ public sealed partial class SemanticVerifier
     /// <summary>True while analyzing a program's own file in a language whose programs may not use the
     /// memory-unsafe surface (<c>LanguageRules.AllowsUnsafeCode</c> false). The standard library always may, and so
     /// does a module of another language the program imports (a `.rvr` module of a Mielia program).</summary>
+    /// <summary>
+    /// The line that ends a diagnostic sending code out of a program without unsafe code into a <c>.rvr</c> module:
+    /// where the wiki shows such a module wrapping a C library.
+    /// </summary>
+    internal const string WrappingCNote =
+        "\nA `.rvr` module that wraps a C library: https://mielia.lumi-dev.xyz/docs/appendix-revare/#reaching-c";
+
     private bool UnsafeSurfaceIsBarred()
     {
         return UnsafeSurfaceIsBarredIn(filePath: _currentFilePath);
@@ -246,7 +261,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FeatureNotInMielia,
                 message:
                 $"You call '{dangerousRoutine.Name}' here, but it handles memory directly (`dangerous`), and a " +
-                $"{_registry.Rules.Name} program never does. Code that must goes in a `.rvr` module this program imports.",
+                $"{_registry.Rules.Name} program never does. Code that must goes in a `.rvr` module this program imports." +
+                WrappingCNote,
                 location: location);
         }
     }
