@@ -1454,11 +1454,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                p.Type.FullName == argType.FullName;
     }
 
-    /// <summary>
-    /// The operand an operator routine reading it through a token takes (<c>eq(you: Viewing[Point])</c>): a record
-    /// is handed as the address of the place it is in (a temporary gets one), an entity is its own pointer. Any
-    /// other operand, or one already a token, stays as it is.
-    /// </summary>
     /// <summary>The call's first argument as <paramref name="routine"/>'s first parameter takes it (see
     /// <see cref="TokenOperand"/>): a key handed to <c>Dict.getitem(key: Viewing[K])</c> goes as the address of its
     /// place.</summary>
@@ -1469,6 +1464,11 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             : argument;
     }
 
+    /// <summary>
+    /// The operand an operator routine reading it through a token takes (<c>eq(you: Viewing[Point])</c>): a record
+    /// is handed as the address of the place it is in (a temporary gets one), an entity is its own pointer. Any
+    /// other operand, or one already a token, stays as it is.
+    /// </summary>
     private static Expression TokenOperand(Expression argument, TypeSymbol parameterType)
     {
         if (!ImplicitToken.IsTokenParameter(parameter: parameterType, tokenKind: out _, target: out _) ||

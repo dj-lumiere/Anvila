@@ -384,6 +384,15 @@ internal sealed class LapilaWriter
 
     // ── Names ─────────────────────────────────────────────────────────────────
 
+    /// <summary>The builder's type registry.</summary>
+    public TypeRegistry Registry => _input.Registry;
+
+    /// <summary>Whether this module writes or declares <paramref name="routine"/>, so a call to it can be written.</summary>
+    public bool HasRoutine(RoutineInfo routine) =>
+        routine.CallingConvention == "C" ||
+        _routineNames.ContainsKey(key: LlvmEmitter.MangleRoutineName(routine: routine)) ||
+        _resident.Contains(item: LlvmEmitter.MangleRoutineName(routine: routine));
+
     /// <summary>The Lapila routine a call to <paramref name="routine"/> goes to: its definition in this module,
     /// or for a C routine, its external declaration.</summary>
     public string RoutineName(RoutineInfo routine)
@@ -630,6 +639,41 @@ internal sealed class LapilaWriter
         return $"bitcast[@Items[U64, 4], Addr]({global})";
     }
 
+    private readonly Dictionary<string, (string Data, string List, string Manager)> _sharedLists =
+        new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The module data behind a constant <c>Guarded[List[T], ReadOnly]</c> (a big <c>Int</c> literal's limbs): the
+    /// elements as a preset, and the list and its manager as globals (all zero to start), one set per distinct content. A global
+    /// starts a pointer only as the address of a global of the pointee's type, so the routine that evaluates the list
+    /// writes the addresses and the counts into the globals itself (<c>LapilaRoutineWriter</c>).
+    /// </summary>
+    public (string Data, string List, string Manager) SharedList(SharedConstantListExpression list)
+    {
+        SharedListLayout layout = list.Layout;
+        TypeSymbol elementType = layout.List.TypeArguments![index: 0];
+        string elementText = TypeText(type: elementType);
+        bool unsigned64 = elementText == "U64";
+        string elements = string.Join(separator: ", ", values: list.Elements.Select(selector: e =>
+            unsigned64 ? unchecked((ulong)e).ToString(provider: CultureInfo.InvariantCulture) : e.ToString(provider: CultureInfo.InvariantCulture)));
+        string key = $"{layout.Manager.FullName} {elementText} [{elements}]";
+        if (_sharedLists.TryGetValue(key: key, value: out (string Data, string List, string Manager) known))
+        {
+            return known;
+        }
+
+        int id = _sharedLists.Count;
+        string data = UniqueName(wanted: $"RV_SHARED_{id}_DATA");
+        string listName = UniqueName(wanted: $"RV_SHARED_{id}_LIST");
+        string manager = UniqueName(wanted: $"RV_SHARED_{id}_MANAGER");
+        _globals.Append(value: $"preset {data}: Items[{elementText}, {list.Elements.Count}] = [{elements}]\n\n");
+        _globals.Append(value: $"lateinit global {listName}: &{EntityRecord(entity: layout.List)}\n\n");
+        _globals.Append(value: $"lateinit global {manager}: &{EntityRecord(entity: layout.Manager)}\n\n");
+        known = (data, listName, manager);
+        _sharedLists[key: key] = known;
+        return known;
+    }
+
     /// <summary>A hash of <paramref name="text"/> that is the same in every process (FNV-1a over its UTF-16 units).</summary>
     private static uint StableHash(string text)
     {
@@ -804,7 +848,16 @@ internal sealed class LapilaWriter
         [.. Lapila.ReservedNames.Values, "Me", "self", "Self", "private", "internal"];
 
     /// <summary>A value named as the builder's program names it: a Lapila keyword goes between backticks.</summary>
-    public static string ValueName(string name) => LapilaKeywords.Contains(item: name) ? $"`{name}`" : name;
+    public static string ValueName(string name) => LapilaKeywords.Contains(item: name) ? $"`{name}`" : PlainName(name: name);
+
+    /// <summary>A name as Lapila reads it: an ASCII identifier as it is, any other name (a backtick name with a space,
+    /// one with letters past ASCII) between backticks in ASCII.</summary>
+    public static string PlainName(string name)
+    {
+        bool plain = name.Length > 0 && (char.IsAsciiLetter(c: name[0]) || name[0] == '_') &&
+                     name.All(predicate: c => char.IsAsciiLetterOrDigit(c: c) || c == '_');
+        return plain ? name : $"`{AsciiName(text: name)}`";
+    }
 
     /// <summary>Whether an operand's text is a value's name (a binding, a parameter, a preset), as opposed to a
     /// literal or an expression.</summary>
@@ -835,10 +888,39 @@ internal sealed class LapilaWriter
             throw new NotSupportedException(message: $"The Lapila backend can't name '{text}' between backticks.");
         }
 
-        string name = $"`{text}`";
+        string name = $"`{AsciiName(text: text)}`";
         return _usedNames.Add(item: name)
             ? name
             : throw new InvalidOperationException(message: $"The Lapila backend named '{text}' twice.");
+    }
+
+    /// <summary>A name in ASCII, as a Lapila source must be outside text: a character past ASCII becomes
+    /// <c>\u{hex}</c> and a backslash <c>\\</c>, so two different names stay different.</summary>
+    private static string AsciiName(string text)
+    {
+        if (text.All(predicate: c => c < 0x80 && c != '\\'))
+        {
+            return text;
+        }
+
+        var sb = new StringBuilder(capacity: text.Length + 8);
+        foreach (Rune rune in text.EnumerateRunes())
+        {
+            if (rune.Value == '\\')
+            {
+                sb.Append(value: "\\\\");
+            }
+            else if (rune.Value < 0x80)
+            {
+                sb.Append(value: (char)rune.Value);
+            }
+            else
+            {
+                sb.Append(value: $"\\u{{{rune.Value:X}}}");
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>A routine symbol without the attribute prefix the LLVM path writes first (<c>[member] </c>).</summary>
@@ -892,6 +974,10 @@ internal sealed class LapilaWriter
             // A link is 128 bits: the entity's address and its slot's generation (Link.rvr).
             case RecordTypeSymbol { IsLinkOptional: true }:
                 return "U128";
+            // An `Optional` over an entity is the entity's address alone, zero when absent, and one over a zero-is-none
+            // record is that record alone (the LLVM emitter's layout, which the builder sizes entities by).
+            case RecordTypeSymbol { IsEntityOptional: true, TypeArguments: [var held] }:
+                return held is EntityTypeSymbol ? "Addr" : TypeText(type: held);
             case ConstGenericValueTypeSymbol constant:
                 return TypeText(type: ConstantType(constant: constant));
             case RecordTypeSymbol { BackendType: { } backend } record:
@@ -990,6 +1076,29 @@ internal sealed class LapilaWriter
             record.TypeArguments is [var element, ConstGenericValueTypeSymbol { Value: var count }])
         {
             return $"Items[{TypeText(type: element)}, {count}]";
+        }
+
+        // Vector[T, LANES]: LANES lanes of T as one SIMD value, Lapila's Vector of the same shape.
+        if (backend.StartsWith(value: '<') &&
+            record.TypeArguments is [var lane, ConstGenericValueTypeSymbol { Value: var lanes }])
+        {
+            return $"Vector[{TypeText(type: lane)}, {lanes}]";
+        }
+
+        // Any other fixed array the type is backed by (`Bits[8]` is `[1 x i8]`): its LLVM element as a Lapila type.
+        if (System.Text.RegularExpressions.Regex.Match(input: backend, pattern: @"^\[(\d+) x (i\d+|ptr|half|bfloat|float|double)\]$")
+            is { Success: true } array)
+        {
+            string elementText = array.Groups[groupnum: 2].Value switch
+            {
+                "ptr" => "Addr",
+                "half" => "B16",
+                "bfloat" => "BF16",
+                "float" => "B32",
+                "double" => "B64",
+                var integer => $"U{integer[1..]}"
+            };
+            return $"Items[{elementText}, {array.Groups[groupnum: 1].Value}]";
         }
 
         // Any other integer-backed type (a choice, flags, Char, a C integer alias) is the integer

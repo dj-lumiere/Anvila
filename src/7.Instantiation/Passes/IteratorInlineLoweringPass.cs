@@ -778,9 +778,6 @@ internal sealed class IteratorInlineLoweringPass
                 return m with { Object = CloneExpression(expr: m.Object, ctx: ctx) };
 
             // An operand handed to a token parameter (`room > me.step` reads `step` through `Viewing[U64]`).
-            case AddressOfExpression address:
-                return address with { Target = CloneExpression(expr: address.Target, ctx: ctx) };
-
             case WrapperProjectionExpression projection:
                 return projection with { Wrapper = CloneExpression(expr: projection.Wrapper, ctx: ctx) };
 
@@ -895,6 +892,12 @@ internal sealed class IteratorInlineLoweringPass
 
             case BlockExpression be:
                 return be with { Value = CloneExpression(expr: be.Value, ctx: ctx) };
+
+            case BackendCastExpression cast:
+                return cast with { Value = CloneExpression(expr: cast.Value, ctx: ctx) };
+
+            case AddressOfExpression address:
+                return address with { Target = CloneExpression(expr: address.Target, ctx: ctx) };
 
             case LiteralExpression:
             case TypeExpression:

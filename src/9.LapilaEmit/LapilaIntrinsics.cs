@@ -166,6 +166,13 @@ internal sealed class LapilaIntrinsics
                 ? $"bitcast[Addr, @{framePointee}](ig_failure_get_frames({Argument(index: 0)}))"
                 : $"ig_failure_get_frames({Argument(index: 0)})",
             "element_pointer" => ElementPointer(),
+            // A SIMD vector's lane, read or replaced: Lapila's Vector[T, LANES] (the builder checks the lane first).
+            "extract_element" => $"{Argument(index: 0)}.getitem({Index(index: 1)})",
+            "insert_element" => $"{Argument(index: 0)}.with({Index(index: 2)}, {Argument(index: 1)})",
+            "shuffle_unpacklo_4" => Shuffle(lanes: [0, 4, 1, 5]),
+            "shuffle_unpackhi_4" => Shuffle(lanes: [2, 6, 3, 7]),
+            "shuffle_movelh_4" => Shuffle(lanes: [0, 1, 4, 5]),
+            "shuffle_movehl_4" => Shuffle(lanes: [2, 3, 6, 7]),
             // A signed byte count, taken as the ByteSize with the same bits: moving by it wraps to the same address.
             // The address itself may be zero (a hollow storage moved by nothing), so it is not made a view first.
             "byte_offset" => $"{Argument(index: 0)}.add_wrap(offset: bitcast[{Type(index: 1)}, ByteSize]({Argument(index: 1)}))",
@@ -279,7 +286,14 @@ internal sealed class LapilaIntrinsics
                 ? typeArgument
                 : throw new NotSupportedException(
                     message: "The Lapila backend found an LLVM::element_pointer without an element type.");
-        return $"{Argument(index: 0)}.to[@{_typeText(arg: element)}]().stride({Index(index: 1)})";
+        string elementPointer = $"@{_typeText(arg: element)}";
+        string stepped = $"{Argument(index: 0)}.to[{elementPointer}]().stride({Index(index: 1)})";
+        // An entity element is its address, so the step is over addresses, and the result is still the pointer type
+        // the routine returns (an entity's points at its block).
+        string result = _resultType != null ? _typeText(arg: _resultType) : elementPointer;
+        return result != elementPointer && result.StartsWith(value: '@')
+            ? $"bitcast[{elementPointer}, {result}]({stepped})"
+            : stepped;
     }
 
     /// <summary>
@@ -339,6 +353,20 @@ internal sealed class LapilaIntrinsics
                    $".compare_exchange_unbroken_raw(expected: {Argument(index: 1)}, new: {Argument(index: 2)}, previous: {previous})");
         _emit(obj: $"{previous}_held: {type} = {previous}.load()");
         return $"{_typeText(arg: _resultType)}(item0: {previous}_held, item1: {previous}_swapped)";
+    }
+
+    /// <summary>A shuffle of two four-lane vectors: lane <c>i</c> of the result is lane <c>lanes[i]</c> of the two
+    /// side by side (0-3 the first, 4-7 the second), written lane by lane.</summary>
+    private string Shuffle(int[] lanes)
+    {
+        string result = Argument(index: 0);
+        for (int i = 0; i < lanes.Length; i++)
+        {
+            string source = lanes[i] < 4 ? Argument(index: 0) : Argument(index: 1);
+            result = $"{result}.with({i}, {source}.getitem({lanes[i] % 4}))";
+        }
+
+        return result;
     }
 
     /// <summary>A sequentially consistent unbroken change of the value at the address, of the value's type.</summary>

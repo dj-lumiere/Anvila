@@ -59,16 +59,56 @@ internal sealed class RepresentationCastPass : AstRewriter
     protected override Expression VisitCall(CallExpression e)
     {
         Expression visited = base.VisitCall(e: e);
-        return visited is CallExpression
+        if (visited is CallExpression
+            {
+                ResolvedRoutine: { Name: Declaration.RuntimeContract.ReinterpretBits, LlvmIrTemplate: not null },
+                Arguments: [var argument]
+            } call)
         {
-            ResolvedRoutine: { Name: Declaration.RuntimeContract.ReinterpretBits, LlvmIrTemplate: not null },
-            Arguments: [var argument]
-        } call
-            ? new BackendCastExpression(Value: argument is NamedArgumentExpression named
+            return new BackendCastExpression(Value: argument is NamedArgumentExpression named
                     ? named.Value
                     : argument,
-                Location: call.Location) { ResolvedType = call.ResolvedType, ReinterpretsBits = true }
-            : visited;
+                Location: call.Location) { ResolvedType = call.ResolvedType, ReinterpretsBits = true };
+        }
+
+        if (visited is CallExpression { ResolvedRoutine: { LlvmIrTemplate: null } routine } tokenCall)
+        {
+            TokenArguments(call: tokenCall, routine: routine);
+        }
+
+        return visited;
+    }
+
+    /// <summary>
+    /// An address handed to a token parameter (an entity, which is its own pointer, where the call was bound to a
+    /// <c>Viewing[T]</c>/<c>Modifying[T]</c> only once the types were concrete): the token is 128 bits, the address
+    /// and a generation, so the address becomes the token's low half, generation 0.
+    /// </summary>
+    private static void TokenArguments(CallExpression call, RoutineInfo routine)
+    {
+        List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            Expression argument = call.Arguments[index: i];
+            Expression value = argument is NamedArgumentExpression named ? named.Value : argument;
+            ParamInfo? parameter = (argument is NamedArgumentExpression byName
+                                       ? parameters.FirstOrDefault(predicate: p => p.Name == byName.Name)
+                                       : null) ??
+                                   (i < parameters.Count ? parameters[index: i] : null);
+            if (parameter?.Type is not RecordTypeSymbol { BackendType: { } tokenBackend } token ||
+                (token.GenericDefinition ?? token).BareName is not (Declaration.RuntimeContract.Viewing or
+                    Declaration.RuntimeContract.Modifying) ||
+                IsGeneric(type: token) || value.ResolvedType is not { } valueType || IsGeneric(type: valueType) ||
+                ShapeOf(type: valueType).Kind != 'p' || ShapeOf(type: token).Spelling == "ptr" || tokenBackend == "ptr")
+            {
+                continue;
+            }
+
+            var cast = new BackendCastExpression(Value: value, Location: value.Location) { ResolvedType = token };
+            call.Arguments[index: i] = argument is NamedArgumentExpression wrapper
+                ? wrapper with { Value = cast, ResolvedType = token }
+                : cast;
+        }
     }
 
     /// <inheritdoc/>

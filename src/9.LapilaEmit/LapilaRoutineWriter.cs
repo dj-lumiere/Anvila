@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Builder.Declaration;
 using Builder.LlvmEmit;
 using Builder.Lowering.Passes;
 using Builder.Tokenizer;
@@ -31,7 +32,18 @@ internal sealed class LapilaRoutineWriter
 
     private int _slotCount;
 
+    /// <summary>The slots of the head declared without a value, with their types.</summary>
+    private readonly List<(string Place, TypeSymbol Type)> _laterSlots = [];
+
+    /// <summary>The number of <c>if</c> lines past which a routine zeroes its slots at entry (see <see cref="Write"/>).</summary>
+    private const int ManyBranches = 8;
+
     private readonly List<Dictionary<string, Local>> _scopes = [];
+
+    /// <summary>Every local declared so far in the routine, by name, the latest one kept. A lowered body can read a local
+    /// after the block that declared it has closed (a teardown's return value spilled inside the branch every path to
+    /// the return goes through): the slot belongs to the whole routine, as the LLVM emitter's do, so the read finds it.</summary>
+    private readonly Dictionary<string, Local> _declaredAnywhere = new(comparer: StringComparer.Ordinal);
 
     /// <summary>The loops being written, innermost last: whether each has a <c>break</c> so far.</summary>
     private readonly Stack<LoopFrame> _loops = new();
@@ -85,11 +97,6 @@ internal sealed class LapilaRoutineWriter
     /// <summary>Writes the routine.</summary>
     public string Write()
     {
-        if (_routine.FailableVariant != FailableVariant.None)
-        {
-            throw Unsupported(what: $"the {_routine.FailableVariant} recovery variant of {_routine.Name}");
-        }
-
         var parameters = new List<string>();
         var scope = new Dictionary<string, Local>(comparer: StringComparer.Ordinal);
         _scopes.Add(item: scope);
@@ -108,8 +115,8 @@ internal sealed class LapilaRoutineWriter
         {
             parameters.Add(item: ParameterText(param: param));
             scope[key: param.Name] = param.IsByReference
-                ? new Local(Place: $"arg_{param.Name}", Type: param.Type, IsSlot: false)
-                : ClaimLocal(name: param.Name, type: param.Type, initial: $"arg_{param.Name}", inHead: true);
+                ? new Local(Place: ArgumentName(name: param.Name), Type: param.Type, IsSlot: false)
+                : ClaimLocal(name: param.Name, type: param.Type, initial: ArgumentName(name: param.Name), inHead: true);
         }
 
         _traced = _module.TracesRoutine(routine: _routine);
@@ -137,6 +144,31 @@ internal sealed class LapilaRoutineWriter
         if (_head.Count > 0)
         {
             text.Append(value: '\n');
+        }
+
+        // In a routine of many branches every slot the body fills later gets a zero value first, at entry: Lapila's
+        // memory check follows each path with the slots it has filled, and slots filled on some paths only multiply
+        // the paths past what it follows. The slots are the LLVM emitter's allocas, which the program writes before it
+        // reads, so the zeros change nothing it sees.
+        if (_current.Lines.Count(predicate: l => l.TrimStart().StartsWith(value: "if ", comparisonType: StringComparison.Ordinal)) >
+            ManyBranches)
+        {
+            Body body = _current;
+            _current = new Body();
+            int indent = _indent;
+            _indent = 0;
+            foreach ((string place, TypeSymbol type) in _laterSlots)
+            {
+                Emit(line: $"{place}.store({ZeroValue(type: type)})");
+            }
+
+            foreach (string line in _current.Lines)
+            {
+                text.Append(value: $"    {line}\n");
+            }
+
+            _current = body;
+            _indent = indent;
         }
 
         foreach (string line in _current.Lines)
@@ -180,9 +212,12 @@ internal sealed class LapilaRoutineWriter
     private string ParameterText(ParamInfo param)
     {
         return param.IsByReference
-            ? $"arg_{param.Name}: @{TypeText(type: param.Type)}"
-            : $"arg_{param.Name}: {TypeText(type: param.Type)}";
+            ? $"{ArgumentName(name: param.Name)}: @{TypeText(type: param.Type)}"
+            : $"{ArgumentName(name: param.Name)}: {TypeText(type: param.Type)}";
     }
+
+    /// <summary>The Lapila name of the parameter <paramref name="name"/>: <c>arg_name</c>.</summary>
+    private static string ArgumentName(string name) => LapilaWriter.PlainName(name: $"arg_{name}");
 
     private bool IsVoidReturn => LapilaWriter.IsVoid(type: _routine.ReturnType);
 
@@ -205,7 +240,7 @@ internal sealed class LapilaRoutineWriter
     /// </summary>
     private Local ClaimLocal(string name, TypeSymbol type, string? initial, bool inHead = false)
     {
-        var local = new Local(Place: $"{name}_{_slotCount++}", Type: type);
+        var local = new Local(Place: LapilaWriter.PlainName(name: $"{name}_{_slotCount++}"), Type: type);
         string slotType = $"&{TypeText(type: type)}";
         // Before entry has done anything, the value can only name a parameter or be a literal: it goes in the head.
         if (initial is not null && (inHead || _current.Lines.Count == 0))
@@ -215,6 +250,7 @@ internal sealed class LapilaRoutineWriter
         }
 
         _head.Add(item: $"lateinit {local.Place}: {slotType}");
+        _laterSlots.Add(item: (local.Place, type));
         if (initial is not null)
         {
             Emit(line: $"{local.Place}.store({initial})");
@@ -419,7 +455,9 @@ internal sealed class LapilaRoutineWriter
         string? value = declaration.Initializer is { } initializer
             ? Value(operand: Evaluate(expression: initializer))
             : null;
-        _scopes[^1][key: declaration.Name] = ClaimLocal(name: declaration.Name, type: type, initial: value);
+        Local declared = ClaimLocal(name: declaration.Name, type: type, initial: value);
+        _scopes[^1][key: declaration.Name] = declared;
+        _declaredAnywhere[key: declaration.Name] = declared;
     }
 
     /// <summary>Evaluates an expression for its effect: a call is written as a statement.</summary>
@@ -437,12 +475,33 @@ internal sealed class LapilaRoutineWriter
     /// <summary>Stores a value into a local or a field. The value is computed first, then the place.</summary>
     private string WriteAssignment(Expression target, Expression value)
     {
-        string computed = Value(operand: Evaluate(expression: value));
+        // The `present` of an address-like Optional is no stored field: writing false empties the Optional, true keeps
+        // what it holds.
+        if (target is MemberExpression { MemberName: Declaration.RuntimeContract.Carrier.PresentField } presentField &&
+            presentField.Object.ResolvedType is RecordTypeSymbol { IsEntityOptional: true, IsLinkOptional: false } optional)
+        {
+            string flag = Value(operand: Evaluate(expression: value));
+            Operand holder = Evaluate(expression: presentField.Object);
+            if (!holder.IsPlace)
+            {
+                throw Unsupported(what: "a write of an Optional's present that is not in a place");
+            }
+
+            Emit(line: $"if not {Receiver(operand: new Operand(Text: flag, Type: _module.BoolType, IsPlace: false))}");
+            _indent++;
+            Emit(line: $"{holder.Text}.{(holder.IsSlot ? "store" : "poke")}({ZeroValue(type: optional)})");
+            _indent--;
+            return flag;
+        }
+
+        Operand computedOperand = Evaluate(expression: value);
         Operand place = Evaluate(expression: target);
         if (!place.IsPlace)
         {
             throw Unsupported(what: $"an assignment to {target.GetType().Name}");
         }
+
+        string computed = Typed(value: Value(operand: computedOperand), from: computedOperand.Type, to: place.Type);
 
         Emit(line: $"{place.Text}.{(place.IsSlot ? "store" : "poke")}({computed})");
         return computed;
@@ -462,7 +521,8 @@ internal sealed class LapilaRoutineWriter
             return;
         }
 
-        string value = Value(operand: Evaluate(expression: statement.Value));
+        Operand returned = Evaluate(expression: statement.Value);
+        string value = Typed(value: Value(operand: returned), from: returned.Type, to: _routine.ReturnType);
         Terminate(line: IsVoidReturn
             ? "return"
             : $"return {value}");
@@ -636,8 +696,13 @@ internal sealed class LapilaRoutineWriter
     /// </summary>
     private string Typed(string value, TypeSymbol? from, TypeSymbol? to)
     {
-        return TypeText(type: from) == "Addr" && TypeText(type: to) is ['@', .. var pointee]
-            ? $"bitcast[Addr, @{pointee}]({value})"
+        string fromText = TypeText(type: from);
+        string toText = TypeText(type: to);
+        // An untyped address, or a pointer to another type (a token's `hijack()` points at what the token is on), is
+        // the parameter's pointer as it is.
+        return (fromText == "Addr" || fromText.StartsWith(value: '@')) && toText.StartsWith(value: '@') &&
+               fromText != toText
+            ? $"bitcast[{fromText}, {toText}]({value})"
             : value;
     }
 
@@ -705,32 +770,36 @@ internal sealed class LapilaRoutineWriter
                     IsPlace: false);
             case ConstantDataExpression data:
                 return new Operand(Text: _module.ConstantData(data: data), Type: data.ResolvedType, IsPlace: false);
-            case SharedConstantListExpression:
-                // The LLVM emitter lays the list down as writable module data whose pointer fields hold the
-                // addresses of the list and of its elements. A Lapila global starts a pointer only as the address
-                // of a global or preset of that pointee type, and the elements are an Items preset, not a U64.
-                throw new NotSupportedException(
-                    message: "The Lapila backend does not lay down an Int literal outside the S64 range yet: its " +
-                             "limbs need a static list whose data field holds the address of the limbs' Items preset.");
+            case SharedConstantListExpression shared:
+                return EvaluateSharedList(list: shared);
             case LiteralExpression { Value: string text, LiteralType: TokenType.B16Literal or TokenType.B32Literal or
                 TokenType.B64Literal } literal:
                 return new Operand(Text: Temp(type: literal.ResolvedType, expression: FloatLiteral(text: text,
                         type: literal.LiteralType)),
                     Type: literal.ResolvedType, IsPlace: false);
+            // `none` where no lowering gave it a typed creator: the all-zero value of its type, as the LLVM
+            // emitter writes it (a carrier's absent arm is the zero tag).
+            case LiteralExpression { LiteralType: TokenType.NoneValue } none:
+                return LapilaWriter.IsVoid(type: none.ResolvedType)
+                    ? new Operand(Text: "none", Type: none.ResolvedType, IsPlace: false)
+                    : new Operand(Text: ZeroValue(type: none.ResolvedType), Type: none.ResolvedType, IsPlace: false);
             case LiteralExpression literal:
                 return new Operand(Text: LiteralText(literal: literal), Type: literal.ResolvedType, IsPlace: false);
             case IdentifierExpression { ResolvedType: ConstGenericValueTypeSymbol constant }:
                 // A const generic parameter: the monomorphizer stamped its value on the reference.
                 return new Operand(Text: constant.Value.ToString(provider: CultureInfo.InvariantCulture),
                     Type: _module.ConstantType(constant: constant), IsPlace: false);
-            case IdentifierExpression { ResolvedRoutine: { } named }:
+            case IdentifierExpression { ResolvedRoutine: { } named } reference:
                 // A routine taken as a value: its code address, nothing bound.
-                return RoutineValue(routine: named, bound: "Addr.zero()");
+                return RoutineValue(routine: named, bound: "Addr.zero()", recover: reference.RecoverRoutine,
+                    type: reference.ResolvedType);
             case ClosureValueExpression closure:
                 return RoutineValue(
                     routine: closure.Function.ResolvedRoutine ??
                              throw Unsupported(what: "a closure value without its lifted routine"),
-                    bound: Value(operand: Evaluate(expression: closure.Bound)));
+                    bound: Value(operand: Evaluate(expression: closure.Bound)),
+                    recover: closure.Function.RecoverRoutine,
+                    type: closure.ResolvedType);
             case IdentifierExpression { NullStampAfterMove: true } moved:
             {
                 // A value handed over (`steal a`, an entity passed on): it is read, and the slot is emptied, so the
@@ -759,8 +828,18 @@ internal sealed class LapilaRoutineWriter
                 return EvaluateCreator(creator: creator);
             case CarrierPayloadExpression payload:
                 return EvaluatePayload(payload: payload);
-            case VariantWidenExpression:
-                throw Unsupported(what: "a variant held as a larger variant");
+            case VariantWidenExpression widen:
+            {
+                // The smaller variant written over the start of a zeroed larger one, which is then read whole, as the
+                // LLVM emitter does it.
+                Operand smaller = Evaluate(expression: widen.Value);
+                string slot = $"widen{_temps++}";
+                Emit(line: $"lateinit {slot}: &{TypeText(type: widen.ResolvedType)}");
+                Emit(line: $"{slot}.zeroinit(1)");
+                Emit(line: $"bitcast[@{TypeText(type: widen.ResolvedType)}, @{TypeText(type: smaller.Type)}]({slot})" +
+                           $".poke({Value(operand: smaller)})");
+                return new Operand(Text: slot, Type: widen.ResolvedType, IsPlace: true, IsSlot: true);
+            }
             case TaggedCreatorExpression tagged:
                 return EvaluateTaggedCreator(tagged: tagged);
             case CrashableDispatchExpression dispatch:
@@ -790,7 +869,17 @@ internal sealed class LapilaRoutineWriter
                 // A value without storage of its own (a call's result, a field of one) is spilled into a slot of
                 // the routine, as the LLVM emitter spills it, and that slot is the address.
                 Operand storage = Evaluate(expression: address.Target);
-                return new Operand(Text: Place(operand: storage), Type: address.ResolvedType, IsPlace: false);
+                string place = Place(operand: storage);
+                // An address handed to a token parameter (`eq(you: Viewing[Point])`) is the token's low half: a token
+                // is 128 bits, the address and a generation, and a record's token has generation 0.
+                if (TypeText(type: address.ResolvedType) == "U128")
+                {
+                    return new Operand(Text: Temp(type: address.ResolvedType,
+                            expression: $"zext[U64, U128](ptrtoint[@{TypeText(type: storage.Type)}, U64]({place}))"),
+                        Type: address.ResolvedType, IsPlace: false);
+                }
+
+                return new Operand(Text: place, Type: address.ResolvedType, IsPlace: false);
             }
             case BinaryExpression { Operator: BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual } identity:
                 return EvaluateIdentity(identity: identity);
@@ -823,13 +912,139 @@ internal sealed class LapilaRoutineWriter
         }
     }
 
-    /// <summary>A routine value: the routine's code address and the bound payload (an address, or null).</summary>
-    private Operand RoutineValue(RoutineInfo routine, string bound)
+    /// <summary>
+    /// A constant <c>Guarded[List[T], ReadOnly]</c> laid down as module data (<c>LapilaWriter.SharedList</c>): the
+    /// addresses and the element count are written into the list and the manager (the same values on every
+    /// evaluation), then the evaluation adds its share. The share count starts at 0 in the zeroed global, so the
+    /// evaluation that finds it 0 adds the module data's own share too, and the count never falls to 0. The value is
+    /// the manager's address.
+    /// </summary>
+    private Operand EvaluateSharedList(SharedConstantListExpression list)
+    {
+        SharedListLayout layout = list.Layout;
+        (string data, string listGlobal, string manager) = _module.SharedList(list: list);
+        TypeSymbol elementType = layout.List.TypeArguments![index: 0];
+        string listAddress = $"bitcast[@{_module.EntityRecord(entity: layout.List)}, Addr]({listGlobal})";
+        string elementsAddress = $"{data}.getview().to[@{TypeText(type: elementType)}]()";
+
+        void Fill(EntityTypeSymbol entity, IReadOnlyList<SharedListSlot> slots, string global)
+        {
+            for (int i = 0; i < slots.Count; i++)
+            {
+                MemberVariableInfo field = entity.MemberVariables[index: i];
+                string fieldText = TypeText(type: field.Type);
+                string? value = slots[index: i] switch
+                {
+                    SharedListSlot.ListAddress => fieldText == "Addr" ? listAddress : $"bitcast[Addr, {fieldText}]({listAddress})",
+                    SharedListSlot.ElementsAddress => fieldText == $"@{TypeText(type: elementType)}"
+                        ? elementsAddress
+                        : $"bitcast[@{TypeText(type: elementType)}, {fieldText}]({elementsAddress})",
+                    SharedListSlot.ElementCount => list.Elements.Count.ToString(provider: CultureInfo.InvariantCulture),
+                    _ => null
+                };
+                if (value != null)
+                {
+                    Emit(line: $"{global}.{LapilaWriter.ValueName(name: field.Name)}.poke({value})");
+                }
+            }
+        }
+
+        Fill(entity: layout.List, slots: layout.ListSlots, global: listGlobal);
+        Fill(entity: layout.Manager, slots: layout.ManagerSlots, global: manager);
+        MemberVariableInfo countField = layout.Manager.MemberVariables[index: layout.ShareCountIndex];
+        string count = $"{manager}.{LapilaWriter.ValueName(name: countField.Name)}";
+        string previous = Temp(type: countField.Type, expression: $"{count}.fetch_add_unbroken(1)");
+        string first = Temp(type: _module.BoolType, expression: $"{previous}.eq(0)");
+        Emit(line: $"if {first}");
+        _indent++;
+        _ = Temp(type: countField.Type, expression: $"{count}.fetch_add_unbroken(1)");
+        _indent--;
+        string handle = $"bitcast[@{_module.EntityRecord(entity: layout.Manager)}, Addr]({manager})";
+        return new Operand(Text: Temp(type: list.ResolvedType, expression: TypeText(type: list.ResolvedType) == "Addr"
+                ? handle
+                : $"bitcast[Addr, {TypeText(type: list.ResolvedType)}]({handle})"),
+            Type: list.ResolvedType, IsPlace: false);
+    }
+
+    /// <summary>A routine value: the routine's code address, the bound payload (an address, or null), and the address
+    /// of the routine's recovering entry (its check recovery variant), or null when it has none.</summary>
+    private Operand RoutineValue(RoutineInfo routine, string bound, RoutineInfo? recover, TypeSymbol? type)
     {
         string record = _module.RoutineValueRecord;
         string name = $"t{_temps++}";
-        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: Addr.zero())");
-        return new Operand(Text: name, Type: null, IsPlace: false);
+        string recoverAddress = recover != null && _module.HasRoutine(routine: recover)
+            ? $"{_module.RoutineName(routine: recover)}.addr()"
+            : "Addr.zero()";
+        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: {recoverAddress})");
+        return new Operand(Text: name, Type: type as RoutineTypeSymbol, IsPlace: false);
+    }
+
+    /// <summary>
+    /// A call through a routine value beneath <c>try</c> or <c>check</c>, which gives the call's carrier
+    /// (<c>Check[T]</c>). A value that holds a recovering entry is called through it with the same arguments and bound
+    /// payload, and the entry builds the carrier. Otherwise the routine itself runs, and its result is the carrier's
+    /// value arm, tagged with the type id of its type (0 for a routine that returns nothing).
+    /// </summary>
+    private Operand WriteRecoveringValueCall(CallExpression call)
+    {
+        if (call.ResolvedType is not VariantTypeSymbol carrier)
+        {
+            throw Unsupported(what: "a recovering call through a routine value without its carrier");
+        }
+
+        (Operand callee, RoutineTypeSymbol type) = IndirectCallee(call: call) ??
+                                                   (Evaluate(expression: call.Callee) is { Type: RoutineTypeSymbol t } o
+                                                       ? (o, t)
+                                                       : throw Unsupported(what: "a recovering call of something that is not a routine value"));
+        string value = Receiver(operand: callee);
+        var arguments = new List<string>();
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            Operand argument = Evaluate(expression: call.Arguments[index: i]);
+            arguments.Add(item: Receiver(operand: new Operand(Text: Typed(value: Value(operand: argument),
+                    from: argument.Type, to: type.ParameterTypes[index: i]), Type: type.ParameterTypes[index: i],
+                IsPlace: false)));
+        }
+
+        string ArgumentList(string first) =>
+            string.Join(separator: ", ", values: new[] { first }.Concat(second: arguments));
+
+        string slot = $"carrier{_temps++}";
+        Emit(line: $"lateinit {slot}: &{TypeText(type: carrier)}");
+        Emit(line: $"{slot}.zeroinit(1)");
+        string recover = Temp(type: _module.PointerType, expression: $"{value}.recover");
+        string none = Temp(type: _module.BoolType, expression: $"ptrtoint[Addr, U64]({recover}).eq(0)");
+        Emit(line: $"if {none}");
+        _indent++;
+        TypeSymbol? payloadType = type.ReturnType is { IsNone: false } returned && !LapilaWriter.IsVoid(type: returned)
+            ? returned
+            : null;
+        string plainCall = $"{_module.RoutineValueCall(routineType: type)}({ArgumentList(first: value)})";
+        if (payloadType == null)
+        {
+            Emit(line: plainCall);
+            Emit(line: $"{slot}.tag.poke(0)");
+        }
+        else
+        {
+            string result = Temp(type: payloadType, expression: plainCall);
+            Emit(line: $"{slot}.tag.poke(0x{TypeIdHelper.ComputeTypeId(fullName: payloadType.FullName):X})");
+            Emit(line: $"{slot}.payload.to[@{TypeText(type: payloadType)}]().poke({result})");
+        }
+
+        _indent--;
+        Emit(line: "else");
+        _indent++;
+        RoutineTypeSymbol recovering = _module.Registry.GetOrCreateRoutineType(parameterTypes: type.ParameterTypes,
+            returnType: carrier, isFailable: false);
+        string record = _module.RoutineValueRecord;
+        string entry = $"t{_temps++}";
+        Emit(line: $"{entry}: {record} = {record}(fn: {recover}, bound: {value}.bound, recover: Addr.zero())");
+        string recovered = Temp(type: carrier,
+            expression: $"{_module.RoutineValueCall(routineType: recovering)}({ArgumentList(first: entry)})");
+        Emit(line: $"{slot}.store({recovered})");
+        _indent--;
+        return new Operand(Text: slot, Type: carrier, IsPlace: true, IsSlot: true);
     }
 
     /// <summary>
@@ -915,6 +1130,11 @@ internal sealed class LapilaRoutineWriter
             return new Local(Place: cell, Type: cellType);
         }
 
+        if (_declaredAnywhere.TryGetValue(key: name, value: out Local? closed))
+        {
+            return closed;
+        }
+
         throw Unsupported(what: $"the name '{name}', which is not a local of {_routine.Name}");
     }
 
@@ -946,15 +1166,12 @@ internal sealed class LapilaRoutineWriter
                 EntityTypeSymbol controller = projection.Controller ??
                                               throw Unsupported(what: "a controller projection without its controller");
                 string block = Receiver(operand: wrapper);
-                // A controller that keeps the entity's address (RoamManager) holds the entity value itself: an entity
-                // is an address in Lapila. One that keeps a Hijacked[T] is read through it.
-                bool keepsAddress = controller.MemberVariables.Any(predicate: mv =>
-                    mv.Name == Declaration.RuntimeContract.ControllerData && mv.Type.BareName == "Addr");
-                return new Operand(
-                    Text: Temp(type: inner,
-                        expression: $"{block}.to[@{_module.EntityRecord(entity: controller)}]()." +
-                                    Declaration.RuntimeContract.ControllerData + (keepsAddress ? "" : ".peek()")),
-                    Type: inner, IsPlace: false);
+                // The controller's data field holds the entity's address (an entity is an address in Lapila): the
+                // field is a place, read with peek.
+                string data = Temp(type: inner,
+                    expression: $"{block}.to[@{_module.EntityRecord(entity: controller)}]()." +
+                                Declaration.RuntimeContract.ControllerData + ".peek()");
+                return new Operand(Text: data, Type: inner, IsPlace: false);
             }
             default:
             {
@@ -977,8 +1194,20 @@ internal sealed class LapilaRoutineWriter
         string Address(Expression side)
         {
             Operand operand = Evaluate(expression: side);
-            return Temp(type: _module.U64Type,
-                expression: $"ptrtoint[{TypeText(type: operand.Type)}, U64]({Value(operand: operand)})");
+            // A handle that holds its manager's address as a field (`Watched[T]`) is the same object exactly when the
+            // addresses match: its first field is compared.
+            if (operand.Type is RecordTypeSymbol { BackendType: null, IsEntityOptional: false, MemberVariables: [var first, ..] } &&
+                operand.Type is not VariantTypeSymbol)
+            {
+                operand = new Operand(Text: Temp(type: first.Type,
+                        expression: $"{Receiver(operand: operand)}.{LapilaWriter.ValueName(name: first.Name)}"),
+                    Type: first.Type, IsPlace: false);
+            }
+
+            string text = TypeText(type: operand.Type);
+            return text == "Addr" || text.StartsWith(value: '@')
+                ? Temp(type: _module.U64Type, expression: $"ptrtoint[{text}, U64]({Value(operand: operand)})")
+                : Receiver(operand: operand);
         }
 
         string left = Address(side: identity.Left);
@@ -1001,6 +1230,21 @@ internal sealed class LapilaRoutineWriter
                                     })
                                 ?.FirstOrDefault(predicate: f => f.Name == member.MemberName)?.Type ??
                                 member.ResolvedType;
+        // An address-like Optional: its `value` is the Optional itself, and it is `present` when it is not zero.
+        if (owner.Type is RecordTypeSymbol { IsEntityOptional: true, IsLinkOptional: false, TypeArguments: [var held] })
+        {
+            if (member.MemberName == Declaration.RuntimeContract.Carrier.ValueField)
+            {
+                return owner with { Type = held };
+            }
+
+            if (member.MemberName == Declaration.RuntimeContract.Carrier.PresentField)
+            {
+                return new Operand(Text: Temp(type: _module.BoolType, expression: NotZero(value: Value(operand: owner), held: held)),
+                    Type: _module.BoolType, IsPlace: false);
+            }
+        }
+
         if (owner.Type is EntityTypeSymbol entity)
         {
             string block = Receiver(operand: owner);
@@ -1021,6 +1265,16 @@ internal sealed class LapilaRoutineWriter
         string record = Receiver(operand: owner);
         return new Operand(Text: Temp(type: fieldType, expression: $"{record}.{LapilaWriter.ValueName(name: member.MemberName)}"),
             Type: fieldType, IsPlace: false);
+    }
+
+    /// <summary>Whether an address-like Optional's value (<paramref name="value"/>, laid out as <paramref name="held"/>)
+    /// holds something: an address that is not zero, or a zero-is-none record that is not all zero.</summary>
+    private string NotZero(string value, TypeSymbol held)
+    {
+        string text = TypeText(type: held is EntityTypeSymbol ? _module.PointerType : held);
+        return text == "Addr"
+            ? $"ine[U64](ptrtoint[Addr, U64]({value}), 0)"
+            : $"ine[{text}]({value}, 0)";
     }
 
     /// <summary>
@@ -1205,7 +1459,7 @@ internal sealed class LapilaRoutineWriter
 
         if (call.RecoversThroughValue)
         {
-            throw Unsupported(what: "a call through a routine value beneath try or check");
+            return WriteRecoveringValueCall(call: call);
         }
 
         if (IndirectCallee(call: call) is var (callee, routineType))
@@ -1288,7 +1542,7 @@ internal sealed class LapilaRoutineWriter
         if (arguments.Count >= 2 && routine.CallingConvention != "C")
         {
             List<string> names = (hasReceiver ? ["arg_me"] : new List<string>())
-                                 .Concat(second: routine.Parameters.Select(selector: p => $"arg_{p.Name}"))
+                                 .Concat(second: routine.Parameters.Select(selector: p => ArgumentName(name: p.Name)))
                                  .ToList();
             arguments = arguments.Select(selector: (argument, i) => argument == names[index: i]
                                      ? argument
@@ -1377,6 +1631,11 @@ internal sealed class LapilaRoutineWriter
             return new Operand(Text: Temp(type: type, expression: ZeroValue(type: type)), Type: type, IsPlace: false);
         }
 
+        if (type is RecordTypeSymbol { IsEntityOptional: true, IsLinkOptional: false } optional)
+        {
+            return EvaluateAddressOptional(optional: optional, fields: creator.MemberVariables);
+        }
+
         if (type is not RecordTypeSymbol
             {
                 BackendType: null, CarrierKind: CarrierKind.None or CarrierKind.Optional
@@ -1405,6 +1664,36 @@ internal sealed class LapilaRoutineWriter
 
         string literal = $"{TypeText(type: record)}({string.Join(separator: ", ", values: fields)})";
         return new Operand(Text: Temp(type: record, expression: literal), Type: record, IsPlace: false);
+    }
+
+    /// <summary>
+    /// An address-like Optional built from its <c>present</c> and <c>value</c>: the value when present, zero when
+    /// absent (a present flag known only at run time chooses between the two).
+    /// </summary>
+    private Operand EvaluateAddressOptional(RecordTypeSymbol optional, IReadOnlyList<(string Name, Expression Value)> fields)
+    {
+        Expression? present = fields.FirstOrDefault(predicate: f => f.Name == Declaration.RuntimeContract.Carrier.PresentField).Value;
+        Expression? value = fields.FirstOrDefault(predicate: f => f.Name == Declaration.RuntimeContract.Carrier.ValueField).Value;
+        if (value == null || present is LiteralExpression { Value: false })
+        {
+            return new Operand(Text: Temp(type: optional, expression: ZeroValue(type: optional)), Type: optional, IsPlace: false);
+        }
+
+        Operand held = Evaluate(expression: value);
+        string heldValue = Typed(value: Value(operand: held), from: held.Type, to: optional);
+        if (present is null or LiteralExpression { Value: true })
+        {
+            return new Operand(Text: Temp(type: optional, expression: heldValue), Type: optional, IsPlace: false);
+        }
+
+        string flag = Value(operand: Evaluate(expression: present));
+        string slot = $"optional{_temps++}";
+        Emit(line: $"{slot}: &{TypeText(type: optional)} <- {ZeroValue(type: optional)}");
+        Emit(line: $"if {flag}");
+        _indent++;
+        Emit(line: $"{slot}.store({heldValue})");
+        _indent--;
+        return new Operand(Text: slot, Type: optional, IsPlace: true, IsSlot: true);
     }
 
     /// <summary>
@@ -1504,6 +1793,24 @@ internal sealed class LapilaRoutineWriter
     private Operand EvaluatePayload(CarrierPayloadExpression payload)
     {
         Operand carrier = Evaluate(expression: payload.Carrier);
+        // An address-like Optional is its payload.
+        if (carrier.Type is RecordTypeSymbol { IsEntityOptional: true, IsLinkOptional: false, TypeArguments: [var payloadHeld] })
+        {
+            return carrier with { Type = payload.ResolvedType ?? payloadHeld };
+        }
+
+        // A record carrier (`Optional[T]` laid out as its present flag and its value) holds the payload in its second
+        // field, as the LLVM emitter reads it.
+        if (carrier.Type is RecordTypeSymbol { MemberVariables.Count: 2 } recordCarrier and not VariantTypeSymbol)
+        {
+            MemberVariableInfo valueField = recordCarrier.MemberVariables[index: 1];
+            TypeSymbol fieldValueType = payload.ResolvedType ?? valueField.Type;
+            string field = $"{Place(operand: carrier)}.{LapilaWriter.ValueName(name: valueField.Name)}";
+            return TypeText(type: fieldValueType) == TypeText(type: valueField.Type)
+                ? new Operand(Text: field, Type: fieldValueType, IsPlace: true)
+                : new Operand(Text: $"{field}.to[@{TypeText(type: fieldValueType)}]()", Type: fieldValueType, IsPlace: true);
+        }
+
         if (carrier.Type is not VariantTypeSymbol)
         {
             throw Unsupported(what: $"a payload read from {carrier.Type?.FullName ?? "an untyped value"}");
