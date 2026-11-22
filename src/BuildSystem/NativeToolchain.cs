@@ -880,15 +880,39 @@ internal static class NativeToolchain
             // A folder that can't be written to keeps the IR.
         }
 
+        // Under WASI there are no shared libraries: the runtime goes into the module too. The runtime and the Lapila
+        // library call each other, so each is linked again for what the other brought in, until both have given what
+        // is needed (two rounds reach it, the third is a margin). llvm-link takes them all in one run, each file after
+        // the first linked only for what the module needs by then. What is still missing is the link's error.
+        string? runtime = null;
+        string? runtimeBitcode = null;
+        if (TargetConfig.Build.IsWasi)
+        {
+            try
+            {
+                runtime = IngridLapila.RuntimeIrPath(exeDir: exeDir);
+                runtimeBitcode = IngridLapila.RuntimeBitcodePath(exeDir: exeDir);
+            }
+            catch (InvalidOperationException ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A folder that can't be written to keeps the IR.
+            }
+        }
+
         // Bitcode out when the next tool reads it, text when someone asks to read the file (`dump-ir`).
         string linked = Path.ChangeExtension(path: llFile, extension: bitcodeOutput ? ".ingrid.bc" : ".ingrid.ll");
         string textFlag = bitcodeOutput ? "" : "-S ";
         int rc = -1;
         string err = "";
-        if (bitcode != null)
+        if (bitcode != null && (runtime == null || runtimeBitcode != null))
         {
             rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-                args: $"{textFlag}\"{llFile}\" --only-needed \"{bitcode}\" -o \"{linked}\"",
+                args: $"{textFlag}\"{llFile}\" --only-needed {LinkInputs(library: bitcode, runtime: runtimeBitcode)} -o \"{linked}\"",
                 stderr: out err);
         }
 
@@ -896,7 +920,7 @@ internal static class NativeToolchain
         if (rc != 0)
         {
             rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-                args: $"{textFlag}\"{llFile}\" --only-needed \"{ingrid}\" -o \"{linked}\"",
+                args: $"{textFlag}\"{llFile}\" --only-needed {LinkInputs(library: ingrid, runtime: runtime)} -o \"{linked}\"",
                 stderr: out err);
         }
 
@@ -906,52 +930,26 @@ internal static class NativeToolchain
             return false;
         }
 
-        // Under WASI there are no shared libraries: the runtime goes into the module too. The runtime and the Lapila
-        // library call each other, so each is linked again for what the other brought in, until both have given what
-        // is needed (two rounds reach it, the third is a margin). What is still missing is the link's error.
-        if (TargetConfig.Build.IsWasi)
-        {
-            string runtime;
-            try
-            {
-                runtime = IngridLapila.RuntimeIrPath(exeDir: exeDir);
-            }
-            catch (InvalidOperationException ex)
-            {
-                error = ex.Message;
-                return false;
-            }
-
-            string current = linked;
-            for (int round = 0; round < 3; round++)
-            {
-                foreach (string library in new[] { runtime, bitcode ?? ingrid })
-                {
-                    string next = Path.ChangeExtension(path: llFile, extension: $".ingrid{round}{(library == runtime ? "r" : "l")}.bc");
-                    rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-                        args: $"\"{current}\" --only-needed \"{library}\" -o \"{next}\"",
-                        stderr: out err);
-                    if (rc != 0)
-                    {
-                        error = $"llvm-link could not merge Ingrid's runtime into the module: {err.Trim()}";
-                        return false;
-                    }
-
-                    if (current != linked)
-                    {
-                        File.Delete(path: current);
-                    }
-
-                    current = next;
-                }
-            }
-
-            File.Move(sourceFileName: current, destFileName: linked, overwrite: true);
-        }
-
         linkedFile = linked;
         error = "";
         return true;
+    }
+
+    /// <summary>The files llvm-link merges after the module: the Lapila library, then (under WASI) the runtime and the
+    /// library again, three rounds.</summary>
+    private static string LinkInputs(string library, string? runtime)
+    {
+        var files = new List<string> { library };
+        if (runtime != null)
+        {
+            for (int round = 0; round < 3; round++)
+            {
+                files.Add(item: runtime);
+                files.Add(item: library);
+            }
+        }
+
+        return string.Join(separator: " ", values: files.Select(selector: f => $"\"{f}\""));
     }
 
     /// <summary>Writes <paramref name="irFile"/> as LLVM bitcode to <paramref name="bitcodeFile"/> (llvm-link with one

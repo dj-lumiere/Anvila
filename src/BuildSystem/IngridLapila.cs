@@ -88,9 +88,16 @@ internal static class IngridLapila
     /// text IR, and the linked module compiles to the same machine code (only the names llvm-link gives types that
     /// have the same layout can differ). Returns null when the bitcode can't be written: the caller then links the IR.
     /// </summary>
-    internal static string? BitcodePath(string exeDir)
+    internal static string? BitcodePath(string exeDir) => BitcodeOf(ir: IrPath(exeDir: exeDir));
+
+    /// <summary>The runtime's bitcode for a WASI build (<see cref="RuntimeIrPath"/>), made the same way as
+    /// <see cref="BitcodePath"/>. Null when it can't be written.</summary>
+    internal static string? RuntimeBitcodePath(string exeDir) => BitcodeOf(ir: RuntimeIrPath(exeDir: exeDir));
+
+    /// <summary>The bitcode next to <paramref name="ir"/>, written from it when missing or older. Null when it can't be
+    /// written.</summary>
+    private static string? BitcodeOf(string ir)
     {
-        string ir = IrPath(exeDir: exeDir);
         string bc = Path.ChangeExtension(path: ir, extension: BitcodeExtension);
         lock (CacheLock)
         {
