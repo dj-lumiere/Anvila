@@ -2463,7 +2463,8 @@ internal partial class Program
         int optResult = NativeToolchain.OptimizeIr(llFile: withIngrid,
             optFile: optFile,
             buildMode: buildMode,
-            internalizeForLto: buildMode != RvBuildMode.Debug);
+            internalizeForLto: buildMode != RvBuildMode.Debug,
+            keep: NativeToolchain.WasiKeptSymbols(llFile: llFile));
         if (optResult != 0)
         {
             return optResult;

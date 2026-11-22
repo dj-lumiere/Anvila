@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Builder.Targeting;
 
 namespace Builder;
@@ -709,7 +710,7 @@ internal static class NativeToolchain
     /// run the full pipeline at the requested level. Returns 0 on success or 1 if opt fails.
     /// </summary>
     internal static int OptimizeIr(string llFile, string optFile, RvBuildMode buildMode,
-        bool internalizeForLto = false)
+        bool internalizeForLto = false, IReadOnlyList<string>? keep = null)
     {
         string optPipelineLevel = OptLevelString(buildMode: buildMode);
         bool threadSanitizer = Diagnostics.DiagnosticFlags.Sanitize == "thread";
@@ -745,7 +746,7 @@ internal static class NativeToolchain
             optPipeline += ",tsan-module,function(tsan)";
         }
         string internalizeArgs = internalizeForLto
-            ? " -internalize-public-api-list=main"
+            ? $" -internalize-public-api-list={string.Join(separator: ",", values: keep ?? ["main"])}"
             : "";
         // A `.bc` output stays bitcode (the next tool reads it several times faster than text), any other is text.
         string textFlag = optFile.EndsWith(value: ".bc", comparisonType: StringComparison.OrdinalIgnoreCase)
@@ -1528,6 +1529,24 @@ internal static class NativeToolchain
     /// compiler's helper routines, so wasm-ld gets the module alone and a symbol nothing defines stays an error
     /// instead of becoming an import. The stack is 8 MiB, below the globals, as Lapila links its own WASI programs.
     /// </summary>
+    /// <summary>
+    /// The symbols an optimized WASI module keeps public: its entry `_start`, and the compiler's helper routines the
+    /// standard library defines in <paramref name="llFile"/> (`__multi3`, `__udivti3`, ...). LLVM writes calls to a
+    /// helper only when it turns an operation into machine code, after the optimizer, so a helper made internal there
+    /// would be dropped as unused and the link would miss it.
+    /// </summary>
+    internal static IReadOnlyList<string> WasiKeptSymbols(string llFile)
+    {
+        var keep = new List<string> { "_start" };
+        foreach (Match m in Regex.Matches(input: File.ReadAllText(path: llFile),
+                     pattern: @"^define [^@\n]*@(__[A-Za-z0-9_]+)\(", options: RegexOptions.Multiline))
+        {
+            keep.Add(item: m.Groups[1].Value);
+        }
+
+        return keep;
+    }
+
     internal static int LinkWasm(string optFile, string wasmFile, RvBuildMode buildMode)
     {
         string args = $"--target={TargetConfig.Build.Triple} -{OptLevelString(buildMode: buildMode)} -nostdlib " +
