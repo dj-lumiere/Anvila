@@ -112,8 +112,8 @@ internal sealed class CrashLoweringPass : AstRewriter
         // directory as the file asks the report for the most recent frame of the live trace outside it.
         bool fromLibrary = _registry.IsStandardLibraryFile(filePath: location.FileName) && _registry.StdlibPath != null;
         string file = fromLibrary
-            ? Path.GetFullPath(path: _registry.StdlibPath!)
-            : location.FileName;
+            ? TypeRegistry.ProgramLibraryFolder
+            : _registry.ProgramFileName(filePath: location.FileName);
         return new CallExpression(
             Callee: new IdentifierExpression(Name: RuntimeContract.CrashReportRethrown, Location: location)
             {
@@ -215,8 +215,8 @@ internal sealed class CrashLoweringPass : AstRewriter
         // file asks the report for the most recent frame of the live trace outside it.
         bool fromLibrary = registry.IsStandardLibraryFile(filePath: location.FileName) && registry.StdlibPath != null;
         string file = fromLibrary
-            ? Path.GetFullPath(path: registry.StdlibPath!)
-            : location.FileName;
+            ? TypeRegistry.ProgramLibraryFolder
+            : registry.ProgramFileName(filePath: location.FileName);
         return new CallExpression(
             Callee: new IdentifierExpression(Name: RuntimeContract.CrashReport, Location: location)
             {

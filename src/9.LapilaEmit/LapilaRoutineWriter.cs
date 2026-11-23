@@ -123,7 +123,7 @@ internal sealed class LapilaRoutineWriter
         if (_traced)
         {
             Emit(line: $"{LapilaTrace.Push}(routine_name: {LapilaTrace.CString(text: Collection.TraceFrames.Name(routine: _routine))}, " +
-                       $"file: {LapilaTrace.CString(text: _routine.Location?.FileName ?? "")}, " +
+                       $"file: {LapilaTrace.CString(text: _module.Registry.ProgramFileName(filePath: _routine.Location?.FileName ?? ""))}, " +
                        $"line: {_routine.Location?.Line ?? 0}, column: {_routine.Location?.Column ?? 0})");
         }
 

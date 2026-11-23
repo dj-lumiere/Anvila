@@ -1263,7 +1263,7 @@ internal sealed class LapilaWriter
                // So is a crash the runtime raises (a deadlock, a failed allocation), named by where the program called
                // into the standard library.
                "    c_ig_set_crash_report(c_lapila_runtime_crash_report.addr())\n" +
-               $"    c_lapila_set_library_folder({LapilaTrace.CString(text: _input.Registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "")})\n" +
+               $"    c_lapila_set_library_folder({LapilaTrace.CString(text: _input.Registry.StdlibPath is null ? "" : TypeRegistry.ProgramLibraryFolder)})\n" +
                // The AccessManager's checks and the language its reports speak. The places in its reports come from
                // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
                $"    c_ig_access_configure({AccessCheckArguments()}, Addr.zero())\n" +

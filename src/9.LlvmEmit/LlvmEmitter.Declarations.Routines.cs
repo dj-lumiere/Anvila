@@ -715,13 +715,14 @@ public partial class LlvmEmitter
 
         string routineName = Builder.Collection.TraceFrames.Name(routine: routine,
             sharedEntities: _registry.EntitiesAreShared);
-        string fileName = routine.Location?.FileName ?? "";
+        string sourceFile = routine.Location?.FileName ?? "";
+        string fileName = _registry.ProgramFileName(filePath: sourceFile);
         int line = routine.Location?.Line ?? 0;
         int col = routine.Location?.Column ?? 0;
         // Where entities are shared handles, a library frame names the library instead of its file.
         if (_registry.EntitiesAreShared)
         {
-            if (_registry.IsStandardLibraryFile(filePath: fileName))
+            if (_registry.IsStandardLibraryFile(filePath: sourceFile))
             {
                 fileName = "standard library";
                 line = 0;

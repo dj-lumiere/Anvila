@@ -1609,7 +1609,7 @@ public partial class LlvmEmitter
         // Descriptors 0, 1 and 2 closed by the parent get the null device, before the runtime opens anything.
         output.AppendLine(value: "declare void @lapila_keep_standard_descriptors()");
         // The standard library's folder, so a crash the runtime raises names where the program called into the library.
-        string library = _registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "";
+        string library = _registry.StdlibPath is null ? "" : TypeRegistry.ProgramLibraryFolder;
         output.AppendLine(handler:
             $"@.crash.library = private unnamed_addr constant [{Encoding.UTF8.GetByteCount(s: library) + 1} x i8] c\"{LlvmCStringBody(value: library)}\"");
 

@@ -79,6 +79,24 @@ public sealed partial class TypeRegistry
             : null;
     }
 
+    /// <summary>The folder a program names the standard library by, in its crash trace and crash places. The
+    /// program's own files are named by their full path, so no file of the program starts with it.</summary>
+    public const string ProgramLibraryFolder = "Standard/";
+
+    /// <summary>The name a built program keeps for a source file: a standard library file by its place under
+    /// <see cref="ProgramLibraryFolder"/> (<c>Standard/Revare/System/List.rvr</c>), so the program holds no folder of
+    /// the builder that made it, any other file as it is.</summary>
+    public string ProgramFileName(string filePath)
+    {
+        if (!IsStandardLibraryFile(filePath: filePath))
+        {
+            return filePath;
+        }
+
+        string relative = Path.GetRelativePath(relativeTo: Path.GetFullPath(path: _stdlibPath!), path: Path.GetFullPath(path: filePath));
+        return ProgramLibraryFolder + relative.Replace(oldChar: '\\', newChar: '/');
+    }
+
     /// <summary>Whether a source file is inside the standard library directory.</summary>
     public bool IsStandardLibraryFile(string? filePath)
     {
