@@ -704,6 +704,18 @@ internal static class NativeToolchain
         };
     }
 
+    /// <summary>The opt pipeline for the mode (<see cref="OptimizeIr"/> says what each part is for).</summary>
+    private static string OptPipeline(RvBuildMode buildMode, bool internalizeForLto)
+    {
+        string level = OptLevelString(buildMode: buildMode);
+        string basePipeline = buildMode == RvBuildMode.Debug
+            ? $"default<{level}>,mem2reg,sroa"
+            : $"default<{level}>";
+        return internalizeForLto
+            ? $"internalize,{basePipeline}"
+            : basePipeline;
+    }
+
     /// <summary>
     /// Optimizes <paramref name="llFile"/> into <paramref name="optFile"/> by running LLVM `opt`.
     /// Debug builds run mem2reg+sroa at O0 (readability without semantic change); optimized builds
@@ -712,7 +724,6 @@ internal static class NativeToolchain
     internal static int OptimizeIr(string llFile, string optFile, RvBuildMode buildMode,
         bool internalizeForLto = false, IReadOnlyList<string>? keep = null)
     {
-        string optPipelineLevel = OptLevelString(buildMode: buildMode);
         bool threadSanitizer = Diagnostics.DiagnosticFlags.Sanitize == "thread";
         if (threadSanitizer)
         {
@@ -732,12 +743,7 @@ internal static class NativeToolchain
         // ones. Every other symbol in a whole-program executable is internal by construction, so preserving
         // `main` alone is the standard LTO-of-an-exe behavior (callbacks are passed by address, which
         // internalize keeps alive).
-        string basePipeline = buildMode == RvBuildMode.Debug
-            ? $"default<{optPipelineLevel}>,mem2reg,sroa"
-            : $"default<{optPipelineLevel}>";
-        string optPipeline = internalizeForLto
-            ? $"internalize,{basePipeline}"
-            : basePipeline;
+        string optPipeline = OptPipeline(buildMode: buildMode, internalizeForLto: internalizeForLto);
         if (threadSanitizer)
         {
             // The instrumentation runs after the optimizer, so it sees the accesses that are left. The calls and
@@ -939,6 +945,12 @@ internal static class NativeToolchain
     /// library again, three rounds.</summary>
     private static string LinkInputs(string library, string? runtime)
     {
+        return string.Join(separator: " ", values: LinkInputFiles(library: library, runtime: runtime).Select(selector: f => $"\"{f}\""));
+    }
+
+    /// <summary>The files of <see cref="LinkInputs"/>, unquoted.</summary>
+    private static List<string> LinkInputFiles(string library, string? runtime)
+    {
         var files = new List<string> { library };
         if (runtime != null)
         {
@@ -949,7 +961,7 @@ internal static class NativeToolchain
             }
         }
 
-        return string.Join(separator: " ", values: files.Select(selector: f => $"\"{f}\""));
+        return files;
     }
 
     /// <summary>Writes <paramref name="irFile"/> as LLVM bitcode to <paramref name="bitcodeFile"/> (llvm-link with one
@@ -1522,12 +1534,6 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// Links the optimized module (the program with Ingrid's runtime and Lapila library in it) into a WebAssembly
-    /// program for WASI. There is no C library: the standard library reaches WASI's calls itself and brings the
-    /// compiler's helper routines, so wasm-ld gets the module alone and a symbol nothing defines stays an error
-    /// instead of becoming an import. The stack is 8 MiB, below the globals, as Lapila links its own WASI programs.
-    /// </summary>
-    /// <summary>
     /// The symbols an optimized WASI module keeps public: its entry `_start`, and the compiler's helper routines the
     /// standard library defines in <paramref name="llFile"/> (`__multi3`, `__udivti3`, ...). LLVM writes calls to a
     /// helper only when it turns an operation into machine code, after the optimizer, so a helper made internal there
@@ -1545,10 +1551,20 @@ internal static class NativeToolchain
         return keep;
     }
 
+    /// <summary>What wasm-ld gets for a WASI program besides its input and output: an 8 MiB stack, below the
+    /// globals.</summary>
+    private static readonly string[] WasiLinkerArguments = ["-z", "stack-size=8388608", "--stack-first"];
+
+    /// <summary>
+    /// Links the optimized module (the program with Ingrid's runtime and Lapila library in it) into a WebAssembly
+    /// program for WASI. There is no C library: the standard library reaches WASI's calls itself and brings the
+    /// compiler's helper routines, so wasm-ld gets the module alone and a symbol nothing defines stays an error
+    /// instead of becoming an import. The stack is 8 MiB, below the globals, as Lapila links its own WASI programs.
+    /// </summary>
     internal static int LinkWasm(string optFile, string wasmFile, RvBuildMode buildMode)
     {
         string args = $"--target={TargetConfig.Build.Triple} -{OptLevelString(buildMode: buildMode)} -nostdlib " +
-                      $"-Wl,-z,stack-size=8388608 -Wl,--stack-first -g -o \"{wasmFile}\" \"{optFile}\"";
+                      $"-Wl,{string.Join(separator: ",", value: WasiLinkerArguments)} -g -o \"{wasmFile}\" \"{optFile}\"";
         int rc = RunToolCapture(toolPath: ClangTool.Value, args: args, stderr: out string err);
         if (rc != 0)
         {
@@ -1556,6 +1572,44 @@ internal static class NativeToolchain
         }
 
         return rc;
+    }
+
+    /// <summary>
+    /// The link of a WASI program as the builder running in a browser page does it: each step is one command line of
+    /// wasm-llvm, LLVM's llvm-link, opt, llc and wasm-ld built for WebAssembly as one WASI program, which the page runs.
+    /// The steps do what <see cref="TryLinkIngridLapila"/>, <see cref="OptimizeIr"/> and <see cref="LinkWasm"/> do,
+    /// with llc in place of clang: the optimizer runs once (clang would run it a second time on the optimized module).
+    /// Every file is named relative to one folder: the program's IR (<paramref name="llFile"/>'s name), Ingrid's library
+    /// and runtime as bitcode (<see cref="IngridLapila.WasiIrFileName"/>, <see cref="IngridLapila.WasiRuntimeIrFileName"/>
+    /// with <c>.bc</c>), and what each step writes for the next, the last one <c>main.wasm</c>.
+    /// </summary>
+    internal static IReadOnlyList<string[]> WasiWebLinkSteps(string llFile, RvBuildMode buildMode)
+    {
+        string program = Path.GetFileName(path: llFile);
+        string library = Path.ChangeExtension(path: IngridLapila.WasiIrFileName, extension: IngridLapila.BitcodeExtension);
+        string runtime = Path.ChangeExtension(path: IngridLapila.WasiRuntimeIrFileName, extension: IngridLapila.BitcodeExtension);
+        bool internalize = buildMode != RvBuildMode.Debug;
+        var opt = new List<string> { "opt", $"-passes={OptPipeline(buildMode: buildMode, internalizeForLto: internalize)}" };
+        if (internalize)
+        {
+            opt.Add(item: $"-internalize-public-api-list={string.Join(separator: ",", values: WasiKeptSymbols(llFile: llFile))}");
+        }
+
+        opt.AddRange(collection: ["main.ingrid.bc", "-o", "main.opt.bc"]);
+        // The level clang gives code generation for the build's -O: -Os is -O2 there.
+        string codegenLevel = buildMode switch
+        {
+            RvBuildMode.Debug => "-O0",
+            RvBuildMode.ReleaseTime => "-O3",
+            _ => "-O2"
+        };
+        return
+        [
+            ["link", program, "--only-needed", .. LinkInputFiles(library: library, runtime: runtime), "-o", "main.ingrid.bc"],
+            [.. opt],
+            ["llc", codegenLevel, "-filetype=obj", "main.opt.bc", "-o", "main.o"],
+            ["wasm-ld", "-m", "wasm32", .. WasiLinkerArguments, "main.o", "-o", "main.wasm"]
+        ];
     }
 
     /// <summary>

@@ -61,8 +61,12 @@ internal partial class Program
         // system ACP (Korean CP949, Western CP1252, ...), every non-ASCII byte gets
         // rewritten as `?` somewhere in the read/write chain. Forcing UTF-8 on both input
         // and output makes the pipe a passthrough.
-        Console.OutputEncoding = Encoding.UTF8;
-        Console.InputEncoding = Encoding.UTF8;
+        // A browser page has no console to set: the runtime there writes UTF-8 already and refuses the setting.
+        if (!OperatingSystem.IsBrowser())
+        {
+            Console.OutputEncoding = Encoding.UTF8;
+            Console.InputEncoding = Encoding.UTF8;
+        }
 
         WarnRetiredEnvironmentVariables();
         if (args.Length == 0)
@@ -954,7 +958,7 @@ internal partial class Program
     /// <summary>
     /// Maps a [target] mode string to its <see cref="RvBuildMode"/>; throws on unknown modes.
     /// </summary>
-    private static RvBuildMode ParseBuildMode(string mode)
+    internal static RvBuildMode ParseBuildMode(string mode)
     {
         return mode.ToLowerInvariant() switch
         {

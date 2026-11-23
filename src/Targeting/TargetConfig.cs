@@ -177,6 +177,9 @@ public sealed class TargetConfig
             Architecture.X64 => X64LinuxConfig(os: os),
             Architecture.Arm64 when isMacOS => Arm64MacOSConfig(),
             Architecture.Arm64 => Arm64LinuxConfig(os: os),
+            // The builder running as WebAssembly, in a browser page, makes WASI programs: that page has no other
+            // machine to build for.
+            Architecture.Wasm => Wasm32WasiConfig(),
             _ => throw UnsupportedHost(os: os)
         };
     }

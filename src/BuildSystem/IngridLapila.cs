@@ -20,6 +20,13 @@ internal static class IngridLapila
     /// <summary>The cached LLVM IR of the library, next to the executable.</summary>
     internal const string IrFileName = "ingrid_lapila.ll";
 
+    /// <summary>The library's IR for a WASI build: another target's library is a file of its own, named for the
+    /// target.</summary>
+    internal const string WasiIrFileName = $"ingrid_lapila.{TargetConfig.WasiTriple}.ll";
+
+    /// <summary>The runtime's IR for a WASI build (<see cref="RuntimeIrPath"/>).</summary>
+    internal const string WasiRuntimeIrFileName = $"ingrid_runtime_lapila.{TargetConfig.WasiTriple}.ll";
+
     /// <summary>Where a development checkout keeps the library's sources.</summary>
     private static readonly string CheckoutSourceDir = Path.Combine(path1: "Ingrid", path2: "lapila");
 
@@ -33,10 +40,7 @@ internal static class IngridLapila
     internal static string IrPath(string exeDir)
     {
         TargetConfig target = TargetConfig.Build;
-        // Another target's library is a file of its own, named for the target.
-        string fileName = target.IsWasi
-            ? Path.ChangeExtension(path: IrFileName, extension: $".{TargetConfig.WasiTriple}.ll")
-            : IrFileName;
+        string fileName = target.IsWasi ? WasiIrFileName : IrFileName;
         string cached = Path.Combine(path1: exeDir, path2: fileName);
         lock (CacheLock)
         {
@@ -384,7 +388,7 @@ internal static class IngridLapila
     internal static string RuntimeIrPath(string exeDir)
     {
         TargetConfig target = TargetConfig.Build;
-        string fileName = $"ingrid_runtime_lapila.{TargetConfig.WasiTriple}.ll";
+        string fileName = WasiRuntimeIrFileName;
         string cached = Path.Combine(path1: exeDir, path2: fileName);
         lock (CacheLock)
         {
