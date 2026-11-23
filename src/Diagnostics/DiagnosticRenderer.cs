@@ -129,7 +129,8 @@ public static class DiagnosticRenderer
 
     private static bool UseColorFor(TextWriter writer)
     {
-        if (!_colorEnvironment)
+        // A browser page's runtime has no console colors and refuses to set one.
+        if (!_colorEnvironment || OperatingSystem.IsBrowser())
         {
             return false;
         }
