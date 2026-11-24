@@ -97,6 +97,17 @@ public sealed partial class TypeRegistry
         return ProgramLibraryFolder + relative.Replace(oldChar: '\\', newChar: '/');
     }
 
+    /// <summary>
+    /// Whether a source file is a standard library file that places and moves its member variables by hand (Revare's
+    /// library, which writes its own teardown). A library file in a language whose programs get their old member
+    /// values released (Mielia's own library) is not: the builder releases them there as in a program.
+    /// </summary>
+    public bool LibraryMovesMembersByHand(string? filePath)
+    {
+        return IsStandardLibraryFile(filePath: filePath) &&
+               Builder.Frontends.Languages.OfFile(fileName: filePath) != TypeModel.Enums.Language.Mielia;
+    }
+
     /// <summary>Whether a source file is inside the standard library directory.</summary>
     public bool IsStandardLibraryFile(string? filePath)
     {

@@ -1280,12 +1280,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// Whether a member variable of <paramref name="fieldType"/> owns its entity, so writing a new one over it
     /// (<c>slot.item = Item(name: "b")</c>) tears the old one down: a single-owner entity, bare or optional
     /// (<c>Item?</c>), written in a program. A shared entity is a handle (the Roamed case), and the standard library
-    /// places and moves its entities by hand.
+    /// places and moves its entities by hand (Revare's, not Mielia's own).
     /// </summary>
     private bool OwnsReplacedEntity(TypeSymbol fieldType, SourceLocation location)
     {
         string file = location.FileName ?? "";
-        if (ctx.Registry.IsStandardLibraryFile(filePath: file))
+        if (ctx.Registry.LibraryMovesMembersByHand(filePath: file))
         {
             return false;
         }
@@ -1316,7 +1316,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private bool HoldsSharedHandles(TypeSymbol fieldType, SourceLocation location)
     {
         string file = location.FileName ?? "";
-        return !ctx.Registry.IsStandardLibraryFile(filePath: file) &&
+        return !ctx.Registry.LibraryMovesMembersByHand(filePath: file) &&
                ctx.Registry.EntitiesAreSharedIn(filePath: file) &&
                fieldType is RecordTypeSymbol &&
                RecordHoldsHandle(type: fieldType, depth: 0);
@@ -1326,7 +1326,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// Whether a member variable of <paramref name="fieldType"/> is a value that keeps memory of its own through a
     /// reference count (<c>Text</c>, <c>Decimal</c>, a <c>Retained</c>, a record holding one), written in a program.
     /// Writing a new value over it (<c>p.name = f"..."</c>) releases the old one, which nothing else would. The standard
-    /// library places and moves its member variables by hand.
+    /// library places and moves its member variables by hand (Revare's, not Mielia's own).
     /// </summary>
     private bool HoldsManagedValue(TypeSymbol fieldType, SourceLocation location)
     {
@@ -1334,7 +1334,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // or copies it first (Mielia's RecordLoopElementPass, before this pass), so a member write never releases a value
         // through that read.
         string file = location.FileName ?? "";
-        if (ctx.Registry.IsStandardLibraryFile(filePath: file))
+        if (ctx.Registry.LibraryMovesMembersByHand(filePath: file))
         {
             return false;
         }
