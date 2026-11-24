@@ -1513,6 +1513,24 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // A body the builder made from a template is analyzed for a routine marked `dangerous` (already a danger
+        // context) as well as for one that is not, so its own `danger` block may sit inside a danger context: its
+        // statements are analyzed there, as they are written.
+        if (InDangerBlock && _isInCompilerGeneratedBody)
+        {
+            _registry.EnterScope(kind: ScopeKind.Block, name: "danger");
+            try
+            {
+                AnalyzeBlockStatement(block: danger.Body);
+            }
+            finally
+            {
+                _registry.ExitScope();
+            }
+
+            return;
+        }
+
         // Danger blocks cannot be nested
         if (InDangerBlock)
         {

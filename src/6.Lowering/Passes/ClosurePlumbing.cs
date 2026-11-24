@@ -29,10 +29,20 @@ internal sealed class ClosurePlumbing
     private readonly TypeSymbol _cptr;
     private readonly TypeSymbol _u64;
 
-    internal ClosurePlumbing(TypeRegistry registry, SourceLocation location)
+    /// <summary>The type parameters of the routine the lambda is written in (null outside a generic routine). The
+    /// hooks of a payload holding a value of such a type take them too, so each instance of the routine builds hooks
+    /// for its own types.</summary>
+    private readonly List<string>? _genericParameters;
+
+    private readonly List<GenericConstraintDeclaration>? _genericConstraints;
+
+    internal ClosurePlumbing(TypeRegistry registry, SourceLocation location, List<string>? genericParameters = null,
+        List<GenericConstraintDeclaration>? genericConstraints = null)
     {
         _registry = registry;
         _location = location;
+        _genericParameters = genericParameters is { Count: > 0 } ? genericParameters : null;
+        _genericConstraints = genericConstraints;
         _cptr = Lookup(name: RuntimeContract.Addr);
         _u64 = Lookup(name: "U64");
     }
@@ -173,6 +183,10 @@ internal sealed class ClosurePlumbing
         List<(TypeSymbol Type, int Slot, bool IsBound)> captures, int? slots)
     {
         const string dataName = "data";
+        // A hook ending a value of the routine's type parameter is a template of the same parameters.
+        List<string>? genericParameters = captures.Any(predicate: c => ContainsGenericParameter(type: c.Type))
+            ? _genericParameters
+            : null;
         var statements = new List<Statement>();
         foreach ((TypeSymbol type, int slot, _) in captures)
         {
@@ -207,8 +221,8 @@ internal sealed class ClosurePlumbing
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
             Location: _location,
-            GenericParameters: null,
-            GenericConstraints: null,
+            GenericParameters: genericParameters,
+            GenericConstraints: genericParameters == null ? null : _genericConstraints,
             IsFailable: false,
             IsCommon: false,
             IsDangerous: false);
@@ -216,6 +230,8 @@ internal sealed class ClosurePlumbing
         {
             Kind = RoutineKind.FreeRoutine,
             IsClosureHook = true,
+            GenericParameters = genericParameters,
+            GenericConstraints = genericParameters == null ? null : _genericConstraints,
             Parameters = [new ParamInfo(name: dataName, type: _cptr)],
             ReturnType = null,
             Visibility = VisibilityModifier.Secret,
@@ -258,11 +274,11 @@ internal sealed class ClosurePlumbing
     /// <summary>The instance of a System closure helper for one captured value's type.</summary>
     private RoutineInfo Instance(string name, TypeSymbol typeArgument)
     {
-        if (ContainsGenericParameter(type: typeArgument))
+        // A value of the routine's type parameter: the call is bound again in each instance of the routine.
+        if (ContainsGenericParameter(type: typeArgument) && _genericParameters == null)
         {
             throw new InvalidOperationException(
-                message: $"A lambda captures a value of generic type '{typeArgument.Name}', which a closure " +
-                         "payload cannot hold yet.");
+                message: $"A lambda captures a value of generic type '{typeArgument.Name}' outside a generic routine.");
         }
 
         RoutineInfo definition = _registry.LookupGenericOverload(name: name) is { Module: "System" } found

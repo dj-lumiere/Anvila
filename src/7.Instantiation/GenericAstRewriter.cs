@@ -2005,8 +2005,11 @@ internal static class GenericAstRewriter
                 Value = RewriteExpression(expr: bce.Value, ctx: ctx)
             },
 
+            // A lambda lifted out of a generic routine takes the routine's type parameters: the instance names the
+            // lifted routine's instance for its own types.
             ClosureValueExpression cve => cve with
             {
+                Function = ctx.RebindRoutineValueOn(identifier: cve.Function),
                 Bound = RewriteExpression(expr: cve.Bound, ctx: ctx)
             },
 

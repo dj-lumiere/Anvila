@@ -912,7 +912,8 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         // A capturing lambda takes its bound payload as a trailing `__bound: Addr` and starts by copying
         // each captured value out of it into a local of the captured name (System's closure_get).
         ClosurePlumbing? closure = closureCaptures.Count > 0
-            ? new ClosurePlumbing(registry: ctx.Registry, location: lambda.Location)
+            ? new ClosurePlumbing(registry: ctx.Registry, location: lambda.Location, genericParameters: genericParameters,
+                genericConstraints: genericConstraints)
             : null;
         List<Parameter> liftedParameters = BuildLiftedParameters(lambda: lambda, routineType: routineType);
         List<ParamInfo> liftedParamInfos = BuildLiftedParameterInfos(lambda: lambda, routineType: routineType);
