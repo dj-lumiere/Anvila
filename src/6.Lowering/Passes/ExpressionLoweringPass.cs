@@ -1841,8 +1841,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 hoistedB.AddRange(collection: kh);
                 hoistedB.AddRange(collection: vh);
                 entries.Add(item: MakeDictEntry(entryType: entryElementType,
-                    key: lk,
-                    value: lv,
+                    key: WrapForSlot(slotType: entryElementType.TypeArguments?.ElementAtOrDefault(index: 0), value: lk),
+                    value: WrapForSlot(slotType: entryElementType.TypeArguments?.ElementAtOrDefault(index: 1), value: lv),
                     loc: loc));
             }
 
@@ -2299,6 +2299,15 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return builder.Parameters[index: 0].Type.TypeArguments is [{ } element, ..] ? element : null;
     }
 
+    /// <summary>A value going into a slot of <paramref name="slotType"/>, held the way the slot holds it: as the
+    /// stored protocol value, the variant or the optional it is an arm or the value of.</summary>
+    private Expression WrapForSlot(TypeSymbol? slotType, Expression value)
+    {
+        return TryWrapStored(targetType: slotType, init: value) ??
+               TryWrapVariantArm(targetType: slotType, init: value) ??
+               TryWrapMaybe(targetType: slotType, value: value) ?? value;
+    }
+
     /// <summary>Lowers a list of element expressions, collecting their hoisted statements.</summary>
     private (List<Statement> Hoisted, List<Expression> Lowered) LowerElements(
         List<Expression> elements, TypeSymbol? elementType = null)
@@ -2309,9 +2318,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         {
             (List<Statement> h, Expression low) = LowerExpr(expr: el);
             HoistAfter(hoisted: hoisted, setup: h, earlier: lowered);
-            // An element of a variant collection (`List[Int | Text]`) is held as the variant.
-            lowered.Add(item: TryWrapStored(targetType: elementType, init: low) ??
-                              TryWrapVariantArm(targetType: elementType, init: low) ?? low);
+            // An element of a variant collection (`List[Int | Text]`) is held as the variant, and one of an optional
+            // collection (`List[S64?]`) as the optional.
+            lowered.Add(item: WrapForSlot(slotType: elementType, value: low));
         }
 
         return (hoisted, lowered);

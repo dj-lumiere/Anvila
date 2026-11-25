@@ -133,7 +133,8 @@ public sealed partial class SemanticVerifier
         TypeSymbol resultType = ResolveListResultType(expectedType: expectedType,
             expectedBaseName: expectedBaseName,
             collectionExpectedType: collectionExpectedType,
-            elementType: elementType);
+            elementType: elementType,
+            location: list.Location);
 
         // Resolve the `from_literal` static builder for the (non-inline) collection type, so the lowering
         // emits `Type.from_literal(a, b, c)` and reachability seeds the monomorphized body.
@@ -322,14 +323,10 @@ public sealed partial class SemanticVerifier
             // Infer from first element, propagating expected element type.
             TypeSymbol first = AnalyzeExpression(expression: list.Elements[index: 0],
                 expectedType: expectedElementType);
-            // With the element type written, every element is checked against it, the first one too.
-            bool written = list.ElementType != null && expectedElementType is not ErrorTypeSymbol;
-            // An element type the context gives (`var keys: List[Key] = [1, "two"]`) is the type when the first
-            // element fits it, so the elements after it are held to that type, not to the first one's.
-            TypeSymbol elementType = written ||
-                                     expectedElementType is not null and not ErrorTypeSymbol &&
-                                     first is not ErrorTypeSymbol &&
-                                     IsAssignableTo(source: first, target: expectedElementType)
+            // An element type written or given by the context (`var keys: List[Key] = [1, "two"]`) is the type, and
+            // every element is checked against it, the first one too: the literal has the type the context gives.
+            bool written = expectedElementType is not null and not ErrorTypeSymbol;
+            TypeSymbol elementType = written
                 ? expectedElementType!
                 : first;
 
@@ -415,7 +412,7 @@ public sealed partial class SemanticVerifier
     /// collection base name, otherwise defaults to <c>List[T]</c>.
     /// </summary>
     private TypeSymbol ResolveListResultType(TypeSymbol? expectedType, string? expectedBaseName,
-        TypeSymbol? collectionExpectedType, TypeSymbol? elementType)
+        TypeSymbol? collectionExpectedType, TypeSymbol? elementType, SourceLocation location)
     {
         if (expectedType != null && (expectedBaseName is "List" or "RotatableList" or "SortedList"
                 or "BitList" or CollectionNameArray or CollectionNameSlots or CollectionNameBitArray ||
@@ -432,9 +429,21 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        TypeSymbol listType = _registry.GetOrCreateResolution(genericDef: listDef,
-            typeArguments: [elementType]);
-        return listType;
+        return DefaultLiteralType(definition: listDef, typeArguments: [elementType], location: location);
+    }
+
+    /// <summary>The collection a literal builds when nothing gives it a type (<c>List</c>, <c>Set</c>, <c>Dict</c>) of
+    /// the types its elements have, held to the collection's constraints as a written type is (an entity without
+    /// <c>obeys Hashable</c> is no <c>Set</c> element).</summary>
+    private TypeSymbol DefaultLiteralType(TypeSymbol definition, List<TypeSymbol> typeArguments,
+        SourceLocation location)
+    {
+        if (typeArguments.All(predicate: t => t is not ErrorTypeSymbol))
+        {
+            ValidateGenericConstraints(genericDef: definition, typeArgs: typeArguments, location: location);
+        }
+
+        return _registry.GetOrCreateResolution(genericDef: definition, typeArguments: typeArguments);
     }
 
     /// <summary>
@@ -573,16 +582,19 @@ public sealed partial class SemanticVerifier
         TypeSymbol? elementType = ResolveSetElementType(set: set,
             expectedElementType: expectedElementType);
 
-        // Analyze all elements with the inferred/expected element type.
+        // Analyze all elements with the inferred/expected element type, and hold each to it.
         foreach (Expression elem in set.Elements)
         {
-            AnalyzeExpression(expression: elem, expectedType: expectedElementType ?? elementType);
+            TypeSymbol held = AnalyzeExpression(expression: elem, expectedType: expectedElementType ?? elementType);
+            CheckLiteralItem(code: SemanticDiagnosticCode.SetElementTypeMismatch, what: "set element",
+                holds: expectedElementType ?? elementType, actual: held, location: elem.Location);
         }
 
         TypeSymbol setResult = ResolveSetResultType(expectedType: expectedType,
             expectedBaseName: expectedBaseName,
             collectionExpectedType: collectionExpectedType,
-            elementType: elementType);
+            elementType: elementType,
+            location: set.Location);
 
         ResolveLiteralBuilder(literal: set,
             resultType: setResult,
@@ -631,7 +643,7 @@ public sealed partial class SemanticVerifier
     /// collection base name, otherwise defaults to <c>Set[T]</c>.
     /// </summary>
     private TypeSymbol ResolveSetResultType(TypeSymbol? expectedType, string? expectedBaseName,
-        TypeSymbol? collectionExpectedType, TypeSymbol? elementType)
+        TypeSymbol? collectionExpectedType, TypeSymbol? elementType, SourceLocation location)
     {
         if (expectedType != null && (expectedBaseName is "Set" or "SortedSet" or "SecureSet" ||
                                      LiteralConformanceArguments(type: collectionExpectedType,
@@ -648,9 +660,7 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        TypeSymbol setType = _registry.GetOrCreateResolution(genericDef: setDef,
-            typeArguments: [elementType]);
-        return setType;
+        return DefaultLiteralType(definition: setDef, typeArguments: [elementType], location: location);
     }
 
     private TypeSymbol AnalyzeDictLiteralExpression(DictLiteralExpression dict,
@@ -696,9 +706,13 @@ public sealed partial class SemanticVerifier
         // Analyze all pairs with the inferred/expected key/value types.
         foreach ((Expression Key, Expression Value) pair in dict.Pairs)
         {
-            AnalyzeExpression(expression: pair.Key, expectedType: expectedKeyType ?? keyType);
-            AnalyzeExpression(expression: pair.Value,
+            TypeSymbol key = AnalyzeExpression(expression: pair.Key, expectedType: expectedKeyType ?? keyType);
+            CheckLiteralItem(code: SemanticDiagnosticCode.DictKeyTypeMismatch, what: "dict key",
+                holds: expectedKeyType ?? keyType, actual: key, location: pair.Key.Location);
+            TypeSymbol value = AnalyzeExpression(expression: pair.Value,
                 expectedType: expectedValueType ?? valueType);
+            CheckLiteralItem(code: SemanticDiagnosticCode.DictValueTypeMismatch, what: "dict value",
+                holds: expectedValueType ?? valueType, actual: value, location: pair.Value.Location);
         }
 
         TypeSymbol dictResult;
@@ -716,9 +730,8 @@ public sealed partial class SemanticVerifier
                 return ErrorTypeSymbol.Instance;
             }
 
-            TypeSymbol dictType = _registry.GetOrCreateResolution(genericDef: dictDef,
-                typeArguments: [keyType, valueType]);
-            dictResult = dictType;
+            dictResult = DefaultLiteralType(definition: dictDef, typeArguments: [keyType, valueType],
+                location: dict.Location);
         }
 
         // Dict literals build `(K, V)` tuples: that is the from_literal element type.
@@ -766,6 +779,22 @@ public sealed partial class SemanticVerifier
             message: "Cannot infer types from empty dict literal without type annotation.",
             location: dict.Location);
         return (ErrorTypeSymbol.Instance, ErrorTypeSymbol.Instance);
+    }
+
+    /// <summary>Reports a set element, dict key or dict value whose type does not go where the literal holds
+    /// <paramref name="holds"/>.</summary>
+    private void CheckLiteralItem(SemanticDiagnosticCode code, string what, TypeSymbol? holds, TypeSymbol actual,
+        SourceLocation location)
+    {
+        if (holds is null or ErrorTypeSymbol || actual is ErrorTypeSymbol || IsAssignableTo(source: actual, target: holds))
+        {
+            return;
+        }
+
+        ReportError(code: code,
+            message: $"This {what} is a '{actual.Name}', but the literal holds '{holds.Name}'. Give it a " +
+                     $"'{holds.Name}', or change the type the literal is given.",
+            location: location);
     }
 
     private TypeSymbol AnalyzeDictEntryLiteralExpression(DictEntryLiteralExpression dictEntry,

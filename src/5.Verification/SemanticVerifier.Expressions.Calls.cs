@@ -611,6 +611,17 @@ public sealed partial class SemanticVerifier
             return AnalyzeZeroArgConstruction(call: call, zeroArgType: zeroArgType);
         }
 
+        // A generic type's creator where an instance of that type is expected (`var c: Cell[U8] = Cell(value: 1)`,
+        // a `List[Cell[U8]]` literal's element) takes the expected instance's type arguments, so the arguments
+        // conform to them instead of picking their own.
+        if (callableType is { IsGenericDefinition: true } && call.Arguments.Count > 0 &&
+            expectedType is { IsGenericResolution: true, TypeArguments.Count: > 0 } expectedInstance &&
+            DefinitionOf(type: expectedInstance).FullName == callableType.FullName &&
+            !(expectedInstance.TypeArguments?.Any(predicate: t => t is GenericParameterTypeSymbol) ?? false))
+        {
+            callableType = expectedInstance;
+        }
+
         if (AnalyzeArgumentConstruction(call: call,
                 callableType: ref callableType) is { } resultAnalyzeArgumentConstruction)
         {
