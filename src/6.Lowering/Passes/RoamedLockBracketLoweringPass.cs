@@ -1,6 +1,7 @@
 using Builder.Tokenizer;
 using Builder.Declaration;
 using SyntaxTree;
+using TypeModel.Enums;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
@@ -90,8 +91,236 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     {
         if (body is BlockStatement block)
         {
-            LowerBlock(block: block);
+            HashSet<string> confinedBefore = _confined;
+            _confined = ConfinedLocals(body: block);
+            try
+            {
+                LowerBlock(block: block);
+            }
+            finally
+            {
+                _confined = confinedBefore;
+            }
         }
+    }
+
+    /// <summary>The handles of the body being lowered that never escape (<see cref="ConfinedLocals"/>): their
+    /// statements take no access lock.</summary>
+    private HashSet<string> _confined = [];
+
+    /// <summary>
+    /// The local handles of <paramref name="body"/> that no other task can ever reach, so their access lock is never
+    /// needed. A handle escapes only by a promotion, which happens where it is handed to a Work, captured by a lambda,
+    /// kept in a global, or stored into an entity that has escaped. A local made in this body (by a creator or a
+    /// collection literal) that the body uses only to reach its member variables and to call library routines on is
+    /// never handed anywhere: it is not an argument, a stored or returned value, a second name or a capture, and it is
+    /// never given a new value. A library routine never hands its container on, the invariant
+    /// <see cref="PromoteStoredHandle"/> states, so nothing it calls can make the handle escape either. A name the body
+    /// declares more than once is left out.
+    /// </summary>
+    private HashSet<string> ConfinedLocals(BlockStatement body)
+    {
+        var confined = new HashSet<string>(comparer: StringComparer.Ordinal);
+        if (!Registry.TasksCross)
+        {
+            return confined;
+        }
+
+        var declared = new Dictionary<string, int>(comparer: StringComparer.Ordinal);
+        AstWalker.Walk(root: body,
+            visit: node =>
+            {
+                if (node is DeclarationStatement { Declaration: VariableDeclaration declaration })
+                {
+                    declared[key: declaration.Name] = declared.GetValueOrDefault(key: declaration.Name) + 1;
+                    if (RoamedInnerEntity(t: declaration.Initializer?.ResolvedType ?? declaration.Type?.ResolvedType) != null &&
+                        IsFreshHandle(value: declaration.Initializer))
+                    {
+                        confined.Add(item: declaration.Name);
+                    }
+                }
+            });
+        confined.RemoveWhere(match: name => declared[key: name] != 1);
+        if (confined.Count == 0)
+        {
+            return confined;
+        }
+
+        // Each use of a candidate must be the receiver of a member variable or of a library routine, through the
+        // handle's own projections (`steps.control().remove_last()`) at most. What such a call gives back must not be
+        // able to reach the entity (an emitter or a span over it could be handed on): a plain value, or one of the
+        // container's own type arguments (an element).
+        var inReceiverPlace = new HashSet<Expression>(comparer: ReferenceEqualityComparer.Instance);
+        var leaves = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var rooted = new List<(Expression Use, string Root)>();
+        AstWalker.Walk(root: body,
+            visit: node =>
+            {
+                if (node is MemberExpression member)
+                {
+                    inReceiverPlace.Add(item: member.Object);
+                }
+
+                if (node is LambdaExpression lambda)
+                {
+                    AstWalker.Walk(root: lambda,
+                        visit: inner =>
+                        {
+                            if (inner is IdentifierExpression { Name: var captured })
+                            {
+                                leaves.Add(item: captured);
+                            }
+                        });
+                }
+
+                if (node is Expression expression && ConfinedRoot(expr: expression, candidates: confined) is { } root)
+                {
+                    rooted.Add(item: (expression, root));
+                }
+            });
+        foreach ((Expression use, string root) in rooted)
+        {
+            bool leaks;
+            if (use is IdentifierExpression)
+            {
+                leaks = !inReceiverPlace.Contains(item: use);
+            }
+            else if (use is CallExpression { ResolvedRoutine.OwnerType: var owner, Callee: MemberExpression { MemberName: var own } } ownCall &&
+                     RoamedInnerEntity(t: owner) is { } inner)
+            {
+                // A routine of the handle itself: a projection that gives the entity is only reached through, any
+                // other gives a value back.
+                leaks = own is RuntimeContract.RoamedMemberRoutine.Promote or RuntimeContract.RoamedMemberRoutine.PromoteInto ||
+                        (ReferenceEquals(objA: ownCall.ResolvedType, objB: inner) || ownCall.ResolvedType?.FullName == inner.FullName
+                            ? !inReceiverPlace.Contains(item: use)
+                            : ReachesContainer(result: ownCall.ResolvedType, container: root, body: body));
+            }
+            else if (use is CallExpression { Callee: MemberExpression { MemberName: var called } } call)
+            {
+                leaks = called is RuntimeContract.RoamedMemberRoutine.Promote or RuntimeContract.RoamedMemberRoutine.PromoteInto ||
+                        !FromLibrary(routine: call.ResolvedRoutine) ||
+                        ReachesContainer(result: call.ResolvedType, container: root, body: body);
+            }
+            else if (use is GenericMemberRoutineCallExpression generic)
+            {
+                leaks = !FromLibrary(routine: generic.ResolvedRoutine) ||
+                        ReachesContainer(result: generic.ResolvedType, container: root, body: body);
+            }
+            else
+            {
+                leaks = false;
+            }
+
+            if (leaks)
+            {
+                leaves.Add(item: root);
+            }
+        }
+
+        confined.ExceptWith(other: leaves);
+        return confined;
+    }
+
+    /// <summary>The candidate a use starts from: the name itself, or a call on it or on one of its projections
+    /// (<c>steps.control()</c>, a routine of the handle that gives the entity). A member variable read
+    /// (<c>steps.items</c>) is another entity's handle and starts nothing here.</summary>
+    private static string? ConfinedRoot(Expression expr, HashSet<string> candidates)
+    {
+        return expr switch
+        {
+            IdentifierExpression { Name: var name } when candidates.Contains(item: name) => name,
+            CallExpression { Callee: MemberExpression { Object: var receiver } } => ProjectionRoot(expr: receiver, candidates: candidates),
+            GenericMemberRoutineCallExpression { Object: var receiver } => ProjectionRoot(expr: receiver, candidates: candidates),
+            _ => null
+        };
+    }
+
+    private static string? ProjectionRoot(Expression expr, HashSet<string> candidates)
+    {
+        return expr switch
+        {
+            IdentifierExpression { Name: var name } when candidates.Contains(item: name) => name,
+            CallExpression { ResolvedRoutine.OwnerType: var owner, Callee: MemberExpression { Object: var receiver } }
+                when RoamedInnerEntity(t: owner) != null => ProjectionRoot(expr: receiver, candidates: candidates),
+            _ => null
+        };
+    }
+
+    private bool FromLibrary(RoutineInfo? routine)
+    {
+        return routine != null && Registry.IsStandardLibraryFile(filePath: routine.Location?.FileName ?? "");
+    }
+
+    /// <summary>Whether a value of <paramref name="result"/>, which a call on the candidate <paramref name="container"/>
+    /// gives back, may reach an entity: anything but a plain value or one of the container's own type arguments.</summary>
+    private bool ReachesContainer(TypeSymbol? result, string container, BlockStatement body)
+    {
+        if (result == null)
+        {
+            return false;
+        }
+
+        IReadOnlyList<TypeSymbol> elements = ContainerTypeArguments(container: container, body: body);
+        return elements.All(predicate: e => e.FullName != result.FullName) &&
+               MayHoldHandle(type: result, seen: new HashSet<TypeSymbol>(comparer: ReferenceEqualityComparer.Instance));
+    }
+
+    private static IReadOnlyList<TypeSymbol> ContainerTypeArguments(string container, BlockStatement body)
+    {
+        IReadOnlyList<TypeSymbol> found = [];
+        AstWalker.Walk(root: body,
+            visit: node =>
+            {
+                if (node is DeclarationStatement { Declaration: VariableDeclaration declaration } &&
+                    declaration.Name == container &&
+                    RoamedInnerEntity(t: declaration.Initializer?.ResolvedType ?? declaration.Type?.ResolvedType) is
+                        { TypeArguments: { } arguments })
+                {
+                    found = arguments;
+                }
+            });
+        return found;
+    }
+
+    /// <summary>Whether a value of <paramref name="type"/> may hold a handle to an entity or a routine value (which may
+    /// have captured one). Numbers, text, choices and records of them hold none.</summary>
+    private static bool MayHoldHandle(TypeSymbol type, HashSet<TypeSymbol> seen)
+    {
+        if (!seen.Add(item: type))
+        {
+            return false;
+        }
+
+        switch (type)
+        {
+            case EntityTypeSymbol or GenericParameterTypeSymbol or RoutineTypeSymbol or ProtocolTypeSymbol or ErrorTypeSymbol:
+                return true;
+            case VariantTypeSymbol variant:
+                return variant.Members.Any(predicate: m => m.Type is { } t && MayHoldHandle(type: t, seen: seen));
+            case TupleTypeSymbol tuple:
+                return tuple.ElementTypes.Any(predicate: t => MayHoldHandle(type: t, seen: seen));
+            case RecordTypeSymbol record:
+                return RoamedInnerEntity(t: record) != null ||
+                       (record.TypeArguments ?? []).Any(predicate: t => MayHoldHandle(type: t, seen: seen)) ||
+                       record.MemberVariables.Any(predicate: m => MayHoldHandle(type: m.Type, seen: seen));
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Whether <paramref name="value"/> makes a new entity: a creator, or a collection literal.</summary>
+    private static bool IsFreshHandle(Expression? value)
+    {
+        RoutineInfo? made = value switch
+        {
+            CreatorExpression => null,
+            CallExpression call => call.ResolvedRoutine,
+            GenericMemberRoutineCallExpression generic => generic.ResolvedRoutine,
+            _ => null
+        };
+        return value is CreatorExpression ||
+               made is { Kind: RoutineKind.Creator } ||
+               made is { Name: "from_literal" };
     }
 
     // ---- Block rewrite (in place, mirroring RoamedSpawnPromotionLoweringPass) ---------------------
@@ -1218,6 +1447,13 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     private ExpressionStatement? MakeLockCall(Expression handle, string memberRoutine, bool isFailable = false)
     {
         if (handle.ResolvedType is not { } recvType)
+        {
+            return null;
+        }
+
+        // A handle no other task can reach takes no access lock (ConfinedLocals).
+        if (handle is IdentifierExpression { Name: var name } && _confined.Contains(item: name) &&
+            memberRoutine is RuntimeContract.RoamedMemberRoutine.LockEnter or RuntimeContract.RoamedMemberRoutine.LockExit)
         {
             return null;
         }
