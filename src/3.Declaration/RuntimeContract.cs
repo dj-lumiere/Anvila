@@ -645,6 +645,16 @@ public static class RuntimeContract
     /// <summary>The <c>Emittable[T]</c> routine that gives a fresh emitter; what it returns is the type's <c>Emitter</c>.</summary>
     public const string Iter = "emitter";
 
+    /// <summary>The protocol of an emittable value whose walk hands out its elements by position (<c>List</c>): a
+    /// <c>for</c> loop over it counts the positions (<see cref="ViewAt"/>, <see cref="ModifyAt"/>).</summary>
+    public const string IndexEmittable = "IndexEmittable";
+
+    /// <summary>The <c>IndexEmittable[T]</c> routine that gives a read token on the element at a position.</summary>
+    public const string ViewAt = "view_at";
+
+    /// <summary>The <c>IndexEmittable[T]</c> routine that gives a write token on the element at a position.</summary>
+    public const string ModifyAt = "modify_at";
+
     /// <summary>The <c>Optional[T]</c> routine a <c>try</c>/<c>check</c> call on a <c>T?</c> receiver goes through: the held
     /// value, failing with <c>AbsentValueError</c> when the optional is none.</summary>
     public const string ReachThroughOptional = "reach";

@@ -406,6 +406,16 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
+        // A token on a value of a type parameter (`x: %T`, an element `for` hands out in a generic routine) converts
+        // the value it is on, as `x: T` would: the family is what the parameter's protocols write, and a conversion
+        // none of them writes is reported for the parameter (RV-S646).
+        if (typeArgs.Count > 0 && ValueTokenTarget(type: objectType) is GenericParameterTypeSymbol heldParameter &&
+            FamilyOfReceiver(receiver: heldParameter, name: generic.MemberRoutineName).Count > 0 &&
+            FamilyOfReceiver(receiver: objectType, name: generic.MemberRoutineName).Count == 0)
+        {
+            objectType = heldParameter;
+        }
+
         // A bare number takes its type from where it goes, and a conversion is where it goes: `5.to[Wid]()` with only
         // `S64.to[Wid]()` written reads the 5 as an `S64`.
         if (typeArgs.Count > 0 && generic.Object is LiteralExpression bare &&

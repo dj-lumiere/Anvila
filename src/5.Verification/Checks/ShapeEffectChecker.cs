@@ -945,6 +945,8 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
 
         Expression? container = Unwrap(expr: init) switch
         {
+            // A counting `for` loop's element: the loop guards its container (RV-S625).
+            CallExpression { TakesLoopElement: true } => null,
             CallExpression { Callee: MemberExpression { Object: var o, MemberName: "modify_at" or "view_at" } } => o,
             // Only an element read (`boxes[0]`): a slice (`xs[0 til 2]`) is a new collection, holding nothing of `xs`.
             IndexExpression { ReadsElementToken: true, Object: var o } => o,

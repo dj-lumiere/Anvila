@@ -1155,6 +1155,63 @@ public sealed partial class SemanticVerifier
         };
     }
 
+    /// <summary>
+    /// Whether a <c>for</c> loop walks <paramref name="place"/> by position: a name, or member variables of one, whose
+    /// type (or the type a token on it reaches) obeys <c>IndexEmittable</c>. True when the walk starts read-only (a
+    /// read token on the way, or <c>me</c> in a <c>@readonly</c> routine), false when it may change the elements, null
+    /// when the loop walks the emitter.
+    /// </summary>
+    private bool? IndexWalkSource(Expression place)
+    {
+        if (!_registry.Rules.ChecksAccessTokens ||
+            Desugaring.Passes.ControlFlowLoweringPass.CopyPlace(place: place) == null ||
+            PlaceType(place: place, readOnly: out bool readOnly) is not { } type)
+        {
+            return null;
+        }
+
+        TypeSymbol walked = Wrappers.IsWrapperType(type: type) && Wrappers.GetWrapperInnerType(wrapperType: type) is { } inner
+            ? inner
+            : type;
+        return walked is not GenericParameterTypeSymbol &&
+               _registry.TypeObeysProtocol(type: walked, protocolName: Declaration.RuntimeContract.IndexEmittable)
+            ? readOnly || Wrappers.IsReadOnlyWrapper(type: type)
+            : null;
+    }
+
+    /// <summary>The type of a name, or of member variables of one, before the place is analyzed, and whether a read
+    /// token or a <c>@readonly</c> routine's <c>me</c> lies on the way. Null when a part is not known.</summary>
+    private TypeSymbol? PlaceType(Expression place, out bool readOnly)
+    {
+        readOnly = false;
+        switch (place)
+        {
+            case IdentifierExpression name:
+                readOnly = name.Name == "me" && _currentRoutine is { IsReadOnly: true } ||
+                           _readOnlyIterators.Contains(item: name.Name);
+                // `me` outside a member routine is reported where the loop's own source is analyzed, not here.
+                return name.Name == "me" && (_currentType != null || _currentRoutine?.OwnerType != null) &&
+                       TryResolveSpecialIdentifier(id: name, result: out TypeSymbol? me)
+                    ? me
+                    : _registry.LookupVariable(name: name.Name)?.Type;
+            case MemberExpression member when PlaceType(place: member.Object, readOnly: out bool outer) is { } owner:
+            {
+                readOnly = outer || Wrappers.IsReadOnlyWrapper(type: owner);
+                TypeSymbol holder = Wrappers.IsWrapperType(type: owner) && Wrappers.GetWrapperInnerType(wrapperType: owner) is { } inner
+                    ? inner
+                    : owner;
+                return holder switch
+                {
+                    RecordTypeSymbol record => record.LookupMemberVariable(memberVariableName: member.MemberName)?.Type,
+                    EntityTypeSymbol entity => entity.LookupMemberVariable(memberVariableName: member.MemberName)?.Type,
+                    _ => null
+                };
+            }
+            default:
+                return null;
+        }
+    }
+
     private void AnalyzeBlockStatement(BlockStatement block)
     {
         if (block.Statements.Count == 0)
@@ -1184,6 +1241,19 @@ public sealed partial class SemanticVerifier
         {
             block.Statements.Clear();
             block.Statements.AddRange(collection: counter);
+        }
+        // A `for` over a value that obeys `IndexEmittable` (a `List`) counts its positions, now that the source's
+        // type is known. Any other source keeps the emitter walk.
+        else if (block.Statements is [DeclarationStatement { Declaration: VariableDeclaration { Initializer: CallExpression
+                 {
+                     IsSynthesizedLowering: true, Callee: MemberExpression { Object: var walked }
+                 } } }, LoopStatement { IsIteratorForLoop: true }] &&
+                 IndexWalkSource(place: walked) is { } readOnly && _registry.LookupType(name: "U64") is { } u64 &&
+                 Desugaring.Passes.ControlFlowLoweringPass.IndexCounterLoop(walk: block.Statements, readOnly: readOnly,
+                     u64: u64) is { } indexCounter)
+        {
+            block.Statements.Clear();
+            block.Statements.AddRange(collection: indexCounter);
         }
 
         // Once a statement unconditionally diverges (return / throw / break / continue),

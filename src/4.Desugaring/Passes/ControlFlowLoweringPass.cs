@@ -929,6 +929,132 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         return statements;
     }
 
+    /// <summary>
+    /// The counter loop a <c>for</c> runs over a value that obeys <c>IndexEmittable</c> (a <c>List</c>): the count is
+    /// read once, then each round takes the token at the next position, a write token (<c>modify_at</c>) or, when the
+    /// walk starts read-only, a read token (<c>view_at</c>). These are the tokens the emitter hands out, in the same
+    /// order, and the value keeps its shape while it is walked (RV-S625), so the count read first is the count the
+    /// emitter would have read. The statements take the place of <paramref name="walk"/>, or null when it is not a
+    /// plain walk of <paramref name="source"/>'s emitter. Analysis calls this once it knows the source's type.
+    /// <code>
+    /// var _lf_end_N: U64 = src.count()
+    /// var _lf_at_N: U64 = 0
+    /// loop
+    ///     if _lf_at_N &gt;= _lf_end_N
+    ///         break
+    ///     var x = src.modify_at(index: _lf_at_N)
+    ///     _lf_at_N = _lf_at_N + 1
+    ///     body
+    /// </code>
+    /// The loop keeps the walk's source name and path, so the shape checks guard the source as before, and its
+    /// <see cref="LoopStatement.IteratorName"/> names the count, whose initializer is a call on the source (the run-time
+    /// shape use finds the container there).
+    /// </summary>
+    internal static List<Statement>? IndexCounterLoop(List<Statement> walk, bool readOnly, TypeSymbol u64)
+    {
+        if (walk is not
+            [
+                DeclarationStatement
+                {
+                    Declaration: VariableDeclaration
+                    {
+                        Initializer: CallExpression
+                        {
+                            IsSynthesizedLowering: true,
+                            Arguments: [],
+                            Callee: MemberExpression { MemberName: Declaration.RuntimeContract.Iter, Object: var source }
+                        }
+                    }
+                },
+                LoopStatement
+                {
+                    IsIteratorForLoop: true,
+                    RangeWalk: null,
+                    IteratorName: { } iterator,
+                    Body: BlockStatement
+                    {
+                        Statements:
+                        [
+                            WhenStatement
+                            {
+                                IsForStep: true,
+                                StepHandsOver: false,
+                                Clauses:
+                                [
+                                    { Pattern: NonePattern, Body: BlockStatement { Statements: [BreakStatement] } },
+                                    { Pattern: ElsePattern arm } last
+                                ]
+                            }
+                        ]
+                    }
+                } loop
+            ] ||
+            CopyPlace(place: source) == null ||
+            !iterator.StartsWith(value: "_lf_iter_", comparisonType: StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        SourceLocation loc = loop.Location;
+        string suffix = iterator["_lf_iter_".Length..];
+        var counter = new CounterNames(At: $"_lf_at_{suffix}", End: $"_lf_end_{suffix}", More: $"_lf_more_{suffix}");
+        var statements = new List<Statement>
+        {
+            Local(name: counter.End,
+                value: SynthesizedCall(receiver: CopyPlace(place: source)!,
+                    routine: Declaration.RuntimeContract.Collection.Count,
+                    arguments: [],
+                    loc: loc),
+                loc: loc,
+                declared: u64),
+            Local(name: counter.At,
+                value: new LiteralExpression(Value: "0", LiteralType: TokenType.UndecidedInteger, Location: loc),
+                loc: loc,
+                declared: u64)
+        };
+        var round = new List<Statement>();
+        AddCountingRound(statements: statements,
+            round: round,
+            counter: counter,
+            inclusive: false,
+            variable: arm.VariableName,
+            types: null,
+            loc: loc,
+            bindValue: at => SynthesizedCall(receiver: CopyPlace(place: source)!,
+                routine: readOnly ? Declaration.RuntimeContract.ViewAt : Declaration.RuntimeContract.ModifyAt,
+                arguments: [Argument(name: "index", value: at, loc: loc)],
+                loc: loc) with { TakesLoopElement = true });
+        if (last.Body is BlockStatement body)
+        {
+            round.AddRange(collection: body.Statements);
+        }
+        else
+        {
+            round.Add(item: last.Body);
+        }
+
+        statements.Add(item: new LoopStatement(Body: new BlockStatement(Statements: round, Location: loc), Location: loc)
+        {
+            IterationSourceName = loop.IterationSourceName,
+            IterationSourcePath = loop.IterationSourcePath,
+            IteratorName = counter.End
+        });
+        return statements;
+    }
+
+    /// <summary>A fresh copy of a place a <c>for</c> loop walks (a name, or member variables of one), or null for any
+    /// other expression: the counter loop reads it again in each round, which only a place allows.</summary>
+    internal static Expression? CopyPlace(Expression place)
+    {
+        return place switch
+        {
+            IdentifierExpression name => new IdentifierExpression(Name: name.Name, Location: name.Location),
+            MemberExpression { Object: var inner } member when CopyPlace(place: inner) is { } copied =>
+                new MemberExpression(Object: copied, MemberName: member.MemberName, Location: member.Location),
+            _ => null
+        };
+    }
+
     /// <summary>The routines on <c>Int</c> (and <c>S64</c>) an <c>Int</c> counter loop's two versions call.</summary>
     private const string CountsInS64 = "counts_in_s64";
     private const string S64Range = "s64_range";

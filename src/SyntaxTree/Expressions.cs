@@ -546,6 +546,14 @@ public record CallExpression(
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
 
+    /// <summary>
+    /// Set on the call a counting <c>for</c> loop takes each element with (<c>xs.modify_at(index: _lf_at_N)</c>, over
+    /// an <c>IndexEmittable</c> value): the loop variable it binds is the loop's element, as the token an emitter hands
+    /// out is. The shape checks guard the container through the loop itself (RV-S625), so they do not also count the
+    /// loop variable as a name that holds an element.
+    /// </summary>
+    public bool TakesLoopElement { get; init; }
+
     /// <summary>True for the call analysis makes for a read of a <c>@property</c> (<c>foe.alive</c> is analyzed as
     /// <c>foe.alive()</c>), which is the one way such a routine is called.</summary>
     public bool IsPropertyRead { get; init; }
