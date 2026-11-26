@@ -1826,15 +1826,6 @@ internal partial class Program
         List<(SyntaxTree.Program Program, string FilePath, string Module)> stdlibPrograms =
             result.Registry.StdlibPrograms;
 
-        // 9-2: instrument may-suspend routine bodies with cancellation push/pop markers
-        // (no-op unless something reaches a coroutine suspend point). Mutates the userPrograms
-        // ASTs in place — the same objects codegen consumes below.
-        Builder.Lowering.Passes.CancellationInstrumentationPass.Run(programs: userPrograms,
-            instantiatedBodies: result.InstantiatedGenericBodies,
-            synthesizedBodies: result.SynthesizedBodies,
-            registry: result.Registry,
-            maySuspendKeys: result.MaySuspendRoutineKeys);
-
         // The entry module (manifest executable) is the module declared by the entry file —
         // it, not an arbitrary imported module's `start`, is the program entry point.
         string entryFull = Path.GetFullPath(path: entryFile);
@@ -1842,6 +1833,16 @@ internal partial class Program
             unitsByFile.TryGetValue(key: entryFull, value: out FileBuildUnit? entryUnit)
                 ? entryUnit.Module
                 : null;
+
+        // 9-2: instrument may-suspend routine bodies with cancellation push/pop markers
+        // (no-op unless something reaches a coroutine suspend point). Mutates the userPrograms
+        // ASTs in place — the same objects codegen consumes below.
+        Builder.Lowering.Passes.CancellationInstrumentationPass.Run(programs: userPrograms,
+            instantiatedBodies: result.InstantiatedGenericBodies,
+            synthesizedBodies: result.SynthesizedBodies,
+            registry: result.Registry,
+            maySuspendKeys: result.MaySuspendRoutineKeys,
+            entryModule: entryModule);
 
         // Resident-JIT incremental (B) M3: hand the analysis pieces to the caller (which builds a MAIN module
         // + on-demand materializer + disk IR cache and JIT-runs them lazily) INSTEAD of emitting the whole

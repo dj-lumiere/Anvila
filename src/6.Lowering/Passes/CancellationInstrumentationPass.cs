@@ -63,7 +63,8 @@ public sealed class CancellationInstrumentationPass
         IReadOnlyDictionary<string, Instantiation.MonomorphizedBody> instantiatedBodies,
         IReadOnlyDictionary<string, Statement> synthesizedBodies,
         TypeRegistry registry,
-        IReadOnlyCollection<string> maySuspendKeys)
+        IReadOnlyCollection<string> maySuspendKeys,
+        string? entryModule = null)
     {
         var programList = programs.ToList();
         List<(RoutineInfo Info, Statement Body)> synthesized = ResolveSynthesized(
@@ -82,10 +83,23 @@ public sealed class CancellationInstrumentationPass
         var pass = new CancellationInstrumentationPass(maySuspend: maySuspend);
         programs = programList;
 
+        // The program's `start` runs on the main thread, outside any coroutine (a Work runs its own routine in one), so
+        // no coroutine is ever abandoned in it: its markers would only look up the thread's coroutine and find none.
+        // In a loop that is most of the time (a Mielia stack loop in a program that waits for a Work).
+        RoutineInfo? entry = Collection.EntryPoint.StartOf(
+            defined: programList.SelectMany(selector: p => p.Program.Declarations.OfType<RoutineDeclaration>())
+                                .Select(selector: ResolveDecl)
+                                .OfType<RoutineInfo>(),
+            entryModule: entryModule);
         foreach ((Program program, _, _) in programs)
         {
             foreach (RoutineDeclaration decl in program.Declarations.OfType<RoutineDeclaration>())
             {
+                if (entry != null && ReferenceEquals(objA: ResolveDecl(decl: decl), objB: entry))
+                {
+                    continue;
+                }
+
                 pass.MaybeInstrument(decl: decl);
             }
         }
