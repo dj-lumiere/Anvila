@@ -345,9 +345,8 @@ public sealed partial class TypeRegistry
                     MutationCategory = member.Mutation,
                     Location = dispatched.GenericDefinition?.Location ?? dispatched.Location,
                     Module = dispatched.Module,
-                    Annotations = readOnly
-                        ? ["readonly"]
-                        : [],
+                    Annotations = [.. readOnly ? ["readonly"] : Array.Empty<string>(),
+                        .. member.IsProperty ? [RoutineInfo.PropertyAnnotation] : Array.Empty<string>()],
                     IsSynthesized = true
                 };
                 RegisterRoutine(routine: routine);

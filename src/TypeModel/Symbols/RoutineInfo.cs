@@ -400,9 +400,17 @@ public sealed class RoutineInfo
     /// <summary>Annotations on this routine (e.g., @readonly, @inline).</summary>
     public List<string> Annotations { get; init; } = [];
 
-    /// <summary>Whether this routine is marked @readonly (can be called through Viewing).</summary>
+    /// <summary>Whether this routine is marked @readonly (can be called through Viewing). A <c>@property</c> routine
+    /// reads only, so it is one too.</summary>
     public bool IsReadOnly =>
-        Annotations.Contains(value: "readonly") || MutationCategory == MutationCategory.Readonly;
+        Annotations.Contains(value: "readonly") || IsProperty || MutationCategory == MutationCategory.Readonly;
+
+    /// <summary>Whether this routine is marked <c>@property</c>: it is read without parentheses, like a member
+    /// variable (<c>foe.alive</c>), and never called with them.</summary>
+    public bool IsProperty => Annotations.Contains(value: PropertyAnnotation);
+
+    /// <summary>The annotation that makes a routine a property.</summary>
+    public const string PropertyAnnotation = "property";
 
     /// <summary>Whether this routine RESHAPES its receiver (a container mutator that can invalidate an
     /// in-progress iteration — drives the RV-S625 reshaping-during-iteration ban). The <c>@reshaping</c>

@@ -202,7 +202,10 @@ public sealed partial class SemanticVerifier
         // reads as parameters of the synthesized routine.
         // A call written with explicit type arguments (`f[T](x)`, `o.m[T](x)`) is still its generic-call node
         // here (it becomes a plain call in a later lowering): take it as the plain call it is bound to.
-        Expression inner = AsPlainCall(expr: innerExpression);
+        // A read of a `@property` is the call analysis made for it.
+        Expression inner = AsPlainCall(expr: innerExpression is MemberExpression { PropertyCall: { } read }
+            ? read
+            : innerExpression);
         // A first walk finds the number reads a later hoisted call would otherwise run before, the second hoists them too.
         var scan = new RecoveryFailableHoister(seed: 0, registry: _registry, readsToHoist: null);
         scan.VisitExpression(expr: inner);
@@ -669,6 +672,12 @@ public sealed partial class SemanticVerifier
             if (expr is IdentifierExpression id)
             {
                 ReferencedNames.Add(item: id.Name);
+            }
+
+            // A read of a `@property` is the call analysis made for it, and hoisted as one.
+            if (expr is MemberExpression { PropertyCall: { } read })
+            {
+                return VisitExpression(expr: read);
             }
 
             // A bare number keeps the type analysis gave it here (`8` in `try d / 8` beside a Decimal): the body

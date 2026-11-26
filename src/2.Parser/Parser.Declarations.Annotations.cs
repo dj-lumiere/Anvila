@@ -116,7 +116,7 @@ public partial class Parser
         "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "noinline", "no_optimize",
         "override", "overridable", "innate", "generated", "uses_pool", "moves_block", "crash_only", "untraced", "blocking", "hands_over",
         RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rv",
-        "none_is_zero", "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"
+        "none_is_zero", "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable", "property"
     ];
 
     /// <summary>Whether <paramref name="name"/> names an annotation a Mielia program declares: a record that obeys

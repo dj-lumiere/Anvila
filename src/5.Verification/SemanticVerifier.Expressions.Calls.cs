@@ -3244,6 +3244,7 @@ public sealed partial class SemanticVerifier
         }
 
         call.LoweringKind = ClassifyMemberRoutineCall(memberRoutine: memberRoutine);
+        ReportPropertyCalled(call: call, member: member, routine: memberRoutine);
 
         // Import-gating: BuilderQuery routines require 'import BuilderQuery'
         if (memberRoutine.IsSynthesized &&
@@ -3495,9 +3496,11 @@ public sealed partial class SemanticVerifier
             member.Object is IdentifierExpression { Name: "me" } && !memberRoutine.IsReadOnly)
         {
             ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,
-                message:
-                $"Cannot call non-readonly member routine '{memberRoutine.Name}' on 'me' in a @readonly member routine. " +
-                $"Mark '{memberRoutine.Name}' @readonly if it only reads, or take '@readonly' off this routine.",
+                message: _currentRoutine.IsProperty
+                    ? $"A @property only reads 'me', and '{memberRoutine.Name}' may change it. Mark " +
+                      $"'{memberRoutine.Name}' @readonly if it only reads, or make this a plain routine."
+                    : $"Cannot call non-readonly member routine '{memberRoutine.Name}' on 'me' in a @readonly member routine. " +
+                      $"Mark '{memberRoutine.Name}' @readonly if it only reads, or take '@readonly' off this routine.",
                 location: call.Location);
         }
 

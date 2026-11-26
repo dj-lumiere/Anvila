@@ -225,6 +225,12 @@ public sealed partial class SemanticVerifier
 
         TryUnwrapMarkerReceiver(type: objectType, innerType: out TypeSymbol lookupType);
 
+        // A `@property` is read without parentheses: the read is the call it stands for.
+        if (TryAnalyzePropertyRead(member: member, objectType: objectType, lookupType: lookupType) is { } property)
+        {
+            return property;
+        }
+
         // Look up the member variable/property on the type
         if (TryResolveMemberVariableAccess(lookupType: lookupType, member: member) is { } resolved)
         {

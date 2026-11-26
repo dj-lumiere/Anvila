@@ -1048,6 +1048,25 @@ public enum SemanticDiagnosticCode
     /// hash it would carry is not known where the routine is written.</summary>
     TypeParameterValueIntoProtocolPlace = 716,
 
+    /// <summary>A <c>@property</c> routine that is not a member routine with no parameters and a result.</summary>
+    PropertyShape = 717,
+
+    /// <summary>A <c>@property</c> routine whose body changes <c>me</c>.</summary>
+    PropertyChangesMe = 718,
+
+    /// <summary>A type with a member variable and a <c>@property</c> of the same name.</summary>
+    PropertyNameTaken = 719,
+
+    /// <summary>A <c>@property</c> called with parentheses (<c>foe.alive()</c>): it is read as <c>foe.alive</c>.</summary>
+    PropertyCalled = 720,
+
+    /// <summary>An assignment to a <c>@property</c> (<c>foe.alive = false</c>): a property is only read.</summary>
+    PropertyWritten = 721,
+
+    /// <summary>A protocol's <c>@property</c> filled by a plain routine, or a plain routine requirement filled by a
+    /// <c>@property</c>.</summary>
+    PropertyConformanceMismatch = 722,
+
     /// <summary>An <c>expand</c> template body applies a GATED wired-protocol operation (e.g. <c>eq</c>
     /// via <c>==</c>, <c>compare</c>, <c>hash</c>) to a buildtime member value (<c>me.$nameof(m)</c>) without
     /// the enclosing routine declaring the matching <c>needs P everywhere</c> gate — so nothing

@@ -61,7 +61,8 @@ public static class MutationCategoryExtensions
             return MutationCategory.Writable;
         }
 
-        if (annotations.Contains(item: "readonly"))
+        // A `@property` routine reads only.
+        if (annotations.Contains(item: "readonly") || annotations.Contains(item: "property"))
         {
             return MutationCategory.Readonly;
         }

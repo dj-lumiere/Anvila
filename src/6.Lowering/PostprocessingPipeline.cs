@@ -55,6 +55,8 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // below lowers its body (f-strings, conversions, operators) like any other. Lifted last, its body
         // reached the emitter unlowered — the rewriters do not descend into a lambda expression.
         new LambdaLiftingPass(ctx: ctx).Run(program: program);
+        // A read of a `@property` becomes its call before any pass looks at it.
+        new PropertyReadLoweringPass(ctx: ctx).Run(program: program);
         // A place that keeps a link given the entity or a token gets the call that makes the link.
         new LinkConversionPass(ctx: ctx).Run(program: program);
         // A Revare loop the shape check could not prove safe opens a use of its container's shape at run time.
@@ -139,6 +141,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // file's program when it is lowered).
         new AccessLoweringPass(registry: ctx.Registry).RunOnVariantBodies(ctx: ctx);
         new LambdaLiftingPass(ctx: ctx).RunOnVariantBodies();
+        new PropertyReadLoweringPass(ctx: ctx).RunOnVariantBodies();
         // The variants of the program's routines keep links and check shapes as the routines do.
         new LinkConversionPass(ctx: ctx).RunOnVariantBodies();
         new RuntimeShapeUseLoweringPass(ctx: ctx).RunOnVariantBodies();

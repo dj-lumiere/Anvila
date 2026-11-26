@@ -2564,6 +2564,7 @@ public sealed partial class StdlibLoader
             ParameterNames = parameterNames,
             ReturnType = resolvedReturnType,
             IsFailable = isFailable,
+            IsProperty = memberRoutine.Annotations?.Contains(item: RoutineInfo.PropertyAnnotation) == true,
             // A library protocol's `@readonly` member binds its implementations as a user protocol's does.
             Mutation = MutationCategoryExtensions.FromAnnotations(annotations: memberRoutine.Annotations),
             Location = memberRoutine.Location

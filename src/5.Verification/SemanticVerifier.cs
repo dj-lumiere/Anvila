@@ -607,6 +607,7 @@ public sealed partial class SemanticVerifier
         }
 
         BlockingCallSynthesisPass.Run(files: [(program, _currentFilePath)]);
+        PropertyReaderSynthesisPass.Run(files: [(program, _currentFilePath)], registry: _registry);
 
         RunPhase1Declarations(program: program);
         Mark(label: "Phase 1 Declarations");
@@ -752,6 +753,7 @@ public sealed partial class SemanticVerifier
         // wired attribute the parser no longer sets from the surface `$` sigil.
         InferWiredMemberRoutines();
         ValidateProtocolImplementations();
+        ValidatePropertyNames(program: program);
         PreRegisterUserVariants(program: program);
         // Memo content: when the memo carries restored stdlib bodies, the stdlib failable variants were
         // already registered in the restored registry — re-registering is pure warm overhead. A cold
@@ -2775,6 +2777,7 @@ public sealed partial class SemanticVerifier
         }
 
         BlockingCallSynthesisPass.Run(files: files);
+        PropertyReaderSynthesisPass.Run(files: files, registry: _registry);
 
         // Every file in the build graph contributes its declarations via Phase 1 below.
         // Pre-mark their declared modules as provided so `import` statements between them
@@ -2953,6 +2956,7 @@ public sealed partial class SemanticVerifier
                 symbolNameSnapshots: symbolNameSnapshots,
                 moduleNameSnapshots: moduleNameSnapshots);
 
+            ValidatePropertyNames(program: program);
             PreRegisterUserVariants(program: program);
         }
 

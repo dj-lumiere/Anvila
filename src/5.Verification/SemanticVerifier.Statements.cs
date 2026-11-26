@@ -2279,8 +2279,10 @@ public sealed partial class SemanticVerifier
 
         // Check if we're in a @readonly memberRoutine trying to mutate 'me' (Revare-only; Mielia
         // hides @readonly/@reshaping).
+        ReportPropertyWrite(target: member, location: assign.Location);
+        ReportPropertyChangesMe(target: member, location: assign.Location);
         if (_registry.CompilationRules.ChecksReadonly &&
-            _currentRoutine is { IsReadOnly: true } &&
+            _currentRoutine is { IsReadOnly: true, IsProperty: false } &&
             member.Object is IdentifierExpression { Name: "me" })
         {
             ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,

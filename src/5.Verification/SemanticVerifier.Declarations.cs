@@ -1133,6 +1133,8 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
+        ValidatePropertyDeclaration(routine: routine, kind: kind, ownerType: ownerType, routineName: baseName);
+
         // @crash_only is only valid on a routine that passes its failures on (#76)
         if (routine.Annotations.Contains(item: "crash_only") && routine.IsInfallible)
         {
@@ -1195,6 +1197,68 @@ public sealed partial class SemanticVerifier
         }
 
         ValidateVarargsPlacement(routine: routine);
+    }
+
+    /// <summary>
+    /// A <c>@property</c> is read like a member variable (<c>foe.alive</c>), so it is a member routine that takes
+    /// nothing but <c>me</c> and gives a result (RV-S717).
+    /// </summary>
+    private void ValidatePropertyDeclaration(RoutineDeclaration routine, RoutineKind kind, TypeSymbol? ownerType,
+        string routineName)
+    {
+        if (!routine.Annotations.Contains(item: RoutineInfo.PropertyAnnotation))
+        {
+            return;
+        }
+
+        int parameters = routine.Parameters.Count(predicate: p => p.Name != "me");
+        string? shape = kind != RoutineKind.MemberRoutine || routine.IsCommon
+            ? "belongs to a type and is read from a value of it"
+            : parameters > 0
+                ? "is read without arguments, so it takes nothing but 'me'"
+                : routine.ReturnType is null or { Name: "None" }
+                    ? "is read for its result, so it gives one"
+                    : routine.GenericParameters is { Count: > 0 } own &&
+                      own.Count > (ownerType?.GenericParameters?.Count ?? 0)
+                        ? "is read without type arguments, so it takes no type parameters of its own"
+                        : null;
+        if (shape != null)
+        {
+            ReportError(code: SemanticDiagnosticCode.PropertyShape,
+                message: $"A @property {shape}: write it as 'routine Type.{routineName}() -> Result'. " +
+                         "A routine that needs more is a plain routine, called with parentheses.",
+                location: routine.Location);
+        }
+    }
+
+    /// <summary>RV-S719: a type has a member variable and a <c>@property</c> of the same name, which would both be
+    /// read as <c>.name</c>. Checked once the member variables are known (after type bodies resolve).</summary>
+    private void ValidatePropertyNames(Program program)
+    {
+        foreach (RoutineDeclaration routine in program.Declarations.OfType<RoutineDeclaration>())
+        {
+            if (routine is not { OwnerName: { } ownerName, MemberRoutineName: { } routineName, IsBuilderWritten: false } ||
+                !routine.Annotations.Contains(item: RoutineInfo.PropertyAnnotation) ||
+                LookupOwnerInFileRealm(name: ownerName) is not { } ownerType)
+            {
+                continue;
+            }
+
+            TypeSymbol owner = GetGenericDefinition(resolution: ownerType) ?? ownerType;
+            MemberVariableInfo? field = owner switch
+            {
+                RecordTypeSymbol record => record.LookupMemberVariable(memberVariableName: routineName),
+                EntityTypeSymbol entity => entity.LookupMemberVariable(memberVariableName: routineName),
+                _ => null
+            };
+            if (field != null)
+            {
+                ReportError(code: SemanticDiagnosticCode.PropertyNameTaken,
+                    message: $"'{owner.Name}' has a member variable '{routineName}' already, and a @property of the " +
+                             $"same name would be read the same way: '.{routineName}'. Rename one of them.",
+                    location: routine.Location);
+            }
+        }
     }
 
     /// <summary>
@@ -1666,6 +1730,20 @@ public sealed partial class SemanticVerifier
                     Line: 0,
                     Column: 0,
                     Position: 0));
+        }
+        // A property is read without parentheses, a plain routine is called with them: one spelling per routine.
+        else if (requiredMemberRoutine.IsProperty != IsPropertyRoutine(routine: typeMemberRoutine))
+        {
+            ReportError(code: SemanticDiagnosticCode.PropertyConformanceMismatch,
+                message: requiredMemberRoutine.IsProperty
+                    ? $"'{protocol.Name}' requires '{requiredMemberRoutine.Name}' as a @property, read as " +
+                      $"'.{requiredMemberRoutine.Name}', but '{type.Name}.{requiredMemberRoutine.Name}' is a plain routine. " +
+                      $"Mark it @property, or give '{type.Name}' a member variable '{requiredMemberRoutine.Name}' instead."
+                    : $"'{protocol.Name}' requires '{requiredMemberRoutine.Name}' as a plain routine, called as " +
+                      $"'.{requiredMemberRoutine.Name}()', but '{type.Name}.{requiredMemberRoutine.Name}' is a @property. " +
+                      "Take @property off it.",
+                location: typeMemberRoutine.Location ?? type.Location ?? _conformanceDeclaredAt ??
+                          new SourceLocation(FileName: "", Line: 0, Column: 0, Position: 0));
         }
         else if (requiredMemberRoutine.GenerationKind == ProtocolRoutineKind.Innate &&
                  !typeMemberRoutine.IsSynthesized)

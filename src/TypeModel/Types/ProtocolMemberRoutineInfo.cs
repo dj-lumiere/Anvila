@@ -42,6 +42,10 @@ public sealed class ProtocolMemberRoutineInfo
     /// <summary>The generation kind for this memberRoutine (None, Generated, or Innate).</summary>
     public ProtocolRoutineKind GenerationKind { get; init; } = ProtocolRoutineKind.None;
 
+    /// <summary>Whether the protocol requires a <c>@property</c>: read without parentheses (<c>foe.hp</c>). A member
+    /// variable of the same name and type fills it.</summary>
+    public bool IsProperty { get; init; }
+
     /// <summary>Whether this memberRoutine has a default implementation.</summary>
     public bool HasDefaultImplementation { get; init; }
 

@@ -234,6 +234,8 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // via VariantReturnLoweringPass.RunOnMonomorphizedBodies at Phase 8, but the collector's
         // freshly-built variant bodies are not in that map — without this they reach codegen as raw
         // VariantReturnStatement and trip the codegen guard.
+        // A body cloned before the per-file lowering ran may still read a `@property`.
+        new PropertyReadLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
         new VariantReturnLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
             bodies: freshBodies);
         // A body cloned before the per-file lowering ran (a protocol-extension routine of the program, copied

@@ -364,6 +364,11 @@ public static class AstWalker
             {
                 box
             },
+            // A read of a `@property` is the call analysis made for it: its receiver is the call's.
+            MemberExpression { PropertyCall: { } read } => new object[]
+            {
+                read
+            },
             MemberExpression e => new object[]
             {
                 e.Object

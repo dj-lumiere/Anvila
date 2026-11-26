@@ -2917,6 +2917,7 @@ public sealed partial class TypeRegistry
                     ? RoutineKind.Creator
                     : RoutineKind.CommonRoutine,
             IsSynthesized = true,
+            Annotations = protoMemberRoutine.IsProperty ? [RoutineInfo.PropertyAnnotation] : [],
             Location = protoMemberRoutine.Location
         };
     }

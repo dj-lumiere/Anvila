@@ -546,6 +546,10 @@ public record CallExpression(
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
 
+    /// <summary>True for the call analysis makes for a read of a <c>@property</c> (<c>foe.alive</c> is analyzed as
+    /// <c>foe.alive()</c>), which is the one way such a routine is called.</summary>
+    public bool IsPropertyRead { get; init; }
+
     /// <summary>True for <c>S32(3)</c>: a number type called with one number written out. The call is that number read
     /// as the type (checked against its range), not a conversion, so it is replaced by its literal after analysis.</summary>
     public bool IsNumberLiteralOfType { get; set; }
@@ -751,6 +755,12 @@ public record MemberExpression(Expression Object, string MemberName, SourceLocat
     /// payload, and lowering reads the payload out of the field.
     /// </summary>
     public TypeSymbol? NarrowedFrom { get; set; }
+
+    /// <summary>
+    /// Set by analysis on a read of a <c>@property</c> routine (<c>foe.alive</c>): the call <c>foe.alive()</c> it
+    /// stands for, analyzed in its place. The first lowering pass puts the call where the read was.
+    /// </summary>
+    public CallExpression? PropertyCall { get; set; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)

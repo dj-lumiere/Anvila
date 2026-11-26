@@ -611,6 +611,7 @@ internal sealed class TypeBodyResolver
             ParameterNames = paramNames,
             ReturnType = returnType,
             IsFailable = isFailable,
+            IsProperty = sig.Annotations?.Contains(item: RoutineInfo.PropertyAnnotation) == true,
             HasDefaultImplementation = false, // Abstract protocol memberRoutines have no default
             Location = sig.Location
         };

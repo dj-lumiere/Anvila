@@ -133,6 +133,7 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
                                                                        substitution: substitution)
                                                                    : null,
                                                                IsFailable = m.IsFailable,
+                                                               IsProperty = m.IsProperty,
                                                                GenerationKind = m.GenerationKind,
                                                                HasDefaultImplementation =
                                                                    m.HasDefaultImplementation,

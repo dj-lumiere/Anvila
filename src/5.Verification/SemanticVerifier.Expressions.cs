@@ -2188,8 +2188,10 @@ public sealed partial class SemanticVerifier
         ReportWriteIntoReadOnlyBinding(member: member, location: location);
 
         // Check if we're in a @readonly member routine trying to modify 'me'.
+        ReportPropertyWrite(target: member, location: location);
+        ReportPropertyChangesMe(target: member, location: location);
         if (_registry.CompilationRules.ChecksReadonly &&
-            _currentRoutine is { IsReadOnly: true } &&
+            _currentRoutine is { IsReadOnly: true, IsProperty: false } &&
             member.Object is IdentifierExpression { Name: "me" })
         {
             ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,
@@ -2664,8 +2666,10 @@ public sealed partial class SemanticVerifier
                     memberVariableName: member.MemberName,
                     location: compound.Location);
 
+                ReportPropertyWrite(target: member, location: compound.Location);
+                ReportPropertyChangesMe(target: member, location: compound.Location);
                 if (_registry.CompilationRules.ChecksReadonly &&
-                    _currentRoutine is { IsReadOnly: true } &&
+                    _currentRoutine is { IsReadOnly: true, IsProperty: false } &&
                     member.Object is IdentifierExpression { Name: "me" })
                 {
                     ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,
