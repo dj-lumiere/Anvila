@@ -948,7 +948,13 @@ public sealed partial class SemanticVerifier
                                _registry.IsEntityKind(type: paramType) ||
                                !isOperator && argType is GenericParameterTypeSymbol &&
                                paramType is GenericParameterTypeSymbol && MayHoldEntity(type: argType) &&
-                               !IsStdlibFile(filePath: _currentFilePath);
+                               !IsStdlibFile(filePath: _currentFilePath) ||
+                               // A stored value of a protocol that keeps entities has one original, and a parameter
+                               // that takes it (`e: Enemy`, a hidden type parameter) keeps it too.
+                               !isOperator && Declaration.TypeRegistry.DispatchedProtocol(type: argType) != null &&
+                               _registry.IsEntityKind(type: argType) &&
+                               (paramType is GenericParameterTypeSymbol ||
+                                Declaration.TypeRegistry.DispatchedProtocol(type: paramType) != null);
         if (ChecksHolderOf(type: argType) && !_isInCompilerGeneratedBody &&
             ReadsKeptEntity(value: argValue, includeVariables: true) && handsOverEntity)
         {

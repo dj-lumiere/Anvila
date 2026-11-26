@@ -820,6 +820,8 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
                 typeSubs: wfSubs,
                 registry: ctx.Registry,
                 enclosingRoutine: concreteWf);
+            rewritten = WrapperForwardingPass.ReachForInner(body: rewritten, inner: concreteInner,
+                registry: ctx.Registry);
             rewritten = WrapperForwardingPass.ReachRecordInPlace(body: rewritten, inner: concreteInner,
                 registry: ctx.Registry);
             ctx.InstantiatedGenericBodies[key: concreteWf.RegistryKey] = new MonomorphizedBody(

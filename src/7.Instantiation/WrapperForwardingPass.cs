@@ -784,6 +784,71 @@ internal sealed class WrapperForwardingPass
     }
 
     /// <summary>
+    /// A token forwarder is one per routine name, and its body reaches the value the way the first type that reached
+    /// it needed: <c>read_in_place()</c> for a stored value of a protocol, <c>access()</c> / <c>control()</c> for
+    /// any other value. Made concrete for <paramref name="inner"/>, the body reaches it the way that type needs.
+    /// </summary>
+    internal static Statement ReachForInner(Statement body, TypeSymbol inner, TypeRegistry registry)
+    {
+        bool stored = TypeRegistry.DispatchedProtocol(type: inner) != null || inner is ProtocolTypeSymbol;
+        return Rewrite(stmt: body);
+
+        Statement Rewrite(Statement stmt)
+        {
+            return stmt switch
+            {
+                BlockStatement block => block with { Statements = block.Statements.Select(selector: Rewrite).ToList() },
+                DangerStatement danger => danger with { Body = (BlockStatement)Rewrite(stmt: danger.Body) },
+                ReturnStatement { Value: CallExpression call } ret => ret with { Value = Reach(call: call) },
+                ExpressionStatement { Expression: CallExpression call } es => es with { Expression = Reach(call: call) },
+                _ => stmt
+            };
+        }
+
+        CallExpression Reach(CallExpression call)
+        {
+            if (call.Callee is not MemberExpression
+                {
+                    Object: CallExpression
+                    {
+                        Callee: MemberExpression
+                        {
+                            MemberName: RuntimeContract.ReadInPlace or RuntimeContract.Control or RuntimeContract.Access,
+                            Object: { ResolvedType: { } tokenType } token
+                        } reachMember,
+                        Arguments.Count: 0
+                    } reach
+                } member ||
+                tokenType.BareName is not (RuntimeContract.Viewing or RuntimeContract.Modifying))
+            {
+                return call;
+            }
+
+            string wanted = stored
+                ? RuntimeContract.ReadInPlace
+                : tokenType.BareName == RuntimeContract.Viewing
+                    ? RuntimeContract.Access
+                    : RuntimeContract.Control;
+            if (reachMember.MemberName == wanted ||
+                registry.LookupMemberRoutine(type: tokenType, memberRoutineName: wanted) is not { } routine)
+            {
+                return call;
+            }
+
+            var reached = new CallExpression(
+                Callee: new MemberExpression(Object: token, MemberName: wanted, Location: reachMember.Location),
+                Arguments: [],
+                Location: reach.Location)
+            {
+                ResolvedRoutine = routine,
+                ResolvedType = reach.ResolvedType,
+                LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine)
+            };
+            return call with { Callee = member with { Object = reached } };
+        }
+    }
+
+    /// <summary>
     /// A token forwarder made concrete for a record (<c>Modifying[Point].move</c>): its <c>me.control().move()</c>
     /// (or <c>access()</c>) becomes a call on the record at the token's address. The record read out would be a copy
     /// that takes the change instead of the element and that nothing ends. The reach forwarder reads its record only

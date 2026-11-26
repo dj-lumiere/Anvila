@@ -2712,7 +2712,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private Statement ReachForwardedRecord(RoutineInfo routine, Statement body)
     {
         return routine is { WrapperForwarderInnerMemberRoutine: not null, OwnerType.TypeArguments: [{ } inner] }
-            ? WrapperForwardingPass.ReachRecordInPlace(body: body, inner: inner, registry: ctx.Registry)
+            ? WrapperForwardingPass.ReachRecordInPlace(
+                body: WrapperForwardingPass.ReachForInner(body: body, inner: inner, registry: ctx.Registry),
+                inner: inner, registry: ctx.Registry)
             : body;
     }
 
