@@ -2202,8 +2202,10 @@ internal partial class Program
     /// collection/instantiation stack IN-PROCESS — a subprocess <c>run</c> runs that stack in
     /// a child process, invisible to coverage instrumentation. Diagnostics are printed to the console
     /// by <see cref="BuildMultiFile"/> as usual; the caller may redirect the console to capture them.
+    /// With <paramref name="warm"/>, the build restores that captured standard library as a daemon's build does.
     /// </summary>
-    internal static int CompileEntryToIrForTests(string entryFile, out string ir)
+    internal static int CompileEntryToIrForTests(string entryFile, out string ir,
+        SemanticVerifier.CompiledStdlibState? warm = null)
     {
         ResolvedEntry resolved =
             ResolveEntryFile(args: ["codegen", entryFile], needsOutputArg: false);
@@ -2213,7 +2215,10 @@ internal partial class Program
             return 1;
         }
 
-        return BuildToIr(entryFile: resolved.EntryFile, ir: out ir, config: resolved);
+        return BuildToIr(entryFile: resolved.EntryFile, ir: out ir, config: resolved,
+            warm: warm == null
+                ? null
+                : new WarmProviders(WarmProvider: _ => warm, IrCallback: null, StdlibIndexProvider: null));
     }
 
     /// <summary>

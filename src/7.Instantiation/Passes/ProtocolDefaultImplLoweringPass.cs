@@ -995,6 +995,13 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
             new Dictionary<string, TypeSymbol>(dictionary: protoSubs) { [key: "Me"] = me };
         var stringSubs = typeSubs.ToDictionary(keySelector: kv => kv.Key,
             elementSelector: kv => kv.Value.InstanceArgumentName);
+        // A library default is library source wherever its copy goes: its calls bind to the shared routines.
+        // Mielia's `get_count() -> Int` calls the shared `get_count() -> U64`, and seen from a Mielia program the
+        // inner call would bind to the surface routine itself.
+        using Builder.Declaration.TypeRegistry.StdlibSourceScope? librarySource =
+            ctx.Registry.IsStandardLibraryFile(filePath: protocolRoutine.Location?.FileName ?? originalBody.Location.FileName)
+                ? ctx.Registry.AnalyzingStdlibSource()
+                : null;
         Statement cloned = GenericAstRewriter.RewriteStatement(stmt: originalBody,
             subs: stringSubs,
             typeSubs: typeSubs,
